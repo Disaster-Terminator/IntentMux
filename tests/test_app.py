@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any
 
@@ -30,6 +31,7 @@ class FakeProxy:
     def __init__(self):
         self.payloads: list[dict[str, Any]] = []
         self.headers: list[dict[str, str]] = []
+        self.stream_context_closed = False
 
     async def forward_chat(
         self, payload: dict[str, Any], headers: dict[str, str]
@@ -41,6 +43,27 @@ class FakeProxy:
             content=b'{"id":"chatcmpl-test","choices":[]}',
             headers={"content-type": "application/json"},
         )
+
+    @asynccontextmanager
+    async def stream_chat(self, payload: dict[str, Any], headers: dict[str, str]):
+        self.payloads.append(payload)
+        self.headers.append(headers)
+        self.stream_context_closed = False
+
+        async def chunks():
+            if self.stream_context_closed:
+                raise RuntimeError("stream context closed before body iteration")
+            yield b"data: first\n\n"
+            yield b"data: [DONE]\n\n"
+
+        try:
+            yield FakeProxyResponse(
+                status_code=200,
+                content=chunks(),
+                headers={"content-type": "text/event-stream"},
+            )
+        finally:
+            self.stream_context_closed = True
 
 
 def test_health_reports_ready():
@@ -114,3 +137,36 @@ def test_chat_completion_keeps_passthrough_model():
     assert proxy.payloads[0]["model"] == "deepseek-v4-pro"
     assert response.headers["x-router-target-model"] == "deepseek-v4-pro"
     assert response.headers["x-router-reason"] == "passthrough"
+
+
+def test_streaming_chat_completion_uses_stream_proxy():
+    proxy = FakeProxy()
+    app = create_app(
+        router=FakeRouter(
+            RoutingDecision(
+                "pro-router",
+                "hard_rule:线上",
+                rewrite=True,
+                source_model="smart-router",
+            )
+        ),
+        proxy=proxy,
+    )
+
+    with TestClient(app).stream(
+        "POST",
+        "/v1/chat/completions",
+        json={
+            "model": "smart-router",
+            "stream": True,
+            "messages": [{"role": "user", "content": "这个线上 bug 为什么偶发"}],
+        },
+    ) as response:
+        body = response.read()
+
+    assert response.status_code == 200
+    assert proxy.payloads[0]["model"] == "pro-router"
+    assert proxy.payloads[0]["stream"] is True
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert response.headers["x-router-target-model"] == "pro-router"
+    assert body == b"data: first\n\ndata: [DONE]\n\n"

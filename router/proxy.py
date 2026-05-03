@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
 import httpx
@@ -46,6 +48,23 @@ class LiteLLMProxy:
             headers=response_headers(response.headers),
         )
 
+    @asynccontextmanager
+    async def stream_chat(
+        self, payload: dict, headers: dict[str, str]
+    ) -> AsyncIterator[ProxyResponse]:
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            async with client.stream(
+                "POST",
+                f"{self.base_url}/v1/chat/completions",
+                json=payload,
+                headers=forwardable_headers(headers),
+            ) as response:
+                yield ProxyResponse(
+                    status_code=response.status_code,
+                    content=response.aiter_bytes(),
+                    headers=response_headers(response.headers),
+                )
+
 
 def forwardable_headers(headers: dict[str, str]) -> dict[str, str]:
     return {
@@ -61,4 +80,3 @@ def response_headers(headers: httpx.Headers | dict[str, str]) -> dict[str, str]:
         for key, value in dict(headers).items()
         if key.lower() not in HOP_BY_HOP_HEADERS
     }
-

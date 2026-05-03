@@ -10,6 +10,10 @@ It only rewrites `model=smart-router` requests into the local LiteLLM groups:
 
 All other model names pass through unchanged.
 
+Both non-streaming and `stream=true` SSE chat completions are proxied. The
+sidecar rewrites only the request model field, then preserves the upstream
+LiteLLM response body and routing headers.
+
 This repository is intentionally separate from `/home/raystorm/gateway/litellm`.
 Do not add LiteLLM mount files, tokens, or `.env` material here.
 
@@ -42,3 +46,12 @@ uv run python scripts/eval_routes.py --mock-embeddings
 
 For a live sidecar request, pass the same LiteLLM `Authorization` header to
 `http://127.0.0.1:4001/v1/chat/completions`.
+
+Streaming smoke test:
+
+```bash
+curl -N http://127.0.0.1:4001/v1/chat/completions \
+  -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"smart-router","stream":true,"messages":[{"role":"user","content":"这个线上 bug 为什么偶发？只回答 OK"}],"max_tokens":8}'
+```
