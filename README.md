@@ -23,6 +23,19 @@ Do not add LiteLLM mount files, tokens, or `.env` material here.
 uv run python -m router.app
 ```
 
+## Container Lifecycle
+
+The router is packaged with `Dockerfile` and is intended to run as a sibling
+service in the LiteLLM compose project, not as an ad-hoc local process.
+
+The compose service should use:
+
+- build context: `/path/to/gateway/gateway-semantic-router`
+- upstream LiteLLM URL: `http://litellm:4000`
+- embedding URL from container to host LM Studio:
+  `http://host.docker.internal:1234/v1/embeddings`
+- exposed router port: `4001`
+
 Default endpoints:
 
 - Router: `http://127.0.0.1:4001`
@@ -55,3 +68,26 @@ curl -N http://127.0.0.1:4001/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{"model":"smart-router","stream":true,"messages":[{"role":"user","content":"这个线上 bug 为什么偶发？只回答 OK"}],"max_tokens":8}'
 ```
+
+## Semantic Assets
+
+Runtime routing stays dependency-light. Larger semantic assets are built offline
+from declared sources in `config/route_sources.yaml`.
+
+The initial source manifest references mature datasets rather than hand-written
+keyword expansion:
+
+- MASSIVE zh-CN / zh-TW for general assistant and utility utterances.
+- SWE-bench issue statements for repository-level software engineering tasks.
+- MBPP and HumanEval for code-generation prompts.
+- Local JSONL samples for model-probe traffic.
+
+Build dependencies are isolated from runtime:
+
+```bash
+uv sync --group assets
+uv run python scripts/build_route_bank.py
+```
+
+Generated route banks should retain each utterance's source name so eval
+failures remain auditable.

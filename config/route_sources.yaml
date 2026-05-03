@@ -1,0 +1,68 @@
+# Mature semantic sources used to build route banks.
+#
+# This file declares source datasets and mapping strategy. Generated banks live
+# under data/semantic_sets/ and should keep source names for auditability.
+sources:
+  - name: massive_zh_cn_general
+    kind: huggingface
+    dataset: AmazonScience/massive
+    subset: zh-CN
+    split: train
+    route: cheap-router
+    text_field: utt
+    limit: 80
+    mappings:
+      - field: domain
+        include:
+          - general
+          - qa
+          - email
+          - lists
+
+  - name: massive_zh_tw_general
+    kind: huggingface
+    dataset: AmazonScience/massive
+    subset: zh-TW
+    split: train
+    route: cheap-router
+    text_field: utt
+    limit: 40
+    mappings:
+      - field: domain
+        include:
+          - general
+          - qa
+          - email
+          - lists
+
+  - name: swebench_issue_resolution
+    kind: huggingface
+    dataset: princeton-nlp/SWE-bench
+    split: test
+    route: pro-router
+    text_field: problem_statement
+    limit: 80
+
+  - name: mbpp_codegen
+    kind: huggingface
+    dataset: mbpp
+    split: test
+    route: pro-router
+    text_field: text
+    limit: 40
+
+  - name: humaneval_codegen
+    kind: huggingface
+    dataset: openai/openai_humaneval
+    split: test
+    route: pro-router
+    text_field: prompt
+    limit: 40
+
+  - name: local_model_probe
+    kind: local_jsonl
+    path: data/source_samples/local_model_probe.jsonl
+    route: free-probe-router
+    text_field: text
+    limit: 80
+
