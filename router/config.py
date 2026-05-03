@@ -18,6 +18,7 @@ class RouterSettings(BaseModel):
     threshold: float = 0.55
     margin: float = 0.04
     routes: dict[str, RouteSpec]
+    route_bank_path: str | None = None
     pro_hard_rules: list[str] = Field(default_factory=list)
     embedding_url: str = "http://127.0.0.1:1234/v1/embeddings"
     embedding_model: str = "text-embedding-jina-embeddings-v5-text-small-retrieval@q8_0"
@@ -29,6 +30,7 @@ class RouterSettings(BaseModel):
 def load_settings(path: str | Path = "config/routes.yaml") -> RouterSettings:
     config_path = Path(path)
     raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    raw = merge_route_bank(raw, config_path.parent)
     settings = RouterSettings.model_validate(raw)
     return settings.model_copy(
         update={
@@ -40,3 +42,43 @@ def load_settings(path: str | Path = "config/routes.yaml") -> RouterSettings:
         }
     )
 
+
+def merge_route_bank(raw: dict, base_dir: Path) -> dict:
+    route_bank_path = raw.get("route_bank_path")
+    if not route_bank_path:
+        return raw
+
+    bank_path = resolve_route_bank_path(route_bank_path, base_dir)
+    if not bank_path.exists():
+        return raw
+
+    bank = yaml.safe_load(bank_path.read_text(encoding="utf-8"))
+    raw_routes = raw.setdefault("routes", {})
+    for route_name, route_bank in bank.get("routes", {}).items():
+        route_config = raw_routes.setdefault(
+            route_name,
+            {
+                "description": f"generated route bank for {route_name}",
+                "utterances": [],
+            },
+        )
+        existing = list(route_config.get("utterances", []))
+        seen = set(existing)
+        for item in route_bank.get("utterances", []):
+            text = item.get("text") if isinstance(item, dict) else item
+            if text and text not in seen:
+                existing.append(text)
+                seen.add(text)
+        route_config["utterances"] = existing
+    return raw
+
+
+def resolve_route_bank_path(route_bank_path: str, base_dir: Path) -> Path:
+    bank_path = Path(route_bank_path)
+    if bank_path.is_absolute():
+        return bank_path
+
+    config_relative_path = base_dir / bank_path
+    if config_relative_path.exists():
+        return config_relative_path
+    return bank_path

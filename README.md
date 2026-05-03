@@ -98,3 +98,8 @@ uv run python scripts/build_route_bank.py
 
 Generated route banks should retain each utterance's source name so eval
 failures remain auditable.
+
+Runtime loading is conservative: `config/routes.yaml` declares
+`route_bank_path: data/semantic_sets/route_bank.yaml`, and `load_settings()`
+merges that generated bank with the seed utterances only when the file exists.
+If the bank is absent, the router keeps using the checked-in seed routes.
