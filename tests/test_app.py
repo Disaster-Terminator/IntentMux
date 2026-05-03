@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+import json
+import logging
 from typing import Any
 
 from fastapi.testclient import TestClient
 
-from router.app import create_app
+from router.app import create_app, stream_with_context
 from router.routing import RoutingDecision
 
 
@@ -170,3 +172,134 @@ def test_streaming_chat_completion_uses_stream_proxy():
     assert response.headers["content-type"].startswith("text/event-stream")
     assert response.headers["x-router-target-model"] == "pro-router"
     assert body == b"data: first\n\ndata: [DONE]\n\n"
+
+
+def test_chat_completion_emits_structured_log_without_sensitive_payload(caplog):
+    proxy = FakeProxy()
+    app = create_app(
+        router=FakeRouter(
+            RoutingDecision(
+                "pro-router",
+                "hard_rule:线上",
+                rewrite=True,
+                source_model="smart-router",
+            )
+        ),
+        proxy=proxy,
+    )
+
+    with caplog.at_level(logging.INFO, logger="gateway_semantic_router"):
+        response = TestClient(app).post(
+            "/v1/chat/completions",
+            headers={
+                "Authorization": "Bearer litellm-test",
+                "x-request-id": "external-request-1",
+            },
+            json={
+                "model": "smart-router",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "这个线上 bug 为什么偶发，里面有敏感 prompt",
+                    }
+                ],
+            },
+        )
+
+    assert response.headers["x-router-request-id"] == "external-request-1"
+    records = [json.loads(record.message) for record in caplog.records]
+    route_logs = [record for record in records if record["event"] == "route_complete"]
+    assert route_logs == [
+        {
+            "event": "route_complete",
+            "request_id": "external-request-1",
+            "source_model": "smart-router",
+            "target_model": "pro-router",
+            "reason": "hard_rule:线上",
+            "rewrite": True,
+            "stream": False,
+            "upstream_status": 200,
+            "score": None,
+            "second_score": None,
+            "duration_ms": route_logs[0]["duration_ms"],
+        }
+    ]
+    serialized = "\n".join(record.message for record in caplog.records)
+    assert "敏感 prompt" not in serialized
+    assert "Bearer litellm-test" not in serialized
+
+
+def test_streaming_chat_completion_logs_after_body_iteration(caplog):
+    proxy = FakeProxy()
+    app = create_app(
+        router=FakeRouter(
+            RoutingDecision(
+                "pro-router",
+                "hard_rule:线上",
+                rewrite=True,
+                source_model="smart-router",
+            )
+        ),
+        proxy=proxy,
+    )
+
+    with caplog.at_level(logging.INFO, logger="gateway_semantic_router"):
+        with TestClient(app).stream(
+            "POST",
+            "/v1/chat/completions",
+            headers={"x-request-id": "stream-request-1"},
+            json={
+                "model": "smart-router",
+                "stream": True,
+                "messages": [{"role": "user", "content": "这个线上 bug 为什么偶发"}],
+            },
+        ) as response:
+            response.read()
+
+    assert response.headers["x-router-request-id"] == "stream-request-1"
+    records = [json.loads(record.message) for record in caplog.records]
+    route_logs = [record for record in records if record["event"] == "route_complete"]
+    assert len(route_logs) == 1
+    assert route_logs[0]["request_id"] == "stream-request-1"
+    assert route_logs[0]["target_model"] == "pro-router"
+    assert route_logs[0]["stream"] is True
+    assert route_logs[0]["upstream_status"] == 200
+
+
+async def test_streaming_chat_completion_logs_when_client_closes_early(caplog):
+    class StreamContext:
+        def __init__(self):
+            self.exit_calls = 0
+
+        async def __aexit__(self, exc_type, exc, traceback):
+            self.exit_calls += 1
+
+    async def chunks():
+        yield b"data: first\n\n"
+        yield b"data: [DONE]\n\n"
+
+    stream_context = StreamContext()
+
+    with caplog.at_level(logging.INFO, logger="gateway_semantic_router"):
+        stream = stream_with_context(
+            chunks(),
+            stream_context,
+            request_id="stream-request-closed",
+            decision=RoutingDecision(
+                "pro-router",
+                "hard_rule:线上",
+                rewrite=True,
+                source_model="smart-router",
+            ),
+            upstream_status=200,
+            started_ms=0,
+        )
+        assert await anext(stream) == b"data: first\n\n"
+        await stream.aclose()
+
+    records = [json.loads(record.message) for record in caplog.records]
+    route_logs = [record for record in records if record["event"] == "route_complete"]
+    assert stream_context.exit_calls == 1
+    assert len(route_logs) == 1
+    assert route_logs[0]["request_id"] == "stream-request-closed"
+    assert route_logs[0]["stream"] is True

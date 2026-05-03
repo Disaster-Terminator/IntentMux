@@ -63,6 +63,16 @@ uv run python -m pytest -q
 uv run python scripts/eval_routes.py --mock-embeddings
 ```
 
+Production preflight against a running router:
+
+```bash
+uv run python scripts/preflight.py --router-base-url http://127.0.0.1:4001
+```
+
+The preflight requires `LITELLM_MASTER_KEY` in the environment or `--api-key`.
+It checks health, non-streaming route headers, streaming route headers, and SSE
+body shape without printing secrets or prompts.
+
 For a live sidecar request, pass the same LiteLLM `Authorization` header to
 `http://127.0.0.1:4001/v1/chat/completions`.
 

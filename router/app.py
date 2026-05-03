@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 from typing import Any
-from urllib.parse import quote
 
 import uvicorn
 from fastapi import FastAPI, Request
@@ -10,6 +9,13 @@ from fastapi.responses import Response, StreamingResponse
 
 from router.config import RouterSettings, load_settings
 from router.embedding import OpenAIEmbeddingClient
+from router.observability import (
+    configure_logging,
+    log_route_complete,
+    now_ms,
+    request_id_from_headers,
+    route_headers,
+)
 from router.proxy import LiteLLMProxy
 from router.routing import Router
 
@@ -40,34 +46,44 @@ def create_app(
 
     @app.post("/v1/chat/completions")
     async def chat_completions(request: Request) -> Response:
+        started_ms = now_ms()
+        request_headers = dict(request.headers)
+        request_id = request_id_from_headers(request_headers)
         payload: dict[str, Any] = await request.json()
         decision = await router.decide(payload)
         forwarded_payload = dict(payload)
         forwarded_payload["model"] = decision.target_model
-        logger.info(
-            "route source=%s target=%s reason=%s score=%s second_score=%s",
-            decision.source_model,
-            decision.target_model,
-            decision.reason,
-            decision.score,
-            decision.second_score,
-        )
-        router_headers = route_headers(decision.target_model, decision.reason)
+        router_headers = route_headers(decision.target_model, decision.reason, request_id)
         if forwarded_payload.get("stream") is True:
-            stream_context = proxy.stream_chat(forwarded_payload, dict(request.headers))
+            stream_context = proxy.stream_chat(forwarded_payload, request_headers)
             upstream = await stream_context.__aenter__()
             headers = dict(upstream.headers)
             headers.update(router_headers)
             return StreamingResponse(
-                stream_with_context(upstream.content, stream_context),
+                stream_with_context(
+                    upstream.content,
+                    stream_context,
+                    request_id=request_id,
+                    decision=decision,
+                    upstream_status=upstream.status_code,
+                    started_ms=started_ms,
+                ),
                 status_code=upstream.status_code,
                 headers=headers,
                 media_type=headers.get("content-type", "text/event-stream"),
             )
 
-        upstream = await proxy.forward_chat(forwarded_payload, dict(request.headers))
+        upstream = await proxy.forward_chat(forwarded_payload, request_headers)
         headers = dict(upstream.headers)
         headers.update(router_headers)
+        log_route_complete(
+            logger,
+            request_id=request_id,
+            decision=decision,
+            stream=False,
+            upstream_status=upstream.status_code,
+            started_ms=started_ms,
+        )
         return Response(
             content=upstream.content,
             status_code=upstream.status_code,
@@ -78,26 +94,36 @@ def create_app(
     return app
 
 
-def route_headers(target_model: str, reason: str) -> dict[str, str]:
-    return {
-        "x-router-target-model": target_model,
-        "x-router-reason": quote(reason, safe=":._-"),
-    }
-
-
-async def stream_with_context(body_iterator, stream_context):
+async def stream_with_context(
+    body_iterator,
+    stream_context,
+    *,
+    request_id: str,
+    decision,
+    upstream_status: int,
+    started_ms: float,
+):
+    exc_info = (None, None, None)
     try:
         async for chunk in body_iterator:
             yield chunk
     except BaseException as exc:
-        await stream_context.__aexit__(type(exc), exc, exc.__traceback__)
+        exc_info = (type(exc), exc, exc.__traceback__)
         raise
-    else:
-        await stream_context.__aexit__(None, None, None)
+    finally:
+        await stream_context.__aexit__(*exc_info)
+        log_route_complete(
+            logger,
+            request_id=request_id,
+            decision=decision,
+            stream=True,
+            upstream_status=upstream_status,
+            started_ms=started_ms,
+        )
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    configure_logging()
     settings = load_settings()
     uvicorn.run(
         create_app(settings=settings),
