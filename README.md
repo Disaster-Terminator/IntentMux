@@ -39,6 +39,8 @@ The compose service should use:
 - embedding URL from container to host LM Studio:
   `http://host.docker.internal:1234/v1/embeddings`
 - exposed router port: `4001`
+- optional generated semantic asset mount:
+  `/path/to/gateway/gateway-semantic-router/data/semantic_sets:/app/data/semantic_sets:ro`
 
 Default endpoints:
 
