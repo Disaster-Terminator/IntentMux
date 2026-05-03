@@ -126,3 +126,10 @@ routes:
         "seed cheap utterance",
         "generated cheap utterance",
     ]
+
+
+def test_default_hard_rules_do_not_include_ambiguous_production_word():
+    settings = load_settings("config/routes.yaml")
+
+    assert "生产" not in settings.pro_hard_rules
+    assert "线上" in settings.pro_hard_rules

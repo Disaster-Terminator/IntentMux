@@ -21,6 +21,7 @@ from router.routing import Router
 class EvalCase:
     text: str
     expect: str
+    source: str = "unknown"
 
 
 class MockEmbeddingClient:

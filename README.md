@@ -94,6 +94,7 @@ Build dependencies are isolated from runtime:
 ```bash
 uv sync --group assets
 uv run python scripts/build_route_bank.py
+uv run python scripts/build_eval_bank.py --per-route-limit 100
 ```
 
 Generated route banks should retain each utterance's source name so eval
@@ -103,3 +104,10 @@ Runtime loading is conservative: `config/routes.yaml` declares
 `route_bank_path: data/semantic_sets/route_bank.yaml`, and `load_settings()`
 merges that generated bank with the seed utterances only when the file exists.
 If the bank is absent, the router keeps using the checked-in seed routes.
+
+The generated eval bank is also kept out of git. A 200+ case regression run can
+be reproduced after building the route bank:
+
+```bash
+uv run python scripts/eval_routes.py --cases data/semantic_sets/eval_bank.yaml
+```
