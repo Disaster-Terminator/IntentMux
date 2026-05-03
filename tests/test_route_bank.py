@@ -1,18 +1,22 @@
 from __future__ import annotations
 
+import io
+import json
+import tarfile
 from pathlib import Path
 
 from scripts.build_route_bank import (
     RouteSource,
     SourceMapping,
     build_route_bank,
+    load_rows,
     load_sources,
     normalize_text,
 )
 
 
 def test_normalize_text_compacts_whitespace_and_truncates():
-    text = "  hello\n\nworld  " + "x" * 500
+    text = "  # hello\n\n<!-- hidden issue template -->world  " + "x" * 500
 
     normalized = normalize_text(text, max_chars=20)
 
@@ -81,3 +85,36 @@ def test_route_sources_manifest_loads_mature_sources():
     assert "mbpp_codegen" in names
     assert "humaneval_codegen" in names
     assert "local_model_probe" in names
+
+
+def test_load_rows_reads_remote_tar_jsonl_from_cache(tmp_path):
+    archive_path = tmp_path / "data" / "downloads" / "sample.tar.gz"
+    archive_path.parent.mkdir(parents=True)
+    payload = "\n".join(
+        [
+            json.dumps({"utt": "你好", "partition": "train"}, ensure_ascii=False),
+            json.dumps({"utt": "再见", "partition": "test"}, ensure_ascii=False),
+        ]
+    ).encode("utf-8")
+    with tarfile.open(archive_path, "w:gz") as archive:
+        info = tarfile.TarInfo("data/zh-CN.jsonl")
+        info.size = len(payload)
+        archive.addfile(info, io.BytesIO(payload))
+
+    rows = load_rows(
+        RouteSource(
+            name="sample",
+            kind="remote_tar_jsonl",
+            route="cheap-router",
+            text_field="utt",
+            limit=10,
+            url="https://example.com/sample.tar.gz",
+            member="data/zh-CN.jsonl",
+        ),
+        tmp_path,
+    )
+
+    assert rows == [
+        {"utt": "你好", "partition": "train"},
+        {"utt": "再见", "partition": "test"},
+    ]

@@ -7,4 +7,6 @@ __pycache__/
 .env
 dist/
 build/
-
+data/downloads/
+data/semantic_sets/*.yaml
+data/semantic_sets/*.jsonl

@@ -3,6 +3,8 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import tarfile
+import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -25,6 +27,8 @@ class RouteSource:
     text_field: str
     limit: int
     path: str | None = None
+    url: str | None = None
+    member: str | None = None
     dataset: str | None = None
     subset: str | None = None
     split: str | None = None
@@ -32,7 +36,11 @@ class RouteSource:
 
 
 def normalize_text(text: str, max_chars: int = 240) -> str:
-    return re.sub(r"\s+", " ", text).strip()[:max_chars]
+    without_comments = re.sub(r"<!--.*?-->", " ", text, flags=re.DOTALL)
+    without_markdown_headings = re.sub(
+        r"^\s*#+\s*", "", without_comments, flags=re.MULTILINE
+    )
+    return re.sub(r"\s+", " ", without_markdown_headings).strip()[:max_chars]
 
 
 def build_route_bank(
@@ -81,6 +89,8 @@ def load_sources(path: Path) -> list[RouteSource]:
             text_field=item["text_field"],
             limit=int(item.get("limit", 100)),
             path=item.get("path"),
+            url=item.get("url"),
+            member=item.get("member"),
             dataset=item.get("dataset"),
             subset=item.get("subset"),
             split=item.get("split"),
@@ -109,6 +119,21 @@ def load_rows(source: RouteSource, base_dir: Path) -> list[dict[str, Any]]:
                     rows.append(json.loads(line))
         return rows
 
+    if source.kind == "remote_tar_jsonl":
+        if source.url is None or source.member is None:
+            raise ValueError(f"{source.name} remote_tar_jsonl source requires url and member")
+        archive_path = cached_download(source.url, base_dir / "data" / "downloads")
+        rows = []
+        with tarfile.open(archive_path, "r:gz") as archive:
+            member_file = archive.extractfile(source.member)
+            if member_file is None:
+                raise ValueError(f"{source.member} not found in {archive_path}")
+            for raw_line in member_file:
+                line = raw_line.decode("utf-8").strip()
+                if line:
+                    rows.append(json.loads(line))
+        return rows
+
     if source.kind == "huggingface":
         try:
             from datasets import load_dataset
@@ -126,6 +151,15 @@ def load_rows(source: RouteSource, base_dir: Path) -> list[dict[str, Any]]:
         return []
 
     raise ValueError(f"unsupported source kind: {source.kind}")
+
+
+def cached_download(url: str, download_dir: Path) -> Path:
+    download_dir.mkdir(parents=True, exist_ok=True)
+    filename = url.rstrip("/").split("/")[-1]
+    target = download_dir / filename
+    if not target.exists():
+        urllib.request.urlretrieve(url, target)
+    return target
 
 
 def main() -> None:
@@ -150,4 +184,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

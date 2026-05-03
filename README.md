@@ -28,6 +28,10 @@ uv run python -m router.app
 The router is packaged with `Dockerfile` and is intended to run as a sibling
 service in the LiteLLM compose project, not as an ad-hoc local process.
 
+It remains a third-party sidecar. Future lifecycle coupling may bind it more
+closely to the LiteLLM service readiness/restart lifecycle, but that coupling is
+still a design item rather than current behavior. See `docs/roadmap.md`.
+
 The compose service should use:
 
 - build context: `/home/raystorm/gateway/gateway-semantic-router`
@@ -77,7 +81,10 @@ from declared sources in `config/route_sources.yaml`.
 The initial source manifest references mature datasets rather than hand-written
 keyword expansion:
 
-- MASSIVE zh-CN / zh-TW for general assistant and utility utterances.
+- MASSIVE zh-CN / zh-TW official JSONL tarball for general assistant and
+  utility utterances. The current Hugging Face `datasets` loader cannot load
+  `AmazonScience/massive` directly because that dataset still uses a dataset
+  script, so the builder reads the official release archive instead.
 - SWE-bench issue statements for repository-level software engineering tasks.
 - MBPP and HumanEval for code-generation prompts.
 - Local JSONL samples for model-probe traffic.
