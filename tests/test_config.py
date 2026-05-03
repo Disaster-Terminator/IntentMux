@@ -133,3 +133,24 @@ def test_default_hard_rules_do_not_include_ambiguous_production_word():
 
     assert "生产" not in settings.pro_hard_rules
     assert "线上" in settings.pro_hard_rules
+
+
+def test_load_settings_reads_litellm_timeout_override(tmp_path: Path, monkeypatch):
+    routes_path = tmp_path / "routes.yaml"
+    routes_path.write_text(
+        """
+route_model: semantic-router
+default_route: cheap-router
+routes:
+  cheap-router:
+    description: seed cheap
+    utterances:
+      - seed cheap utterance
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("ROUTER_LITELLM_TIMEOUT", "123.5")
+
+    settings = load_settings(routes_path)
+
+    assert settings.litellm_timeout == 123.5

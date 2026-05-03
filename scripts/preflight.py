@@ -52,7 +52,7 @@ def summarize_results(results: list[CheckResult]) -> None:
 
 def chat_payload(stream: bool) -> dict:
     return {
-        "model": "smart-router",
+        "model": "semantic-router",
         "stream": stream,
         "messages": [
             {

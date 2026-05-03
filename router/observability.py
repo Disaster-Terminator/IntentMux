@@ -12,8 +12,21 @@ from router.routing import RoutingDecision
 LOGGER_NAME = "gateway_semantic_router"
 
 
-def request_id_from_headers(headers: dict[str, str]) -> str:
-    return headers.get("x-request-id") or headers.get("x-correlation-id") or str(uuid.uuid4())
+def request_id_from_request(headers: dict[str, str], payload: dict[str, Any]) -> str:
+    metadata = payload.get("metadata")
+    metadata_request_id = None
+    if isinstance(metadata, dict):
+        metadata_request_id = metadata.get("semantic_router_request_id")
+    user_request_id = payload.get("user")
+    if not isinstance(user_request_id, str):
+        user_request_id = None
+    return (
+        headers.get("x-request-id")
+        or headers.get("x-correlation-id")
+        or metadata_request_id
+        or user_request_id
+        or str(uuid.uuid4())
+    )
 
 
 def now_ms() -> float:
@@ -50,6 +63,36 @@ def log_route_complete(
                 "rewrite": decision.rewrite,
                 "stream": stream,
                 "upstream_status": upstream_status,
+                "score": decision.score,
+                "second_score": decision.second_score,
+                "duration_ms": round(now_ms() - started_ms, 2),
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+    )
+
+
+def log_route_error(
+    logger: logging.Logger,
+    *,
+    request_id: str,
+    decision: RoutingDecision,
+    stream: bool,
+    error: BaseException,
+    started_ms: float,
+) -> None:
+    logger.info(
+        json.dumps(
+            {
+                "event": "route_error",
+                "request_id": request_id,
+                "source_model": decision.source_model,
+                "target_model": decision.target_model,
+                "reason": decision.reason,
+                "rewrite": decision.rewrite,
+                "stream": stream,
+                "error_type": type(error).__name__,
                 "score": decision.score,
                 "second_score": decision.second_score,
                 "duration_ms": round(now_ms() - started_ms, 2),

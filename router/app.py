@@ -12,8 +12,9 @@ from router.embedding import OpenAIEmbeddingClient
 from router.observability import (
     configure_logging,
     log_route_complete,
+    log_route_error,
     now_ms,
-    request_id_from_headers,
+    request_id_from_request,
     route_headers,
 )
 from router.proxy import LiteLLMProxy
@@ -36,7 +37,7 @@ def create_app(
             OpenAIEmbeddingClient(settings.embedding_url, settings.embedding_model),
         )
     if proxy is None:
-        proxy = LiteLLMProxy(settings.litellm_base_url)
+        proxy = LiteLLMProxy(settings.litellm_base_url, timeout=settings.litellm_timeout)
 
     app = FastAPI(title="Gateway Semantic Router")
 
@@ -48,15 +49,26 @@ def create_app(
     async def chat_completions(request: Request) -> Response:
         started_ms = now_ms()
         request_headers = dict(request.headers)
-        request_id = request_id_from_headers(request_headers)
         payload: dict[str, Any] = await request.json()
+        request_id = request_id_from_request(request_headers, payload)
         decision = await router.decide(payload)
         forwarded_payload = dict(payload)
         forwarded_payload["model"] = decision.target_model
         router_headers = route_headers(decision.target_model, decision.reason, request_id)
         if forwarded_payload.get("stream") is True:
             stream_context = proxy.stream_chat(forwarded_payload, request_headers)
-            upstream = await stream_context.__aenter__()
+            try:
+                upstream = await stream_context.__aenter__()
+            except Exception as exc:
+                log_route_error(
+                    logger,
+                    request_id=request_id,
+                    decision=decision,
+                    stream=True,
+                    error=exc,
+                    started_ms=started_ms,
+                )
+                raise
             headers = dict(upstream.headers)
             headers.update(router_headers)
             return StreamingResponse(
@@ -73,7 +85,18 @@ def create_app(
                 media_type=headers.get("content-type", "text/event-stream"),
             )
 
-        upstream = await proxy.forward_chat(forwarded_payload, request_headers)
+        try:
+            upstream = await proxy.forward_chat(forwarded_payload, request_headers)
+        except Exception as exc:
+            log_route_error(
+                logger,
+                request_id=request_id,
+                decision=decision,
+                stream=False,
+                error=exc,
+                started_ms=started_ms,
+            )
+            raise
         headers = dict(upstream.headers)
         headers.update(router_headers)
         log_route_complete(
