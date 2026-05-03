@@ -18,6 +18,8 @@ HOP_BY_HOP_HEADERS = {
     "upgrade",
     "host",
     "content-length",
+    "date",
+    "server",
 }
 
 

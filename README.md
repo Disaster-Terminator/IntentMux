@@ -56,6 +56,20 @@ Environment overrides:
 - `ROUTER_EMBEDDING_URL`
 - `ROUTER_EMBEDDING_MODEL`
 
+## LiteLLM Entry Design
+
+The low-intrusion production direction is to keep upstream clients on the
+LiteLLM base URL and expose the sidecar as a LiteLLM model entry named
+`semantic-router`. In that shape, clients keep `http://127.0.0.1:4000` and opt
+in by changing only the model name.
+
+LiteLLM's native `smart-router` should remain separate. It continues to mean
+LiteLLM's built-in complexity router, while `semantic-router` means this
+sidecar's semantic task router.
+
+Current proof and acceptance criteria are documented in
+`docs/superpowers/specs/2026-05-03-litellm-semantic-router-entry-design.md`.
+
 ## Verification
 
 ```bash
