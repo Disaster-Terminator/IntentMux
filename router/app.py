@@ -6,7 +6,7 @@ from urllib.parse import quote
 
 import uvicorn
 from fastapi import FastAPI, Request
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
 
 from router.config import RouterSettings, load_settings
 from router.embedding import OpenAIEmbeddingClient
@@ -52,10 +52,22 @@ def create_app(
             decision.score,
             decision.second_score,
         )
+        router_headers = route_headers(decision.target_model, decision.reason)
+        if forwarded_payload.get("stream") is True:
+            stream_context = proxy.stream_chat(forwarded_payload, dict(request.headers))
+            upstream = await stream_context.__aenter__()
+            headers = dict(upstream.headers)
+            headers.update(router_headers)
+            return StreamingResponse(
+                stream_with_context(upstream.content, stream_context),
+                status_code=upstream.status_code,
+                headers=headers,
+                media_type=headers.get("content-type", "text/event-stream"),
+            )
+
         upstream = await proxy.forward_chat(forwarded_payload, dict(request.headers))
         headers = dict(upstream.headers)
-        headers["x-router-target-model"] = decision.target_model
-        headers["x-router-reason"] = quote(decision.reason, safe=":._-")
+        headers.update(router_headers)
         return Response(
             content=upstream.content,
             status_code=upstream.status_code,
@@ -64,6 +76,24 @@ def create_app(
         )
 
     return app
+
+
+def route_headers(target_model: str, reason: str) -> dict[str, str]:
+    return {
+        "x-router-target-model": target_model,
+        "x-router-reason": quote(reason, safe=":._-"),
+    }
+
+
+async def stream_with_context(body_iterator, stream_context):
+    try:
+        async for chunk in body_iterator:
+            yield chunk
+    except BaseException as exc:
+        await stream_context.__aexit__(type(exc), exc, exc.__traceback__)
+        raise
+    else:
+        await stream_context.__aexit__(None, None, None)
 
 
 def main() -> None:
