@@ -122,6 +122,11 @@ This is covered by `tests/test_proxy.py`.
   the outer `:4000` response. Route decisions must be read from sidecar
   structured logs, or a later observability enhancement must explicitly publish
   route metadata elsewhere.
+- **Correlation:** In production E2E, LiteLLM's model-entry path did not forward
+  client-supplied `x-request-id`, `metadata.semantic_router_request_id`, or
+  `user` to the sidecar. Current E2E therefore verifies route logs by recent
+  route shape. Exact cross-layer correlation remains a follow-up item for a
+  LiteLLM callback, OTEL integration, or front-door reverse proxy.
 - **Endpoint coverage:** The current sidecar supports `/v1/chat/completions`
   with non-stream and SSE stream. LiteLLM remains the public entry for model
   listing, UI, auth, budgets, and other proxy endpoints. `/v1/responses` is not

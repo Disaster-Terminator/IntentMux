@@ -53,6 +53,7 @@ Environment overrides:
 - `ROUTER_HOST`
 - `ROUTER_PORT`
 - `ROUTER_LITELLM_BASE_URL`
+- `ROUTER_LITELLM_TIMEOUT`
 - `ROUTER_EMBEDDING_URL`
 - `ROUTER_EMBEDDING_MODEL`
 
@@ -87,6 +88,19 @@ The preflight requires `LITELLM_MASTER_KEY` in the environment or `--api-key`.
 It checks health, non-streaming route headers, streaming route headers, and SSE
 body shape without printing secrets or prompts.
 
+Production E2E through the LiteLLM entrypoint:
+
+```bash
+uv run python scripts/e2e_litellm_entry.py --litellm-base-url http://127.0.0.1:4000
+```
+
+The E2E checks `model=semantic-router` through LiteLLM `:4000`, verifies
+non-streaming and streaming responses, and confirms sidecar route logs for
+`pro-router`, `cheap-router`, and `free-probe-router`. LiteLLM's model-entry
+path does not currently preserve client-supplied correlation IDs to the sidecar,
+so the script first tries request-id matching and then falls back to recent route
+shape matching.
+
 For a live sidecar request, pass the same LiteLLM `Authorization` header to
 `http://127.0.0.1:4001/v1/chat/completions`.
 
@@ -96,7 +110,7 @@ Streaming smoke test:
 curl -N http://127.0.0.1:4001/v1/chat/completions \
   -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"model":"smart-router","stream":true,"messages":[{"role":"user","content":"这个线上 bug 为什么偶发？只回答 OK"}],"max_tokens":8}'
+  -d '{"model":"semantic-router","stream":true,"messages":[{"role":"user","content":"这个线上 bug 为什么偶发？只回答 OK"}],"max_tokens":8}'
 ```
 
 ## Semantic Assets

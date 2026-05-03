@@ -68,6 +68,13 @@ class FakeProxy:
             self.stream_context_closed = True
 
 
+class FailingProxy(FakeProxy):
+    async def forward_chat(self, payload: dict[str, Any], headers: dict[str, str]):
+        self.payloads.append(payload)
+        self.headers.append(headers)
+        raise TimeoutError("upstream timed out")
+
+
 def test_health_reports_ready():
     app = create_app(
         router=FakeRouter(
@@ -224,6 +231,106 @@ def test_chat_completion_emits_structured_log_without_sensitive_payload(caplog):
             "duration_ms": route_logs[0]["duration_ms"],
         }
     ]
+    serialized = "\n".join(record.message for record in caplog.records)
+    assert "敏感 prompt" not in serialized
+    assert "Bearer litellm-test" not in serialized
+
+
+def test_chat_completion_uses_metadata_request_id_when_header_is_not_forwarded(caplog):
+    proxy = FakeProxy()
+    app = create_app(
+        router=FakeRouter(
+            RoutingDecision(
+                "pro-router",
+                "hard_rule:线上",
+                rewrite=True,
+                source_model="semantic-router",
+            )
+        ),
+        proxy=proxy,
+    )
+
+    with caplog.at_level(logging.INFO, logger="gateway_semantic_router"):
+        response = TestClient(app).post(
+            "/v1/chat/completions",
+            json={
+                "model": "semantic-router",
+                "metadata": {
+                    "semantic_router_request_id": "metadata-request-1",
+                },
+                "messages": [{"role": "user", "content": "这个线上 bug 为什么偶发"}],
+            },
+        )
+
+    assert response.headers["x-router-request-id"] == "metadata-request-1"
+    records = [json.loads(record.message) for record in caplog.records]
+    route_logs = [record for record in records if record["event"] == "route_complete"]
+    assert route_logs[0]["request_id"] == "metadata-request-1"
+
+
+def test_chat_completion_uses_user_request_id_when_proxy_drops_metadata(caplog):
+    proxy = FakeProxy()
+    app = create_app(
+        router=FakeRouter(
+            RoutingDecision(
+                "pro-router",
+                "hard_rule:线上",
+                rewrite=True,
+                source_model="semantic-router",
+            )
+        ),
+        proxy=proxy,
+    )
+
+    with caplog.at_level(logging.INFO, logger="gateway_semantic_router"):
+        response = TestClient(app).post(
+            "/v1/chat/completions",
+            json={
+                "model": "semantic-router",
+                "user": "user-request-1",
+                "messages": [{"role": "user", "content": "这个线上 bug 为什么偶发"}],
+            },
+        )
+
+    assert response.headers["x-router-request-id"] == "user-request-1"
+    records = [json.loads(record.message) for record in caplog.records]
+    route_logs = [record for record in records if record["event"] == "route_complete"]
+    assert route_logs[0]["request_id"] == "user-request-1"
+
+
+def test_chat_completion_logs_structured_route_error_without_sensitive_payload(caplog):
+    app = create_app(
+        router=FakeRouter(
+            RoutingDecision(
+                "cheap-router",
+                "embedding",
+                rewrite=True,
+                source_model="semantic-router",
+                score=0.7,
+                second_score=0.2,
+            )
+        ),
+        proxy=FailingProxy(),
+    )
+
+    with caplog.at_level(logging.INFO, logger="gateway_semantic_router"):
+        response = TestClient(app, raise_server_exceptions=False).post(
+            "/v1/chat/completions",
+            headers={"Authorization": "Bearer litellm-test"},
+            json={
+                "model": "semantic-router",
+                "metadata": {"semantic_router_request_id": "error-request-1"},
+                "messages": [{"role": "user", "content": "敏感 prompt"}],
+            },
+        )
+
+    assert response.status_code == 500
+    records = [json.loads(record.message) for record in caplog.records]
+    route_logs = [record for record in records if record["event"] == "route_error"]
+    assert len(route_logs) == 1
+    assert route_logs[0]["request_id"] == "error-request-1"
+    assert route_logs[0]["target_model"] == "cheap-router"
+    assert route_logs[0]["error_type"] == "TimeoutError"
     serialized = "\n".join(record.message for record in caplog.records)
     assert "敏感 prompt" not in serialized
     assert "Bearer litellm-test" not in serialized
