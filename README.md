@@ -87,6 +87,17 @@ uv run python -m pytest -q
 uv run python scripts/eval_routes.py --mock-embeddings
 ```
 
+## CI
+
+GitHub Actions PR CI runs only the baseline automated checks:
+
+- `uv run python -m pytest -q`
+- `uv run python scripts/eval_routes.py --mock-embeddings`
+
+This CI is intentionally minimal and does not claim full production validation.
+Live preflight, LiteLLM-entry E2E, Docker log summary/review, and route-error
+budget checks remain operator/local-production checks.
+
 Production preflight against a running router:
 
 ```bash
