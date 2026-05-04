@@ -262,3 +262,90 @@ def test_cli_reports_parse_diagnostics_for_malformed_or_partial_logs(monkeypatch
     assert exit_code == 0
     assert "parse_diagnostics: malformed_json=1" in output
     assert "missing_event=1" in output
+
+
+def test_parse_diagnostic_thresholds_disabled_by_default():
+    records = records_from_text('{"event":"route_complete","target_model":"pro-router"}')
+    result = check_budget(
+        records,
+        BudgetConfig(min_total=1, max_error_rate=0.0),
+        parse_diagnostics=ParseDiagnostics(
+            malformed_json_lines=5,
+            missing_event_records=3,
+            unknown_event_records=2,
+        ),
+    )
+
+    assert result.passed is True
+    assert result.reasons == []
+    assert result.ignored_records == 10
+
+
+def test_check_budget_fails_when_malformed_json_exceeds_budget():
+    records = records_from_text('{"event":"route_complete","target_model":"pro-router"}')
+    result = check_budget(
+        records,
+        BudgetConfig(min_total=1, max_error_rate=0.0, max_malformed_json=0),
+        parse_diagnostics=ParseDiagnostics(malformed_json_lines=2),
+    )
+
+    assert result.passed is False
+    assert "malformed_json 2 exceeds max_malformed_json 0" in result.reasons
+
+
+def test_check_budget_fails_when_missing_event_exceeds_budget():
+    records = records_from_text('{"event":"route_complete","target_model":"pro-router"}')
+    result = check_budget(
+        records,
+        BudgetConfig(min_total=1, max_error_rate=0.0, max_missing_event=0),
+        parse_diagnostics=ParseDiagnostics(missing_event_records=1),
+    )
+
+    assert result.passed is False
+    assert "missing_event 1 exceeds max_missing_event 0" in result.reasons
+
+
+def test_check_budget_fails_when_unknown_event_exceeds_budget():
+    records = records_from_text('{"event":"route_complete","target_model":"pro-router"}')
+    result = check_budget(
+        records,
+        BudgetConfig(min_total=1, max_error_rate=0.0, max_unknown_event=0),
+        parse_diagnostics=ParseDiagnostics(unknown_event_records=4),
+    )
+
+    assert result.passed is False
+    assert "unknown_event 4 exceeds max_unknown_event 0" in result.reasons
+
+
+def test_check_budget_fails_when_ignored_records_exceeds_budget():
+    records = records_from_text('{"event":"route_complete","target_model":"pro-router"}')
+    result = check_budget(
+        records,
+        BudgetConfig(min_total=1, max_error_rate=0.0, max_ignored_records=2),
+        parse_diagnostics=ParseDiagnostics(
+            malformed_json_lines=1,
+            missing_event_records=1,
+            unknown_event_records=1,
+        ),
+    )
+
+    assert result.passed is False
+    assert result.ignored_records == 3
+    assert "ignored_records 3 exceeds max_ignored_records 2" in result.reasons
+
+
+def test_cli_fails_when_parse_diagnostics_threshold_exceeded(monkeypatch, capsys):
+    monkeypatch.setattr(
+        sys,
+        "stdin",
+        [
+            '{"event":"route_complete","target_model":"pro-router"}\n',
+            '{"event":"route_error",\n',
+        ],
+    )
+
+    exit_code = main(["--min-total", "1", "--max-error-rate", "1", "--max-malformed-json", "0"])
+
+    output = capsys.readouterr().out
+    assert exit_code == 1
+    assert "reasons: malformed_json 1 exceeds max_malformed_json 0" in output

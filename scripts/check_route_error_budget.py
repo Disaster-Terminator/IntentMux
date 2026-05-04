@@ -18,6 +18,10 @@ class BudgetConfig:
     max_error_rate: float = 0.0
     max_target_error_rate: float = 0.0
     max_reason_rates: dict[str, float] | None = None
+    max_malformed_json: int | None = None
+    max_missing_event: int | None = None
+    max_unknown_event: int | None = None
+    max_ignored_records: int | None = None
 
 
 @dataclass(frozen=True)
@@ -32,6 +36,7 @@ class BudgetResult:
     error_types: dict[str, int]
     reasons: list[str]
     parse_diagnostics: ParseDiagnostics
+    ignored_records: int
 
 
 def check_budget(
@@ -96,6 +101,29 @@ def check_budget(
                 f"reason {reason} rate {reason_rate:.4f} "
                 f"exceeds max_reason_rate {max_reason_rate:.4f}"
             )
+    diagnostics = parse_diagnostics or ParseDiagnostics()
+    diagnostics_budgets = (
+        ("malformed_json", diagnostics.malformed_json_lines, config.max_malformed_json),
+        ("missing_event", diagnostics.missing_event_records, config.max_missing_event),
+        ("unknown_event", diagnostics.unknown_event_records, config.max_unknown_event),
+    )
+    for name, count, max_count in diagnostics_budgets:
+        if max_count is not None and count > max_count:
+            reasons.append(f"{name} {count} exceeds max_{name} {max_count}")
+
+    ignored_records = (
+        diagnostics.malformed_json_lines
+        + diagnostics.missing_event_records
+        + diagnostics.unknown_event_records
+    )
+    if (
+        config.max_ignored_records is not None
+        and ignored_records > config.max_ignored_records
+    ):
+        reasons.append(
+            f"ignored_records {ignored_records} exceeds "
+            f"max_ignored_records {config.max_ignored_records}"
+        )
 
     return BudgetResult(
         passed=not reasons,
@@ -107,7 +135,8 @@ def check_budget(
         reason_rates=reason_rates,
         error_types=dict(error_types),
         reasons=reasons,
-        parse_diagnostics=parse_diagnostics or ParseDiagnostics(),
+        parse_diagnostics=diagnostics,
+        ignored_records=ignored_records,
     )
 
 
@@ -176,6 +205,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--min-total", type=int, default=1)
     parser.add_argument("--max-error-rate", type=float, default=0.0)
     parser.add_argument("--max-target-error-rate", type=float, default=0.0)
+    parser.add_argument("--max-malformed-json", type=int, default=None)
+    parser.add_argument("--max-missing-event", type=int, default=None)
+    parser.add_argument("--max-unknown-event", type=int, default=None)
+    parser.add_argument("--max-ignored-records", type=int, default=None)
     parser.add_argument(
         "--max-reason-rate",
         action="append",
@@ -201,6 +234,10 @@ def main(argv: list[str] | None = None) -> int:
             max_error_rate=args.max_error_rate,
             max_target_error_rate=args.max_target_error_rate,
             max_reason_rates=dict(args.max_reason_rate),
+            max_malformed_json=args.max_malformed_json,
+            max_missing_event=args.max_missing_event,
+            max_unknown_event=args.max_unknown_event,
+            max_ignored_records=args.max_ignored_records,
         ),
         parse_diagnostics=diagnostics,
     )
