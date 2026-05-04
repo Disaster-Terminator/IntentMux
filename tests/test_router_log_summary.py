@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-from scripts.router_log_summary import format_summary, parse_route_records, summarize_records
+from scripts.router_log_summary import (
+    format_diagnostics,
+    format_summary,
+    parse_route_records,
+    parse_route_records_with_diagnostics,
+    summarize_records,
+)
 
 
 def test_parse_route_records_ignores_access_logs_and_non_route_json():
@@ -102,4 +108,32 @@ def test_format_summary_is_stable_for_runbooks():
             "upstream_statuses: 503=1",
             "max_duration_ms=1400.00",
         ]
+    )
+
+
+def test_parse_route_records_with_diagnostics_reports_malformed_and_partial_lines():
+    records, diagnostics = parse_route_records_with_diagnostics(
+        [
+            'INFO:     127.0.0.1:1 - "GET /health HTTP/1.1" 200 OK',
+            '{"event":"startup","status":"ok"}',
+            '{"event":"route_complete","reason":"hard_rule:线上","stream":true}',
+            '{"event":"route_error","target_model":"pro-router"}',
+            '{"event":"route_complete","target_model":"cheap-router","stream":false}',
+            "{broken",
+        ]
+    )
+
+    assert len(records) == 3
+    assert diagnostics.total_lines == 6
+    assert diagnostics.parsed_route_events == 3
+    assert diagnostics.malformed_json_lines == 1
+    assert diagnostics.non_route_json_lines == 1
+    assert diagnostics.non_json_lines == 1
+    assert diagnostics.missing_target_model == 1
+    assert diagnostics.missing_stream_flag == 1
+    assert (
+        format_diagnostics(diagnostics)
+        == "parse_diagnostics: total_lines=6 parsed_route_events=3 "
+        "malformed_json_lines=1 non_route_json_lines=1 non_json_lines=1 "
+        "missing_target_model=1 missing_stream_flag=1"
     )

@@ -24,6 +24,17 @@ class RouteLogSummary:
     max_duration_ms: float
 
 
+@dataclass(frozen=True)
+class ParseDiagnostics:
+    total_lines: int
+    parsed_route_events: int
+    malformed_json_lines: int
+    non_route_json_lines: int
+    non_json_lines: int
+    missing_target_model: int
+    missing_stream_flag: int
+
+
 def parse_route_records(lines: Iterable[str]) -> Iterable[dict[str, Any]]:
     for line in lines:
         line = line.strip()
@@ -36,6 +47,49 @@ def parse_route_records(lines: Iterable[str]) -> Iterable[dict[str, Any]]:
             continue
         if record.get("event") in ROUTE_EVENTS:
             yield record
+
+
+def parse_route_records_with_diagnostics(
+    lines: Iterable[str],
+) -> tuple[list[dict[str, Any]], ParseDiagnostics]:
+    records: list[dict[str, Any]] = []
+    total_lines = 0
+    malformed_json_lines = 0
+    non_route_json_lines = 0
+    non_json_lines = 0
+    missing_target_model = 0
+    missing_stream_flag = 0
+
+    for raw_line in lines:
+        total_lines += 1
+        line = raw_line.strip()
+        if not line or "{" not in line:
+            non_json_lines += 1
+            continue
+        json_start = line.find("{")
+        try:
+            record = json.loads(line[json_start:])
+        except json.JSONDecodeError:
+            malformed_json_lines += 1
+            continue
+        if record.get("event") not in ROUTE_EVENTS:
+            non_route_json_lines += 1
+            continue
+        if not isinstance(record.get("target_model"), str):
+            missing_target_model += 1
+        if not isinstance(record.get("stream"), bool):
+            missing_stream_flag += 1
+        records.append(record)
+
+    return records, ParseDiagnostics(
+        total_lines=total_lines,
+        parsed_route_events=len(records),
+        malformed_json_lines=malformed_json_lines,
+        non_route_json_lines=non_route_json_lines,
+        non_json_lines=non_json_lines,
+        missing_target_model=missing_target_model,
+        missing_stream_flag=missing_stream_flag,
+    )
 
 
 def summarize_records(records: Iterable[dict[str, Any]]) -> RouteLogSummary:
@@ -112,6 +166,19 @@ def format_summary(summary: RouteLogSummary) -> str:
     return "\n".join(lines)
 
 
+def format_diagnostics(diagnostics: ParseDiagnostics) -> str:
+    return (
+        "parse_diagnostics: "
+        f"total_lines={diagnostics.total_lines} "
+        f"parsed_route_events={diagnostics.parsed_route_events} "
+        f"malformed_json_lines={diagnostics.malformed_json_lines} "
+        f"non_route_json_lines={diagnostics.non_route_json_lines} "
+        f"non_json_lines={diagnostics.non_json_lines} "
+        f"missing_target_model={diagnostics.missing_target_model} "
+        f"missing_stream_flag={diagnostics.missing_stream_flag}"
+    )
+
+
 def format_counts(counts: dict[str, int]) -> str:
     if not counts:
         return "none"
@@ -119,8 +186,10 @@ def format_counts(counts: dict[str, int]) -> str:
 
 
 def main() -> None:
-    summary = summarize_records(parse_route_records(sys.stdin))
+    records, diagnostics = parse_route_records_with_diagnostics(sys.stdin)
+    summary = summarize_records(records)
     print(format_summary(summary))
+    print(format_diagnostics(diagnostics))
 
 
 if __name__ == "__main__":

@@ -147,7 +147,10 @@ HTTP `5xx` statuses are returned as `502` with a redacted JSON error body and
 are logged as `route_error`; HTTP status failures include `upstream_status` in
 the structured log and `upstream_statuses` in the summary. Route reasons are
 also counted, so degraded embedding fallback shows up as
-`reasons: embedding_error=N`. Prompts and bearer tokens are not logged.
+`reasons: embedding_error=N`. The summary also prints a
+`parse_diagnostics:` line with malformed/non-route/non-JSON counts and missing
+route fields (`target_model`/`stream`) so partial or damaged log windows are
+easy to detect. Prompts and bearer tokens are not logged.
 
 Production route-error budget gate:
 
