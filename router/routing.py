@@ -128,7 +128,10 @@ class Router:
         }
 
 
-def latest_user_text(messages: list[Any]) -> str:
+def latest_user_text(messages: Any) -> str:
+    if not isinstance(messages, list):
+        return ""
+
     for message in reversed(messages):
         if not isinstance(message, dict) or message.get("role") != "user":
             continue
