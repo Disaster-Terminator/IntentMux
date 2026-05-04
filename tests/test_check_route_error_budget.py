@@ -29,6 +29,7 @@ def test_check_budget_passes_when_no_route_errors():
     assert result.error_rate == 0.0
     assert result.reason_rates == {}
     assert result.reasons == []
+    assert result.ignored_records == 0
 
 
 def test_check_budget_fails_when_error_rate_exceeds_budget():
@@ -163,6 +164,70 @@ def test_format_budget_result_reports_parse_diagnostics_when_present():
     )
 
 
+def test_check_budget_diagnostic_thresholds_are_disabled_by_default():
+    result = check_budget(
+        [],
+        BudgetConfig(min_total=0),
+        parse_diagnostics=ParseDiagnostics(
+            malformed_json_lines=3,
+            missing_event_records=2,
+            unknown_event_records=1,
+        ),
+    )
+
+    assert result.passed is True
+    assert result.reasons == []
+    assert result.ignored_records == 6
+
+
+def test_check_budget_fails_when_malformed_json_exceeds_threshold():
+    result = check_budget(
+        [],
+        BudgetConfig(min_total=0, max_malformed_json=0),
+        parse_diagnostics=ParseDiagnostics(malformed_json_lines=2),
+    )
+
+    assert result.passed is False
+    assert result.reasons == ["malformed_json 2 exceeds max_malformed_json 0"]
+
+
+def test_check_budget_fails_when_missing_event_exceeds_threshold():
+    result = check_budget(
+        [],
+        BudgetConfig(min_total=0, max_missing_event=0),
+        parse_diagnostics=ParseDiagnostics(missing_event_records=2),
+    )
+
+    assert result.passed is False
+    assert result.reasons == ["missing_event 2 exceeds max_missing_event 0"]
+
+
+def test_check_budget_fails_when_unknown_event_exceeds_threshold():
+    result = check_budget(
+        [],
+        BudgetConfig(min_total=0, max_unknown_event=0),
+        parse_diagnostics=ParseDiagnostics(unknown_event_records=2),
+    )
+
+    assert result.passed is False
+    assert result.reasons == ["unknown_event 2 exceeds max_unknown_event 0"]
+
+
+def test_check_budget_fails_when_ignored_records_exceeds_threshold():
+    result = check_budget(
+        [],
+        BudgetConfig(min_total=0, max_ignored_records=2),
+        parse_diagnostics=ParseDiagnostics(
+            malformed_json_lines=1,
+            missing_event_records=1,
+            unknown_event_records=1,
+        ),
+    )
+
+    assert result.passed is False
+    assert result.reasons == ["ignored_records 3 exceeds max_ignored_records 2"]
+
+
 def test_cli_returns_zero_when_budget_passes(monkeypatch, capsys):
     monkeypatch.setattr(
         sys,
@@ -262,3 +327,30 @@ def test_cli_reports_parse_diagnostics_for_malformed_or_partial_logs(monkeypatch
     assert exit_code == 0
     assert "parse_diagnostics: malformed_json=1" in output
     assert "missing_event=1" in output
+
+
+def test_cli_fails_when_diagnostic_threshold_exceeded(monkeypatch, capsys):
+    monkeypatch.setattr(
+        sys,
+        "stdin",
+        [
+            "127.0.0.1 - - [04/May/2026:00:00:00 +0000] GET /healthz 200 2\n",
+            '{"event":"route_complete","target_model":"pro-router"}\n',
+            '{"event":"route_error",\n',
+        ],
+    )
+
+    exit_code = main(
+        [
+            "--min-total",
+            "1",
+            "--max-error-rate",
+            "1",
+            "--max-malformed-json",
+            "0",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert exit_code == 1
+    assert "malformed_json 1 exceeds max_malformed_json 0" in output
