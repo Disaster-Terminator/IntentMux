@@ -189,3 +189,20 @@ be reproduced after building the route bank:
 ```bash
 uv run python scripts/eval_routes.py --cases data/semantic_sets/eval_bank.yaml
 ```
+
+Redacted production review samples can be promoted into eval cases without
+putting raw prompts in logs or git:
+
+```bash
+uv run python scripts/import_review_samples.py \
+  --input data/source_samples/production_review.redacted.jsonl \
+  --output data/semantic_sets/production_review_eval_cases.yaml
+
+uv run python scripts/build_eval_bank.py \
+  --manual-cases data/semantic_sets/production_review_eval_cases.yaml \
+  --per-route-limit 100
+```
+
+Each JSONL sample must set `redacted: true`, include `text`, and set `expect`
+to one of `cheap-router`, `pro-router`, or `free-probe-router`. The importer
+rejects unredacted samples by default.
