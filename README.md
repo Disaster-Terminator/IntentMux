@@ -94,8 +94,8 @@ uv run python scripts/preflight.py --router-base-url http://127.0.0.1:4001
 ```
 
 The preflight requires `LITELLM_MASTER_KEY` in the environment or `--api-key`.
-It checks health, non-streaming route headers, streaming route headers, and SSE
-body shape without printing secrets or prompts.
+It checks liveness, layered readiness, non-streaming route headers, streaming
+route headers, and SSE body shape without printing secrets or prompts.
 
 Runtime probes:
 
