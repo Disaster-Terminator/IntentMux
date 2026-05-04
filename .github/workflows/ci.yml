@@ -25,7 +25,20 @@ jobs:
         run: uv sync --frozen --group dev
 
       - name: Run unit tests
-        run: uv run python -m pytest -q
+        run: |
+          set -o pipefail
+          uv run python -m pytest -q 2>&1 | tee pytest.log
 
       - name: Run mock route evaluation
-        run: uv run python scripts/eval_routes.py --mock-embeddings
+        run: |
+          set -o pipefail
+          uv run python scripts/eval_routes.py --mock-embeddings 2>&1 | tee mock-route-eval.log
+
+      - name: Upload CI diagnostics (failure only)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-failure-diagnostics
+          path: |
+            pytest.log
+            mock-route-eval.log
