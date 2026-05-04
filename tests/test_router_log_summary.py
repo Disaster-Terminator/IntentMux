@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from scripts.router_log_summary import format_summary, parse_route_records, summarize_records
+from scripts.router_log_summary import (
+    format_summary,
+    parse_route_records,
+    parse_route_records_with_stats,
+    summarize_records,
+)
 
 
 def test_parse_route_records_ignores_access_logs_and_non_route_json():
@@ -101,5 +106,20 @@ def test_format_summary_is_stable_for_runbooks():
             "error_types: RemoteProtocolError=1",
             "upstream_statuses: 503=1",
             "max_duration_ms=1400.00",
+            "parse_warnings: malformed_json_lines=0 non_json_lines=0",
         ]
     )
+
+
+def test_parse_route_records_with_stats_counts_malformed_and_non_json_lines():
+    logs = [
+        'INFO: access log line',
+        '{"event":"route_complete","target_model":"pro-router"}',
+        '{"event":"route_error"',
+    ]
+
+    records = list(parse_route_records_with_stats(logs))
+
+    assert len(records) == 1
+    _, stats = records[0]
+    assert stats == {"malformed_json_lines": 1, "non_json_lines": 1}

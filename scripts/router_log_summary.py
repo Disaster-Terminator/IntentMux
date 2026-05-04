@@ -22,20 +22,36 @@ class RouteLogSummary:
     error_types: dict[str, int]
     upstream_statuses: dict[str, int]
     max_duration_ms: float
+    malformed_json_lines: int
+    non_json_lines: int
 
 
 def parse_route_records(lines: Iterable[str]) -> Iterable[dict[str, Any]]:
+    for record, _ in parse_route_records_with_stats(lines):
+        yield record
+
+
+def parse_route_records_with_stats(
+    lines: Iterable[str],
+) -> Iterable[tuple[dict[str, Any], dict[str, int]]]:
+    stats = {
+        "malformed_json_lines": 0,
+        "non_json_lines": 0,
+    }
     for line in lines:
         line = line.strip()
         if not line or "{" not in line:
+            if line:
+                stats["non_json_lines"] += 1
             continue
         json_start = line.find("{")
         try:
             record = json.loads(line[json_start:])
         except json.JSONDecodeError:
+            stats["malformed_json_lines"] += 1
             continue
         if record.get("event") in ROUTE_EVENTS:
-            yield record
+            yield record, stats
 
 
 def summarize_records(records: Iterable[dict[str, Any]]) -> RouteLogSummary:
@@ -49,8 +65,17 @@ def summarize_records(records: Iterable[dict[str, Any]]) -> RouteLogSummary:
     error_types: Counter[str] = Counter()
     upstream_statuses: Counter[str] = Counter()
     max_duration_ms = 0.0
+    malformed_json_lines = 0
+    non_json_lines = 0
 
     for record in records:
+        if isinstance(record, tuple):
+            record, parse_stats = record
+            malformed_json_lines = max(
+                malformed_json_lines,
+                int(parse_stats.get("malformed_json_lines", 0)),
+            )
+            non_json_lines = max(non_json_lines, int(parse_stats.get("non_json_lines", 0)))
         total += 1
         event = record.get("event")
         if event == "route_complete":
@@ -93,6 +118,8 @@ def summarize_records(records: Iterable[dict[str, Any]]) -> RouteLogSummary:
         error_types=dict(error_types),
         upstream_statuses=dict(upstream_statuses),
         max_duration_ms=max_duration_ms,
+        malformed_json_lines=malformed_json_lines,
+        non_json_lines=non_json_lines,
     )
 
 
@@ -108,6 +135,11 @@ def format_summary(summary: RouteLogSummary) -> str:
         f"error_types: {format_counts(summary.error_types)}",
         f"upstream_statuses: {format_counts(summary.upstream_statuses)}",
         f"max_duration_ms={summary.max_duration_ms:.2f}",
+        (
+            "parse_warnings: "
+            f"malformed_json_lines={summary.malformed_json_lines} "
+            f"non_json_lines={summary.non_json_lines}"
+        ),
     ]
     return "\n".join(lines)
 

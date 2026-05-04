@@ -4,11 +4,11 @@ import subprocess
 import sys
 
 from scripts.check_route_error_budget import BudgetConfig, check_budget, format_budget_result, main
-from scripts.router_log_summary import parse_route_records
+from scripts.router_log_summary import parse_route_records_with_stats
 
 
 def records_from_text(text: str):
-    return list(parse_route_records(text.splitlines()))
+    return list(parse_route_records_with_stats(text.splitlines()))
 
 
 def test_check_budget_passes_when_no_route_errors():
@@ -86,7 +86,9 @@ def test_check_budget_fails_when_sample_size_is_too_small():
 
     assert result.passed is False
     assert result.total == 0
-    assert result.reasons == ["total 0 below min_total 1"]
+    assert result.reasons == [
+        "total 0 below min_total 1; check log window, filters, and parser warnings"
+    ]
 
 
 def test_check_budget_fails_when_reason_rate_exceeds_budget():
@@ -143,8 +145,29 @@ def test_format_budget_result_is_stable_for_runbooks():
             "target_error_rates: cheap-router=1.0000, pro-router=0.0000",
             "reason_rates: none",
             "error_types: TimeoutError=1",
+            "parse_warnings: malformed_json_lines=0 non_json_lines=0",
         ]
     )
+
+
+def test_check_budget_reports_parse_warnings_for_malformed_and_non_json_lines():
+    records = records_from_text(
+        "\n".join(
+            [
+                "INFO: health check",
+                '{"event":"route_complete","target_model":"pro-router"}',
+                '{"event":"route_error"',
+            ]
+        )
+    )
+
+    result = check_budget(
+        records,
+        BudgetConfig(min_total=1, max_error_rate=1.0, max_target_error_rate=1.0),
+    )
+
+    assert result.malformed_json_lines == 1
+    assert result.non_json_lines == 1
 
 
 def test_cli_returns_zero_when_budget_passes(monkeypatch, capsys):

@@ -7,9 +7,9 @@ import sys
 from typing import Any, Iterable
 
 try:
-    from scripts.router_log_summary import parse_route_records
+    from scripts.router_log_summary import parse_route_records_with_stats
 except ModuleNotFoundError:
-    from router_log_summary import parse_route_records
+    from router_log_summary import parse_route_records_with_stats
 
 
 @dataclass(frozen=True)
@@ -30,6 +30,8 @@ class BudgetResult:
     target_error_rates: dict[str, float]
     reason_rates: dict[str, float]
     error_types: dict[str, int]
+    malformed_json_lines: int
+    non_json_lines: int
     reasons: list[str]
 
 
@@ -41,8 +43,16 @@ def check_budget(records: Iterable[dict[str, Any]], config: BudgetConfig) -> Bud
     target_errors: Counter[str] = Counter()
     reason_totals: Counter[str] = Counter()
     error_types: Counter[str] = Counter()
+    malformed_json_lines = 0
+    non_json_lines = 0
 
     for record in records:
+        if isinstance(record, tuple):
+            record, parse_stats = record
+            malformed_json_lines = max(
+                malformed_json_lines, int(parse_stats.get("malformed_json_lines", 0))
+            )
+            non_json_lines = max(non_json_lines, int(parse_stats.get("non_json_lines", 0)))
         total += 1
         target_model = record.get("target_model")
         if isinstance(target_model, str):
@@ -73,7 +83,10 @@ def check_budget(records: Iterable[dict[str, Any]], config: BudgetConfig) -> Bud
 
     reasons: list[str] = []
     if total < config.min_total:
-        reasons.append(f"total {total} below min_total {config.min_total}")
+        reasons.append(
+            f"total {total} below min_total {config.min_total}; "
+            "check log window, filters, and parser warnings"
+        )
     if error_rate > config.max_error_rate:
         reasons.append(
             f"error_rate {error_rate:.4f} exceeds max_error_rate {config.max_error_rate:.4f}"
@@ -101,6 +114,8 @@ def check_budget(records: Iterable[dict[str, Any]], config: BudgetConfig) -> Bud
         target_error_rates=target_error_rates,
         reason_rates=reason_rates,
         error_types=dict(error_types),
+        malformed_json_lines=malformed_json_lines,
+        non_json_lines=non_json_lines,
         reasons=reasons,
     )
 
@@ -116,6 +131,11 @@ def format_budget_result(result: BudgetResult) -> str:
         f"target_error_rates: {format_rates(result.target_error_rates)}",
         f"reason_rates: {format_rates(result.reason_rates)}",
         f"error_types: {format_counts(result.error_types)}",
+        (
+            "parse_warnings: "
+            f"malformed_json_lines={result.malformed_json_lines} "
+            f"non_json_lines={result.non_json_lines}"
+        ),
     ]
     if result.reasons:
         lines.append(f"reasons: {'; '.join(result.reasons)}")
@@ -173,7 +193,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     result = check_budget(
-        parse_route_records(sys.stdin),
+        parse_route_records_with_stats(sys.stdin),
         BudgetConfig(
             min_total=args.min_total,
             max_error_rate=args.max_error_rate,
