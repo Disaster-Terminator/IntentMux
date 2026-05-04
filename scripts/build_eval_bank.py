@@ -48,19 +48,32 @@ def load_yaml(path: Path) -> dict[str, Any]:
     return yaml.safe_load(path.read_text(encoding="utf-8"))
 
 
+def load_manual_cases(paths: list[Path]) -> list[dict[str, str]]:
+    cases: list[dict[str, str]] = []
+    for path in paths:
+        payload = load_yaml(path)
+        cases.extend(payload["cases"])
+    return cases
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--manual-cases", default="config/eval_cases.yaml")
+    parser.add_argument(
+        "--manual-cases",
+        action="append",
+        default=["config/eval_cases.yaml"],
+        help="YAML case file. Repeat to include redacted production review cases.",
+    )
     parser.add_argument("--route-bank", default="data/semantic_sets/route_bank.yaml")
     parser.add_argument("--output", default="data/semantic_sets/eval_bank.yaml")
     parser.add_argument("--per-route-limit", type=int, default=80)
     args = parser.parse_args()
 
     repo_root = Path(__file__).resolve().parents[1]
-    manual = load_yaml(repo_root / args.manual_cases)
+    manual_cases = load_manual_cases([repo_root / path for path in args.manual_cases])
     route_bank = load_yaml(repo_root / args.route_bank)
     eval_bank = build_eval_bank(
-        manual_cases=manual["cases"],
+        manual_cases=manual_cases,
         route_bank=route_bank,
         per_route_limit=args.per_route_limit,
     )
@@ -76,4 +89,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

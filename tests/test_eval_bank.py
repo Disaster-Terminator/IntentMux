@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from scripts.build_eval_bank import build_eval_bank
+from scripts.build_eval_bank import build_eval_bank, load_manual_cases
 
 
 def test_build_eval_bank_keeps_manual_cases_and_adds_route_bank_cases():
@@ -60,4 +60,31 @@ def test_build_eval_bank_deduplicates_manual_and_generated_cases():
     assert eval_bank["cases"] == [
         {"text": "重复", "expect": "cheap-router", "source": "manual"},
         {"text": "新样本", "expect": "cheap-router", "source": "massive"},
+    ]
+
+
+def test_load_manual_cases_merges_multiple_files(tmp_path):
+    first = tmp_path / "eval_cases.yaml"
+    first.write_text(
+        """
+cases:
+  - text: 手工 cheap
+    expect: cheap-router
+""",
+        encoding="utf-8",
+    )
+    second = tmp_path / "review_cases.yaml"
+    second.write_text(
+        """
+cases:
+  - text: 生产复核 pro
+    expect: pro-router
+    source: production_review
+""",
+        encoding="utf-8",
+    )
+
+    assert load_manual_cases([first, second]) == [
+        {"text": "手工 cheap", "expect": "cheap-router"},
+        {"text": "生产复核 pro", "expect": "pro-router", "source": "production_review"},
     ]

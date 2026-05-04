@@ -25,7 +25,8 @@ Next hardening targets:
 - an explicit error-budget threshold for `route_error` rates by target model
   via `scripts/check_route_error_budget.py`
 - lifecycle coupling design for sidecar readiness and LiteLLM restart behavior
-- route-bank refresh workflow from real, redacted production examples
+- route-bank refresh workflow from real, redacted production examples using
+  `scripts/import_review_samples.py`
 
 ## Lifecycle Management
 
