@@ -126,11 +126,16 @@ def format_budget_result(result: BudgetResult) -> str:
     if result.reasons:
         lines.append(f"reasons: {'; '.join(result.reasons)}")
     diag = result.parse_diagnostics
-    if any((diag.malformed_json_lines, diag.non_object_json_records, diag.missing_event_records, diag.unknown_event_records)):
+    if any(
+        (
+            diag.malformed_json_lines,
+            diag.missing_event_records,
+            diag.unknown_event_records,
+        )
+    ):
         lines.append(
             "parse_diagnostics: "
             f"malformed_json={diag.malformed_json_lines}, "
-            f"non_object_json={diag.non_object_json_records}, "
             f"missing_event={diag.missing_event_records}, "
             f"unknown_event={diag.unknown_event_records}"
         )
