@@ -154,3 +154,44 @@ routes:
     settings = load_settings(routes_path)
 
     assert settings.litellm_timeout == 123.5
+
+
+def test_load_settings_disables_access_log_by_default(tmp_path: Path):
+    routes_path = tmp_path / "routes.yaml"
+    routes_path.write_text(
+        """
+route_model: semantic-router
+default_route: cheap-router
+routes:
+  cheap-router:
+    description: seed cheap
+    utterances:
+      - seed cheap utterance
+""",
+        encoding="utf-8",
+    )
+
+    settings = load_settings(routes_path)
+
+    assert settings.access_log is False
+
+
+def test_load_settings_reads_access_log_override(tmp_path: Path, monkeypatch):
+    routes_path = tmp_path / "routes.yaml"
+    routes_path.write_text(
+        """
+route_model: semantic-router
+default_route: cheap-router
+routes:
+  cheap-router:
+    description: seed cheap
+    utterances:
+      - seed cheap utterance
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("ROUTER_ACCESS_LOG", "true")
+
+    settings = load_settings(routes_path)
+
+    assert settings.access_log is True

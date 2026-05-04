@@ -5,7 +5,7 @@ from typing import Any
 
 import uvicorn
 from fastapi import FastAPI, Request
-from fastapi.responses import Response, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from router.config import RouterSettings, load_settings
 from router.embedding import OpenAIEmbeddingClient
@@ -68,7 +68,11 @@ def create_app(
                     error=exc,
                     started_ms=started_ms,
                 )
-                raise
+                return upstream_error_response(
+                    request_id=request_id,
+                    decision=decision,
+                    error=exc,
+                )
             headers = dict(upstream.headers)
             headers.update(router_headers)
             return StreamingResponse(
@@ -96,7 +100,11 @@ def create_app(
                 error=exc,
                 started_ms=started_ms,
             )
-            raise
+            return upstream_error_response(
+                request_id=request_id,
+                decision=decision,
+                error=exc,
+            )
         headers = dict(upstream.headers)
         headers.update(router_headers)
         log_route_complete(
@@ -127,22 +135,54 @@ async def stream_with_context(
     started_ms: float,
 ):
     exc_info = (None, None, None)
+    route_error: Exception | None = None
     try:
         async for chunk in body_iterator:
             yield chunk
+    except Exception as exc:
+        exc_info = (type(exc), exc, exc.__traceback__)
+        route_error = exc
+        log_route_error(
+            logger,
+            request_id=request_id,
+            decision=decision,
+            stream=True,
+            error=exc,
+            started_ms=started_ms,
+        )
+        return
     except BaseException as exc:
         exc_info = (type(exc), exc, exc.__traceback__)
         raise
     finally:
         await stream_context.__aexit__(*exc_info)
-        log_route_complete(
-            logger,
-            request_id=request_id,
-            decision=decision,
-            stream=True,
-            upstream_status=upstream_status,
-            started_ms=started_ms,
-        )
+        if route_error is None:
+            log_route_complete(
+                logger,
+                request_id=request_id,
+                decision=decision,
+                stream=True,
+                upstream_status=upstream_status,
+                started_ms=started_ms,
+            )
+
+
+def upstream_error_response(
+    *,
+    request_id: str,
+    decision,
+    error: BaseException,
+) -> JSONResponse:
+    return JSONResponse(
+        {
+            "error": {
+                "message": "upstream route failed",
+                "type": type(error).__name__,
+            }
+        },
+        status_code=502,
+        headers=route_headers(decision.target_model, decision.reason, request_id),
+    )
 
 
 def main() -> None:
@@ -152,6 +192,7 @@ def main() -> None:
         create_app(settings=settings),
         host=settings.listen_host,
         port=settings.listen_port,
+        access_log=settings.access_log,
     )
 
 

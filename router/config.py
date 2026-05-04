@@ -24,6 +24,7 @@ class RouterSettings(BaseModel):
     embedding_model: str = "text-embedding-jina-embeddings-v5-text-small-retrieval@q8_0"
     litellm_base_url: str = "http://127.0.0.1:4000"
     litellm_timeout: float = 120.0
+    access_log: bool = False
     listen_host: str = "127.0.0.1"
     listen_port: int = 4001
 
@@ -41,10 +42,18 @@ def load_settings(path: str | Path = "config/routes.yaml") -> RouterSettings:
             "litellm_timeout": float(
                 os.getenv("ROUTER_LITELLM_TIMEOUT", str(settings.litellm_timeout))
             ),
+            "access_log": bool_from_env("ROUTER_ACCESS_LOG", settings.access_log),
             "listen_host": os.getenv("ROUTER_HOST", settings.listen_host),
             "listen_port": int(os.getenv("ROUTER_PORT", str(settings.listen_port))),
         }
     )
+
+
+def bool_from_env(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.lower() in {"1", "true", "yes", "on"}
 
 
 def merge_route_bank(raw: dict, base_dir: Path) -> dict:

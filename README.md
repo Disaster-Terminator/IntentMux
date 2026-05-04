@@ -2,13 +2,15 @@
 
 Lightweight OpenAI-compatible sidecar for `/v1/chat/completions`.
 
-It only rewrites `model=smart-router` requests into the local LiteLLM groups:
+It rewrites the configured semantic entry model, currently
+`model=semantic-router`, into the local LiteLLM groups:
 
 - `cheap-router`
 - `pro-router`
 - `free-probe-router`
 
-All other model names pass through unchanged.
+All other model names pass through unchanged. LiteLLM's native `smart-router`
+is intentionally kept as a separate upstream model group.
 
 Both non-streaming and `stream=true` SSE chat completions are proxied. The
 sidecar rewrites only the request model field, then preserves the upstream
@@ -56,6 +58,8 @@ Environment overrides:
 - `ROUTER_LITELLM_TIMEOUT`
 - `ROUTER_EMBEDDING_URL`
 - `ROUTER_EMBEDDING_MODEL`
+- `ROUTER_ACCESS_LOG` (`false` by default; set `true` only when raw HTTP
+  access logs are needed)
 
 ## LiteLLM Entry Design
 
@@ -100,6 +104,18 @@ non-streaming and streaming responses, and confirms sidecar route logs for
 path does not currently preserve client-supplied correlation IDs to the sidecar,
 so the script first tries request-id matching and then falls back to recent route
 shape matching.
+
+Production route-log summary from sidecar logs:
+
+```bash
+docker logs --since 12h gateway_semantic_router 2>&1 \
+  | uv run python scripts/router_log_summary.py
+```
+
+The summary parser ignores uvicorn access lines and only counts structured
+`route_complete` / `route_error` JSON records. Upstream route failures are
+returned as `502` with a redacted JSON error body and are logged as
+`route_error`; prompts and bearer tokens are not logged.
 
 For a live sidecar request, pass the same LiteLLM `Authorization` header to
 `http://127.0.0.1:4001/v1/chat/completions`.
