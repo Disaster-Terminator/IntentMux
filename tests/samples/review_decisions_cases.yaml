@@ -1,0 +1,8 @@
+cases:
+  - name: online-bug
+    text: "这个线上 bug 为什么偶发"
+    expected_target: "pro-router"
+  - name: low-risk
+    messages:
+      - role: user
+        content: "请帮我润色这段说明"

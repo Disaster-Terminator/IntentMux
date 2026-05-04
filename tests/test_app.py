@@ -49,10 +49,13 @@ class FakeProxy:
         self.payloads: list[dict[str, Any]] = []
         self.headers: list[dict[str, str]] = []
         self.stream_context_closed = False
+        self.forward_calls = 0
+        self.stream_calls = 0
 
     async def forward_chat(
         self, payload: dict[str, Any], headers: dict[str, str]
     ) -> FakeProxyResponse:
+        self.forward_calls += 1
         self.payloads.append(payload)
         self.headers.append(headers)
         return FakeProxyResponse(
@@ -63,6 +66,7 @@ class FakeProxy:
 
     @asynccontextmanager
     async def stream_chat(self, payload: dict[str, Any], headers: dict[str, str]):
+        self.stream_calls += 1
         self.payloads.append(payload)
         self.headers.append(headers)
         self.stream_context_closed = False
@@ -266,6 +270,8 @@ def test_decision_endpoint_returns_route_decision_without_forwarding():
         "second_score": 0.12,
     }
     assert proxy.payloads == []
+    assert proxy.forward_calls == 0
+    assert proxy.stream_calls == 0
 
 
 def test_streaming_chat_completion_uses_stream_proxy():
