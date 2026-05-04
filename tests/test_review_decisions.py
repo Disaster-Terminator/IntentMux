@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from scripts.review_decisions import format_result_row, load_cases
+from scripts.review_decisions import DEFAULT_ROUTE_MODEL, format_result_row, load_cases
 
 
 def test_load_cases_from_yaml_supports_text_and_messages(tmp_path):
@@ -24,9 +24,15 @@ cases:
     cases = load_cases(path)
 
     assert [case.name for case in cases] == ["text case", "messages case"]
-    assert cases[0].payload == {"messages": [{"role": "user", "content": "hello"}]}
+    assert cases[0].payload == {
+        "model": DEFAULT_ROUTE_MODEL,
+        "messages": [{"role": "user", "content": "hello"}],
+    }
     assert cases[0].expected_target == "cheap-router"
-    assert cases[1].payload == {"messages": [{"role": "user", "content": "hi"}]}
+    assert cases[1].payload == {
+        "model": DEFAULT_ROUTE_MODEL,
+        "messages": [{"role": "user", "content": "hi"}],
+    }
     assert cases[1].expected_target is None
 
 
@@ -40,7 +46,7 @@ def test_load_cases_from_jsonl(tmp_path):
                     {
                         "name": "b",
                         "messages": [{"role": "user", "content": "hi"}],
-                        "model": "semantic-router",
+                        "model": "custom-router",
                     }
                 ),
             ]
@@ -50,10 +56,13 @@ def test_load_cases_from_jsonl(tmp_path):
 
     cases = load_cases(path)
 
-    assert cases[0].payload == {"messages": [{"role": "user", "content": "hello"}]}
+    assert cases[0].payload == {
+        "model": DEFAULT_ROUTE_MODEL,
+        "messages": [{"role": "user", "content": "hello"}],
+    }
     assert cases[1].payload == {
         "messages": [{"role": "user", "content": "hi"}],
-        "model": "semantic-router",
+        "model": "custom-router",
     }
 
 
