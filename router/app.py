@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
@@ -65,7 +66,18 @@ def create_app(
 
     @app.post("/v1/semantic-router/decision")
     async def route_decision(request: Request) -> dict[str, Any]:
-        payload: dict[str, Any] = await request.json()
+        try:
+            payload = await request.json()
+        except json.JSONDecodeError:
+            return JSONResponse(
+                status_code=400,
+                content={"error": {"message": "Invalid JSON request body"}},
+            )
+        if not isinstance(payload, dict):
+            return JSONResponse(
+                status_code=400,
+                content={"error": {"message": "JSON body must be an object"}},
+            )
         decision = await router.decide(payload)
         return {
             "source_model": decision.source_model,

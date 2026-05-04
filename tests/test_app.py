@@ -286,6 +286,82 @@ def test_decision_endpoint_returns_route_decision_without_forwarding():
     assert proxy.stream_called is False
 
 
+def test_decision_endpoint_returns_400_for_invalid_json_without_leaking_input():
+    proxy = NoUpstreamProxy()
+    app = create_app(
+        router=FakeRouter(RoutingDecision("cheap-router", "passthrough", rewrite=False)),
+        proxy=proxy,
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/v1/semantic-router/decision",
+        data='{"model":"semantic-router","messages":[{"role":"user","content":"secret"',
+        headers={
+            "content-type": "application/json",
+            "authorization": "Bearer super-secret-token",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {"error": {"message": "Invalid JSON request body"}}
+    assert "secret" not in response.text
+    assert "super-secret-token" not in response.text
+    assert proxy.forward_called is False
+    assert proxy.stream_called is False
+
+
+def test_decision_endpoint_returns_400_for_non_object_payload_without_leaking_input():
+    proxy = NoUpstreamProxy()
+    app = create_app(
+        router=FakeRouter(RoutingDecision("cheap-router", "passthrough", rewrite=False)),
+        proxy=proxy,
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/v1/semantic-router/decision",
+        headers={"authorization": "Bearer super-secret-token"},
+        json=["super", "sensitive", {"prompt": "do not leak"}],
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {"error": {"message": "JSON body must be an object"}}
+    assert "sensitive" not in response.text
+    assert "super-secret-token" not in response.text
+    assert proxy.forward_called is False
+    assert proxy.stream_called is False
+
+
+def test_decision_endpoint_missing_model_and_messages_preserves_router_semantics():
+    proxy = NoUpstreamProxy()
+    router = FakeRouter(
+        RoutingDecision(
+            target_model="cheap-router",
+            reason="passthrough",
+            rewrite=False,
+            source_model=None,
+        )
+    )
+    app = create_app(router=router, proxy=proxy)
+    client = TestClient(app)
+
+    response = client.post("/v1/semantic-router/decision", json={"metadata": {"k": "v"}})
+
+    assert response.status_code == 200
+    assert router.requests == [{"metadata": {"k": "v"}}]
+    assert response.json() == {
+        "source_model": None,
+        "target_model": "cheap-router",
+        "reason": "passthrough",
+        "rewrite": False,
+        "score": None,
+        "second_score": None,
+    }
+    assert proxy.forward_called is False
+    assert proxy.stream_called is False
+
+
 def test_streaming_chat_completion_uses_stream_proxy():
     proxy = FakeProxy()
     app = create_app(
