@@ -27,6 +27,7 @@ def test_check_budget_passes_when_no_route_errors():
     assert result.total == 2
     assert result.errors == 0
     assert result.error_rate == 0.0
+    assert result.reason_rates == {}
     assert result.reasons == []
 
 
@@ -88,6 +89,39 @@ def test_check_budget_fails_when_sample_size_is_too_small():
     assert result.reasons == ["total 0 below min_total 1"]
 
 
+def test_check_budget_fails_when_reason_rate_exceeds_budget():
+    records = records_from_text(
+        "\n".join(
+            [
+                (
+                    '{"event":"route_complete","target_model":"cheap-router",'
+                    '"reason":"embedding_error"}'
+                ),
+                (
+                    '{"event":"route_complete","target_model":"pro-router",'
+                    '"reason":"hard_rule:线上"}'
+                ),
+            ]
+        )
+    )
+
+    result = check_budget(
+        records,
+        BudgetConfig(
+            min_total=1,
+            max_error_rate=0.0,
+            max_target_error_rate=0.0,
+            max_reason_rates={"embedding_error": 0.0},
+        ),
+    )
+
+    assert result.passed is False
+    assert result.reason_rates == {"embedding_error": 0.5, "hard_rule:线上": 0.5}
+    assert result.reasons == [
+        "reason embedding_error rate 0.5000 exceeds max_reason_rate 0.0000"
+    ]
+
+
 def test_format_budget_result_is_stable_for_runbooks():
     records = records_from_text(
         "\n".join(
@@ -107,6 +141,7 @@ def test_format_budget_result_is_stable_for_runbooks():
             "PASS route_error_budget",
             "total=2 completed=1 errors=1 error_rate=0.5000",
             "target_error_rates: cheap-router=1.0000, pro-router=0.0000",
+            "reason_rates: none",
             "error_types: TimeoutError=1",
         ]
     )
@@ -143,6 +178,37 @@ def test_cli_returns_nonzero_when_budget_fails(monkeypatch, capsys):
     assert exit_code == 1
     assert output.startswith("FAIL route_error_budget\n")
     assert "RemoteProtocolError=1" in output
+
+
+def test_cli_accepts_repeatable_reason_rate_budgets(monkeypatch, capsys):
+    monkeypatch.setattr(
+        sys,
+        "stdin",
+        [
+            (
+                '{"event":"route_complete","target_model":"cheap-router",'
+                '"reason":"embedding_error"}\n'
+            ),
+            (
+                '{"event":"route_complete","target_model":"pro-router",'
+                '"reason":"hard_rule:线上"}\n'
+            ),
+        ],
+    )
+
+    exit_code = main(
+        [
+            "--min-total",
+            "1",
+            "--max-reason-rate",
+            "embedding_error=0",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert exit_code == 1
+    assert "reason_rates: embedding_error=0.5000, hard_rule:线上=0.5000" in output
+    assert "reason embedding_error rate 0.5000 exceeds max_reason_rate 0.0000" in output
 
 
 def test_script_file_execution_works_from_repo_root():

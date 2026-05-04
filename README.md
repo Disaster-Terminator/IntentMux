@@ -156,13 +156,16 @@ docker logs --since 12h gateway_semantic_router 2>&1 \
   | uv run python scripts/check_route_error_budget.py \
       --min-total 1 \
       --max-error-rate 0 \
-      --max-target-error-rate 0
+      --max-target-error-rate 0 \
+      --max-reason-rate embedding_error=0
 ```
 
 The budget gate prints a stable PASS/FAIL report and exits non-zero when the
 selected log window has too few route events or exceeds the total/per-target
-`route_error` thresholds. Use this after preflight/E2E and before keeping a new
-router build in production traffic.
+`route_error` thresholds. Optional `--max-reason-rate REASON=RATE` checks
+bounded degradation such as `embedding_error` fallback even when requests still
+complete. Use this after preflight/E2E and before keeping a new router build in
+production traffic.
 
 For a live sidecar request, pass the same LiteLLM `Authorization` header to
 `http://127.0.0.1:4001/v1/chat/completions`.
