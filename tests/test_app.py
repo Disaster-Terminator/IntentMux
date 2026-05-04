@@ -8,7 +8,8 @@ from typing import Any
 
 from fastapi.testclient import TestClient
 
-from router.app import create_app, stream_with_context
+from router.app import create_app, main, stream_with_context
+from router.config import RouteSpec, RouterSettings
 from router.routing import RoutingDecision
 
 
@@ -75,6 +76,15 @@ class FailingProxy(FakeProxy):
         raise TimeoutError("upstream timed out")
 
 
+class FailingStreamProxy(FakeProxy):
+    @asynccontextmanager
+    async def stream_chat(self, payload: dict[str, Any], headers: dict[str, str]):
+        self.payloads.append(payload)
+        self.headers.append(headers)
+        raise TimeoutError("upstream stream timed out")
+        yield
+
+
 def test_health_reports_ready():
     app = create_app(
         router=FakeRouter(
@@ -87,6 +97,33 @@ def test_health_reports_ready():
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+def test_main_disables_uvicorn_access_log_by_default(monkeypatch):
+    captured: dict[str, Any] = {}
+
+    monkeypatch.setattr(
+        "router.app.load_settings",
+        lambda: RouterSettings(
+            route_model="semantic-router",
+            default_route="cheap-router",
+            routes={
+                "cheap-router": RouteSpec(
+                    description="cheap",
+                    utterances=["hello"],
+                )
+            },
+        ),
+    )
+
+    def fake_run(app, **kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr("router.app.uvicorn.run", fake_run)
+
+    main()
+
+    assert captured["access_log"] is False
 
 
 def test_chat_completion_rewrites_smart_router_before_forwarding():
@@ -324,13 +361,58 @@ def test_chat_completion_logs_structured_route_error_without_sensitive_payload(c
             },
         )
 
-    assert response.status_code == 500
+    assert response.status_code == 502
+    assert response.json() == {
+        "error": {
+            "message": "upstream route failed",
+            "type": "TimeoutError",
+        }
+    }
     records = [json.loads(record.message) for record in caplog.records]
     route_logs = [record for record in records if record["event"] == "route_error"]
     assert len(route_logs) == 1
     assert route_logs[0]["request_id"] == "error-request-1"
     assert route_logs[0]["target_model"] == "cheap-router"
     assert route_logs[0]["error_type"] == "TimeoutError"
+    serialized = "\n".join(record.message for record in caplog.records)
+    assert "敏感 prompt" not in serialized
+    assert "Bearer litellm-test" not in serialized
+
+
+def test_streaming_chat_completion_returns_gateway_error_when_upstream_disconnects(caplog):
+    app = create_app(
+        router=FakeRouter(
+            RoutingDecision(
+                "pro-router",
+                "hard_rule:PR",
+                rewrite=True,
+                source_model="semantic-router",
+            )
+        ),
+        proxy=FailingStreamProxy(),
+    )
+
+    with caplog.at_level(logging.INFO, logger="gateway_semantic_router"):
+        response = TestClient(app, raise_server_exceptions=False).post(
+            "/v1/chat/completions",
+            headers={"Authorization": "Bearer litellm-test"},
+            json={
+                "model": "semantic-router",
+                "stream": True,
+                "metadata": {"semantic_router_request_id": "stream-error-request-1"},
+                "messages": [{"role": "user", "content": "敏感 prompt"}],
+            },
+        )
+
+    assert response.status_code == 502
+    assert response.headers["x-router-request-id"] == "stream-error-request-1"
+    assert response.headers["x-router-target-model"] == "pro-router"
+    assert response.json()["error"]["type"] == "TimeoutError"
+    records = [json.loads(record.message) for record in caplog.records]
+    route_errors = [record for record in records if record["event"] == "route_error"]
+    assert len(route_errors) == 1
+    assert route_errors[0]["request_id"] == "stream-error-request-1"
+    assert route_errors[0]["stream"] is True
     serialized = "\n".join(record.message for record in caplog.records)
     assert "敏感 prompt" not in serialized
     assert "Bearer litellm-test" not in serialized
@@ -410,3 +492,48 @@ async def test_streaming_chat_completion_logs_when_client_closes_early(caplog):
     assert len(route_logs) == 1
     assert route_logs[0]["request_id"] == "stream-request-closed"
     assert route_logs[0]["stream"] is True
+
+
+async def test_streaming_chat_completion_logs_route_error_when_body_iteration_fails(caplog):
+    class StreamContext:
+        def __init__(self):
+            self.exit_calls = 0
+
+        async def __aexit__(self, exc_type, exc, traceback):
+            self.exit_calls += 1
+
+    async def chunks():
+        yield b"data: first\n\n"
+        raise TimeoutError("upstream body failed")
+
+    stream_context = StreamContext()
+
+    with caplog.at_level(logging.INFO, logger="gateway_semantic_router"):
+        stream = stream_with_context(
+            chunks(),
+            stream_context,
+            request_id="stream-body-error",
+            decision=RoutingDecision(
+                "pro-router",
+                "hard_rule:PR",
+                rewrite=True,
+                source_model="semantic-router",
+            ),
+            upstream_status=200,
+            started_ms=0,
+        )
+        assert await anext(stream) == b"data: first\n\n"
+        try:
+            await anext(stream)
+        except StopAsyncIteration:
+            pass
+
+    records = [json.loads(record.message) for record in caplog.records]
+    route_complete = [record for record in records if record["event"] == "route_complete"]
+    route_errors = [record for record in records if record["event"] == "route_error"]
+    assert stream_context.exit_calls == 1
+    assert route_complete == []
+    assert len(route_errors) == 1
+    assert route_errors[0]["request_id"] == "stream-body-error"
+    assert route_errors[0]["stream"] is True
+    assert route_errors[0]["error_type"] == "TimeoutError"
