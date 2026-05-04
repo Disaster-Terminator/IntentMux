@@ -92,6 +92,28 @@ def _print_table(rows: list[list[str]]) -> None:
         print(render(row))
 
 
+def _status_for(expected_target: str | None, actual_target: str) -> str | None:
+    if expected_target is None:
+        return None
+    return "pass" if actual_target == expected_target else "fail"
+
+
+def _build_json_result(case: ReviewCase, decision_result: dict[str, Any]) -> dict[str, Any]:
+    actual_target = str(decision_result.get("target_model", ""))
+    output = {
+        "case": case.name,
+        "expected_target": case.expected_target,
+        "actual_target": actual_target,
+        "status": _status_for(case.expected_target, actual_target),
+        "reason": str(decision_result.get("reason", "")),
+        "request_payload_model": str(case.payload.get("model", "")),
+    }
+    for key in ("score", "scores", "semantic_score", "rule_score"):
+        if key in decision_result:
+            output[key] = decision_result[key]
+    return output
+
+
 def call_decision_endpoint(endpoint: str, payload: dict[str, Any], timeout_s: float) -> dict[str, Any]:
     req = request.Request(
         endpoint,
@@ -107,8 +129,9 @@ def call_decision_endpoint(endpoint: str, payload: dict[str, Any], timeout_s: fl
         raise RuntimeError(f"decision endpoint returned {exc.code}: {body}") from exc
 
 
-def run_review(endpoint: str, cases_path: Path, timeout_s: float) -> int:
+def run_review(endpoint: str, cases_path: Path, timeout_s: float, output: str = "table") -> int:
     rows: list[list[str]] = []
+    json_rows: list[dict[str, Any]] = []
     mismatch_count = 0
 
     for case in load_cases(cases_path):
@@ -120,11 +143,15 @@ def run_review(endpoint: str, cases_path: Path, timeout_s: float) -> int:
             reason=str(result.get("reason", "")),
         )
         rows.append(row)
+        json_rows.append(_build_json_result(case, result))
         if row[0] == "FAIL":
             mismatch_count += 1
 
-    _print_table(rows)
-    print(f"\nTotal cases: {len(rows)}; mismatches: {mismatch_count}")
+    if output == "json":
+        print(json.dumps(json_rows, ensure_ascii=False, indent=2))
+    else:
+        _print_table(rows)
+        print(f"\nTotal cases: {len(rows)}; mismatches: {mismatch_count}")
     return 1 if mismatch_count else 0
 
 
@@ -133,9 +160,10 @@ def main() -> None:
     parser.add_argument("--endpoint", default="http://127.0.0.1:8080/v1/semantic-router/decision")
     parser.add_argument("--cases", default="tests/samples/review_decisions.yaml")
     parser.add_argument("--timeout", type=float, default=10.0)
+    parser.add_argument("--output", choices=["table", "json"], default="table")
     args = parser.parse_args()
 
-    raise SystemExit(run_review(args.endpoint, Path(args.cases), args.timeout))
+    raise SystemExit(run_review(args.endpoint, Path(args.cases), args.timeout, output=args.output))
 
 
 if __name__ == "__main__":
