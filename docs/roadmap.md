@@ -21,6 +21,7 @@ Next hardening targets:
 - strict cross-layer correlation for LiteLLM model-entry requests; current
   LiteLLM entry mode does not forward client request IDs to the sidecar
 - an explicit error-budget threshold for `route_error` rates by target model
+  via `scripts/check_route_error_budget.py`
 - lifecycle coupling design for sidecar readiness and LiteLLM restart behavior
 - route-bank refresh workflow from real, redacted production examples
 
