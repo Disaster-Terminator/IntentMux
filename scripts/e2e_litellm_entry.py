@@ -194,14 +194,18 @@ def docker_logs(container: str, tail: int) -> str:
 
 
 def validate_route_logs(
-    *, raw_logs: str, probes: list[tuple[Probe, str]]
+    *,
+    raw_logs: str,
+    probes: list[tuple[Probe, str]],
+    require_request_id_log_match: bool = False,
 ) -> list[CheckResult]:
     route_logs = parse_route_logs(raw_logs)
     results: list[CheckResult] = []
     used_indexes: set[int] = set()
+    strict_request_id_match = True
     for probe, request_id in probes:
         record = find_route_log(route_logs, request_id=request_id, stream=probe.stream)
-        matched_by_request_id = record is not None
+        matched_by = "request_id"
         if record is None:
             matched = find_matching_route_log(
                 route_logs,
@@ -211,14 +215,26 @@ def validate_route_logs(
             if matched is not None:
                 index, record = matched
                 used_indexes.add(index)
+                matched_by = "route_shape"
+            else:
+                matched_by = "not_found"
+        if matched_by != "request_id":
+            strict_request_id_match = False
         results.append(
             CheckResult(
                 f"{probe.name}_route_log_present",
                 record is not None,
+                f"request_id={request_id}, matched_by={matched_by}",
+            )
+        )
+        results.append(
+            CheckResult(
+                f"{probe.name}_route_log_match_quality",
+                (matched_by == "request_id")
+                if require_request_id_log_match
+                else (matched_by != "not_found"),
                 (
-                    f"request_id={request_id}, matched_by=request_id"
-                    if matched_by_request_id
-                    else f"request_id={request_id}, matched_by=route_shape"
+                    f"matched_by={matched_by}, require_request_id={require_request_id_log_match}"
                 ),
             )
         )
@@ -257,6 +273,24 @@ def validate_route_logs(
     )
     results.append(
         CheckResult(
+            "route_log_request_id_strict_all",
+            strict_request_id_match,
+            f"all_probes_request_id_matched={strict_request_id_match}",
+        )
+    )
+    results.append(
+        CheckResult(
+            "route_log_request_id_strict_required",
+            (not require_request_id_log_match) or strict_request_id_match,
+            (
+                "strict request-id correlation required"
+                if require_request_id_log_match
+                else "strict request-id correlation optional"
+            ),
+        )
+    )
+    results.append(
+        CheckResult(
             "log_redaction",
             not secret_or_prompt_leak,
             "no prompt or bearer token in sidecar logs",
@@ -273,6 +307,7 @@ def run_e2e(
     log_container: str,
     log_tail: int,
     skip_log_check: bool,
+    require_request_id_log_match: bool,
 ) -> list[CheckResult]:
     base_url = litellm_base_url.rstrip("/")
     probes_with_ids = [
@@ -297,6 +332,7 @@ def run_e2e(
             validate_route_logs(
                 raw_logs=docker_logs(log_container, log_tail),
                 probes=probes_with_ids,
+                require_request_id_log_match=require_request_id_log_match,
             )
         )
     return results
@@ -313,6 +349,7 @@ def main() -> None:
     parser.add_argument("--log-container", default="gateway_semantic_router")
     parser.add_argument("--log-tail", type=int, default=300)
     parser.add_argument("--skip-log-check", action="store_true")
+    parser.add_argument("--require-request-id-log-match", action="store_true")
     args = parser.parse_args()
 
     if not args.api_key:
@@ -325,6 +362,7 @@ def main() -> None:
             log_container=args.log_container,
             log_tail=args.log_tail,
             skip_log_check=args.skip_log_check,
+            require_request_id_log_match=args.require_request_id_log_match,
         )
     )
 
