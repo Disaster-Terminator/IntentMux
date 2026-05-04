@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 from collections import Counter
 from dataclasses import dataclass
 import json
@@ -153,6 +154,28 @@ def format_summary(summary: RouteLogSummary) -> str:
     return "\n".join(lines)
 
 
+def format_summary_json(summary: RouteLogSummary) -> str:
+    diag = summary.parse_diagnostics
+    payload = {
+        "total": summary.total,
+        "route_complete": summary.completed,
+        "route_error": summary.errors,
+        "streams": summary.streams,
+        "nonstreams": summary.nonstreams,
+        "targets": summary.targets,
+        "reasons": summary.reasons,
+        "error_types": summary.error_types,
+        "upstream_statuses": summary.upstream_statuses,
+        "max_duration_ms": summary.max_duration_ms,
+        "ignored_records": {
+            "malformed_json": diag.malformed_json_lines,
+            "missing_event": diag.missing_event_records,
+            "unknown_event": diag.unknown_event_records,
+        },
+    }
+    return json.dumps(payload, sort_keys=True)
+
+
 def format_counts(counts: dict[str, int]) -> str:
     if not counts:
         return "none"
@@ -160,10 +183,25 @@ def format_counts(counts: dict[str, int]) -> str:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Summarize semantic-router route logs.")
+    parser.add_argument(
+        "--output",
+        choices=("text", "json"),
+        default="text",
+        help="Output format (default: text).",
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Shortcut for --output json.",
+    )
+    args = parser.parse_args()
+
     diagnostics = ParseDiagnostics()
     records = list(parse_route_records(sys.stdin, diagnostics=diagnostics))
     summary = summarize_records(records, parse_diagnostics=diagnostics)
-    print(format_summary(summary))
+    output_json = args.json or args.output == "json"
+    print(format_summary_json(summary) if output_json else format_summary(summary))
 
 
 if __name__ == "__main__":
