@@ -111,7 +111,7 @@ cases:
     assert exit_code == 0
     assert "status" in output
     assert "PASS" in output
-    assert "Total cases: 1; mismatches: 0" in output
+    assert "Total cases: 1; mismatches: 0; endpoint_errors: 0" in output
 
 
 def test_run_review_json_output_shape_and_neutral_status(monkeypatch, tmp_path, capsys):
@@ -174,3 +174,125 @@ cases:
     )
 
     assert run_review("http://localhost", path, 1.0, output="json") == 1
+
+
+def test_run_review_endpoint_exception_table_output_nonzero_and_error_row(monkeypatch, tmp_path, capsys):
+    path = tmp_path / "cases.yaml"
+    path.write_text(
+        """
+cases:
+  - name: endpoint down
+    text: hello
+    expected_target: cheap-router
+""",
+        encoding="utf-8",
+    )
+
+    def raise_error(*_args):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(review_decisions, "call_decision_endpoint", raise_error)
+
+    exit_code = run_review("http://localhost", path, 1.0, output="table")
+    output = capsys.readouterr().out
+
+    assert exit_code == 1
+    assert "ERROR" in output
+    assert "endpoint down" in output
+    assert "request failed" in output
+
+
+def test_run_review_endpoint_exception_json_output_nonzero_and_error_status(monkeypatch, tmp_path, capsys):
+    path = tmp_path / "cases.yaml"
+    path.write_text(
+        """
+cases:
+  - name: endpoint down
+    text: hello
+    expected_target: cheap-router
+""",
+        encoding="utf-8",
+    )
+
+    def raise_error(*_args):
+        raise RuntimeError("boom with bearer token secret")
+
+    monkeypatch.setattr(review_decisions, "call_decision_endpoint", raise_error)
+
+    exit_code = run_review("http://localhost", path, 1.0, output="json")
+    output = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 1
+    assert output[0]["case"] == "endpoint down"
+    assert output[0]["status"] == "error"
+    assert output[0]["actual_target"] is None
+    assert output[0]["error_type"] == "request_error"
+    assert "RuntimeError" in output[0]["error_message"]
+    assert "bearer" not in output[0]["error_message"].lower()
+
+
+def test_run_review_includes_successful_cases_before_later_endpoint_error(monkeypatch, tmp_path, capsys):
+    path = tmp_path / "cases.yaml"
+    path.write_text(
+        """
+cases:
+  - name: first ok
+    text: hello
+    expected_target: cheap-router
+  - name: then fails
+    text: hi
+    expected_target: pro-router
+""",
+        encoding="utf-8",
+    )
+
+    def fake_call(*_args):
+        if fake_call.calls == 0:
+            fake_call.calls += 1
+            return {"target_model": "cheap-router", "reason": "semantic_similarity"}
+        raise RuntimeError("boom")
+
+    fake_call.calls = 0
+    monkeypatch.setattr(review_decisions, "call_decision_endpoint", fake_call)
+
+    exit_code = run_review("http://localhost", path, 1.0, output="json")
+    output = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 1
+    assert len(output) == 2
+    assert output[0]["case"] == "first ok"
+    assert output[0]["status"] == "pass"
+    assert output[1]["case"] == "then fails"
+    assert output[1]["status"] == "error"
+
+
+def test_run_review_mismatch_and_endpoint_error_both_nonzero(monkeypatch, tmp_path, capsys):
+    path = tmp_path / "cases.yaml"
+    path.write_text(
+        """
+cases:
+  - name: mismatch
+    text: hello
+    expected_target: cheap-router
+  - name: endpoint error
+    text: hi
+    expected_target: pro-router
+""",
+        encoding="utf-8",
+    )
+
+    def fake_call(*_args):
+        if fake_call.calls == 0:
+            fake_call.calls += 1
+            return {"target_model": "pro-router", "reason": "semantic_similarity"}
+        raise RuntimeError("boom")
+
+    fake_call.calls = 0
+    monkeypatch.setattr(review_decisions, "call_decision_endpoint", fake_call)
+
+    exit_code = run_review("http://localhost", path, 1.0, output="json")
+    output = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 1
+    assert output[0]["status"] == "fail"
+    assert output[1]["status"] == "error"

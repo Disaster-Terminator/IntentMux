@@ -114,6 +114,29 @@ def _build_json_result(case: ReviewCase, decision_result: dict[str, Any]) -> dic
     return output
 
 
+def _safe_error_message(exc: Exception) -> tuple[str, str]:
+    if isinstance(exc, error.HTTPError):
+        return "http_error", f"decision endpoint returned HTTP {exc.code}"
+    if isinstance(exc, error.URLError):
+        reason = getattr(exc, "reason", "unknown")
+        return "url_error", f"decision endpoint request failed: {reason}"
+    return "request_error", f"decision endpoint request failed: {exc.__class__.__name__}"
+
+
+def _build_error_json_result(case: ReviewCase, exc: Exception) -> dict[str, Any]:
+    error_type, error_message = _safe_error_message(exc)
+    return {
+        "case": case.name,
+        "expected_target": case.expected_target,
+        "actual_target": None,
+        "status": "error",
+        "reason": "",
+        "error_type": error_type,
+        "error_message": error_message,
+        "request_payload_model": str(case.payload.get("model", "")),
+    }
+
+
 def call_decision_endpoint(endpoint: str, payload: dict[str, Any], timeout_s: float) -> dict[str, Any]:
     req = request.Request(
         endpoint,
@@ -121,21 +144,26 @@ def call_decision_endpoint(endpoint: str, payload: dict[str, Any], timeout_s: fl
         headers={"content-type": "application/json"},
         method="POST",
     )
-    try:
-        with request.urlopen(req, timeout=timeout_s) as resp:
-            return json.loads(resp.read().decode("utf-8"))
-    except error.HTTPError as exc:
-        body = exc.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"decision endpoint returned {exc.code}: {body}") from exc
+    with request.urlopen(req, timeout=timeout_s) as resp:
+        return json.loads(resp.read().decode("utf-8"))
 
 
 def run_review(endpoint: str, cases_path: Path, timeout_s: float, output: str = "table") -> int:
     rows: list[list[str]] = []
     json_rows: list[dict[str, Any]] = []
     mismatch_count = 0
+    endpoint_error_count = 0
 
     for case in load_cases(cases_path):
-        result = call_decision_endpoint(endpoint, case.payload, timeout_s)
+        try:
+            result = call_decision_endpoint(endpoint, case.payload, timeout_s)
+        except Exception as exc:
+            endpoint_error_count += 1
+            _, error_message = _safe_error_message(exc)
+            rows.append(["ERROR", case.name, "", case.expected_target or "", error_message])
+            json_rows.append(_build_error_json_result(case, exc))
+            continue
+
         row = format_result_row(
             case_name=case.name,
             target_model=str(result.get("target_model", "")),
@@ -151,8 +179,10 @@ def run_review(endpoint: str, cases_path: Path, timeout_s: float, output: str = 
         print(json.dumps(json_rows, ensure_ascii=False, indent=2))
     else:
         _print_table(rows)
-        print(f"\nTotal cases: {len(rows)}; mismatches: {mismatch_count}")
-    return 1 if mismatch_count else 0
+        print(
+            f"\nTotal cases: {len(rows)}; mismatches: {mismatch_count}; endpoint_errors: {endpoint_error_count}"
+        )
+    return 1 if (mismatch_count or endpoint_error_count) else 0
 
 
 def main() -> None:
