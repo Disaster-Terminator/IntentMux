@@ -12,6 +12,8 @@ Current operating target:
   event without prompt or bearer-token leakage
 - upstream disconnects and HTTP `5xx` statuses return a controlled `502` and
   are visible in route-log summaries
+- runtime config validation prevents recursive `semantic-router` targets and
+  keeps rewritten routes limited to the three LiteLLM model groups
 - health-check noise stays out of default logs
 - production readiness is verified by unit tests, route evals, sidecar preflight,
   LiteLLM-entry E2E, and recent-log summaries

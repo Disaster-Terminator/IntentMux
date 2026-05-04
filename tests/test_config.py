@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from router.config import load_settings
+import pytest
+from pydantic import ValidationError
+
+from router.config import RouteSpec, RouterSettings, load_settings
 
 
 def test_load_settings_merges_seed_utterances_with_route_bank(tmp_path: Path):
@@ -216,3 +219,53 @@ routes:
     settings = load_settings(routes_path)
 
     assert settings.readiness_timeout == 0.25
+
+
+def test_router_settings_rejects_default_route_that_points_back_to_entry_model():
+    with pytest.raises(ValidationError, match="default_route"):
+        RouterSettings(
+            route_model="semantic-router",
+            default_route="semantic-router",
+            routes={
+                "cheap-router": RouteSpec(
+                    description="seed cheap",
+                    utterances=["seed cheap utterance"],
+                )
+            },
+        )
+
+
+def test_router_settings_rejects_recursive_route_target():
+    with pytest.raises(ValidationError, match="recursive"):
+        RouterSettings(
+            route_model="semantic-router",
+            default_route="cheap-router",
+            routes={
+                "semantic-router": RouteSpec(
+                    description="recursive target",
+                    utterances=["send back to entry model"],
+                ),
+                "cheap-router": RouteSpec(
+                    description="seed cheap",
+                    utterances=["seed cheap utterance"],
+                ),
+            },
+        )
+
+
+def test_router_settings_rejects_targets_outside_litellm_model_group_contract():
+    with pytest.raises(ValidationError, match="target routes"):
+        RouterSettings(
+            route_model="semantic-router",
+            default_route="cheap-router",
+            routes={
+                "cheap-router": RouteSpec(
+                    description="seed cheap",
+                    utterances=["seed cheap utterance"],
+                ),
+                "experimental-router": RouteSpec(
+                    description="not part of the production target contract",
+                    utterances=["try an experimental route"],
+                ),
+            },
+        )

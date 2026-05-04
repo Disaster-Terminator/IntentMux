@@ -2,9 +2,15 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import ClassVar
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+
+ALLOWED_TARGET_ROUTES = frozenset(
+    {"cheap-router", "pro-router", "free-probe-router"}
+)
 
 
 class RouteSpec(BaseModel):
@@ -13,6 +19,8 @@ class RouteSpec(BaseModel):
 
 
 class RouterSettings(BaseModel):
+    allowed_target_routes: ClassVar[frozenset[str]] = ALLOWED_TARGET_ROUTES
+
     route_model: str = "smart-router"
     default_route: str = "cheap-router"
     threshold: float = 0.55
@@ -28,6 +36,25 @@ class RouterSettings(BaseModel):
     readiness_timeout: float = 2.0
     listen_host: str = "127.0.0.1"
     listen_port: int = 4001
+
+    @model_validator(mode="after")
+    def validate_route_contract(self) -> "RouterSettings":
+        if self.default_route == self.route_model:
+            raise ValueError("default_route must not point back to route_model")
+        if self.route_model in self.routes:
+            raise ValueError("recursive route config: route_model must not be a target")
+
+        route_names = set(self.routes)
+        invalid_routes = route_names - self.allowed_target_routes
+        if invalid_routes:
+            allowed = ", ".join(sorted(self.allowed_target_routes))
+            invalid = ", ".join(sorted(invalid_routes))
+            raise ValueError(
+                f"target routes must be limited to {allowed}; invalid: {invalid}"
+            )
+        if self.default_route not in route_names:
+            raise ValueError("default_route must be present in routes")
+        return self
 
 
 def load_settings(path: str | Path = "config/routes.yaml") -> RouterSettings:

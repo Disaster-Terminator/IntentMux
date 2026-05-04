@@ -9,6 +9,10 @@ It rewrites the configured semantic entry model, currently
 - `pro-router`
 - `free-probe-router`
 
+Runtime config validation enforces that rewritten targets stay inside those
+three groups. The semantic entry model itself cannot appear as a target route or
+default route, which prevents recursive forwarding back to `semantic-router`.
+
 All other model names pass through unchanged. LiteLLM's native `smart-router`
 is intentionally kept as a separate upstream model group.
 
