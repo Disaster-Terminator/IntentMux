@@ -10,10 +10,9 @@ from typing import Any, Iterable
 ROUTE_EVENTS = {"route_complete", "route_error"}
 
 
-@dataclass(frozen=True)
+@dataclass
 class ParseDiagnostics:
     malformed_json_lines: int = 0
-    non_object_json_records: int = 0
     missing_event_records: int = 0
     unknown_event_records: int = 0
 
@@ -37,11 +36,6 @@ def parse_route_records(
     lines: Iterable[str],
     diagnostics: ParseDiagnostics | None = None,
 ) -> Iterable[dict[str, Any]]:
-    malformed_json_lines = 0
-    non_object_json_records = 0
-    missing_event_records = 0
-    unknown_event_records = 0
-
     for line in lines:
         line = line.strip()
         if not line or "{" not in line:
@@ -50,28 +44,21 @@ def parse_route_records(
         try:
             record = json.loads(line[json_start:])
         except json.JSONDecodeError:
-            malformed_json_lines += 1
-            continue
-
-        if not isinstance(record, dict):
-            non_object_json_records += 1
+            if diagnostics is not None:
+                diagnostics.malformed_json_lines += 1
             continue
 
         event = record.get("event")
         if event is None:
-            missing_event_records += 1
+            if diagnostics is not None:
+                diagnostics.missing_event_records += 1
             continue
         if event not in ROUTE_EVENTS:
-            unknown_event_records += 1
+            if diagnostics is not None:
+                diagnostics.unknown_event_records += 1
             continue
 
         yield record
-
-    if diagnostics is not None:
-        object.__setattr__(diagnostics, "malformed_json_lines", malformed_json_lines)
-        object.__setattr__(diagnostics, "non_object_json_records", non_object_json_records)
-        object.__setattr__(diagnostics, "missing_event_records", missing_event_records)
-        object.__setattr__(diagnostics, "unknown_event_records", unknown_event_records)
 
 
 def summarize_records(
@@ -150,11 +137,16 @@ def format_summary(summary: RouteLogSummary) -> str:
         f"max_duration_ms={summary.max_duration_ms:.2f}",
     ]
     diag = summary.parse_diagnostics
-    if any((diag.malformed_json_lines, diag.non_object_json_records, diag.missing_event_records, diag.unknown_event_records)):
+    if any(
+        (
+            diag.malformed_json_lines,
+            diag.missing_event_records,
+            diag.unknown_event_records,
+        )
+    ):
         lines.append(
             "ignored_records: "
             f"malformed_json={diag.malformed_json_lines}, "
-            f"non_object_json={diag.non_object_json_records}, "
             f"missing_event={diag.missing_event_records}, "
             f"unknown_event={diag.unknown_event_records}"
         )
