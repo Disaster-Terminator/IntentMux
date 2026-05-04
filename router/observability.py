@@ -118,23 +118,27 @@ def log_route_error(
     stream: bool,
     error: BaseException,
     started_ms: float,
+    upstream_status: int | None = None,
 ) -> None:
+    record: dict[str, Any] = {
+        "event": "route_error",
+        "request_id": request_id,
+        "request_id_source": request_id_source,
+        "source_model": decision.source_model,
+        "target_model": decision.target_model,
+        "reason": decision.reason,
+        "rewrite": decision.rewrite,
+        "stream": stream,
+        "error_type": type(error).__name__,
+        "score": decision.score,
+        "second_score": decision.second_score,
+        "duration_ms": round(now_ms() - started_ms, 2),
+    }
+    if upstream_status is not None:
+        record["upstream_status"] = upstream_status
     logger.info(
         json.dumps(
-            {
-                "event": "route_error",
-                "request_id": request_id,
-                "request_id_source": request_id_source,
-                "source_model": decision.source_model,
-                "target_model": decision.target_model,
-                "reason": decision.reason,
-                "rewrite": decision.rewrite,
-                "stream": stream,
-                "error_type": type(error).__name__,
-                "score": decision.score,
-                "second_score": decision.second_score,
-                "duration_ms": round(now_ms() - started_ms, 2),
-            },
+            record,
             ensure_ascii=False,
             sort_keys=True,
         )
