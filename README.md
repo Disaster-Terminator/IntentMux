@@ -60,6 +60,7 @@ Environment overrides:
 - `ROUTER_EMBEDDING_MODEL`
 - `ROUTER_ACCESS_LOG` (`false` by default; set `true` only when raw HTTP
   access logs are needed)
+- `ROUTER_READINESS_TIMEOUT`
 
 ## LiteLLM Entry Design
 
@@ -91,6 +92,14 @@ uv run python scripts/preflight.py --router-base-url http://127.0.0.1:4001
 The preflight requires `LITELLM_MASTER_KEY` in the environment or `--api-key`.
 It checks health, non-streaming route headers, streaming route headers, and SSE
 body shape without printing secrets or prompts.
+
+Runtime probes:
+
+- `/health` is a local liveness check for container health.
+- `/ready` is a layered readiness check. It reports `router`, `litellm`, and
+  `embedding` components separately and returns `503` when any layer is
+  degraded. Docker health intentionally still uses `/health` so readiness can be
+  observed without causing restart loops.
 
 Production E2E through the LiteLLM entrypoint:
 

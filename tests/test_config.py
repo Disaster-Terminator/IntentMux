@@ -195,3 +195,24 @@ routes:
     settings = load_settings(routes_path)
 
     assert settings.access_log is True
+
+
+def test_load_settings_reads_readiness_timeout_override(tmp_path: Path, monkeypatch):
+    routes_path = tmp_path / "routes.yaml"
+    routes_path.write_text(
+        """
+route_model: semantic-router
+default_route: cheap-router
+routes:
+  cheap-router:
+    description: seed cheap
+    utterances:
+      - seed cheap utterance
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("ROUTER_READINESS_TIMEOUT", "0.25")
+
+    settings = load_settings(routes_path)
+
+    assert settings.readiness_timeout == 0.25

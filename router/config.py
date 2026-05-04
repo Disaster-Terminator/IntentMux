@@ -25,6 +25,7 @@ class RouterSettings(BaseModel):
     litellm_base_url: str = "http://127.0.0.1:4000"
     litellm_timeout: float = 120.0
     access_log: bool = False
+    readiness_timeout: float = 2.0
     listen_host: str = "127.0.0.1"
     listen_port: int = 4001
 
@@ -43,6 +44,9 @@ def load_settings(path: str | Path = "config/routes.yaml") -> RouterSettings:
                 os.getenv("ROUTER_LITELLM_TIMEOUT", str(settings.litellm_timeout))
             ),
             "access_log": bool_from_env("ROUTER_ACCESS_LOG", settings.access_log),
+            "readiness_timeout": float(
+                os.getenv("ROUTER_READINESS_TIMEOUT", str(settings.readiness_timeout))
+            ),
             "listen_host": os.getenv("ROUTER_HOST", settings.listen_host),
             "listen_port": int(os.getenv("ROUTER_PORT", str(settings.listen_port))),
         }
