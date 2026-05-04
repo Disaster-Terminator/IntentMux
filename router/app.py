@@ -57,6 +57,19 @@ def create_app(
             status_code=200 if report.ready else 503,
         )
 
+    @app.post("/v1/semantic-router/decision")
+    async def route_decision(request: Request) -> dict[str, Any]:
+        payload: dict[str, Any] = await request.json()
+        decision = await router.decide(payload)
+        return {
+            "source_model": decision.source_model,
+            "target_model": decision.target_model,
+            "reason": decision.reason,
+            "rewrite": decision.rewrite,
+            "score": decision.score,
+            "second_score": decision.second_score,
+        }
+
     @app.post("/v1/chat/completions")
     async def chat_completions(request: Request) -> Response:
         started_ms = now_ms()

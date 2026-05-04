@@ -185,6 +185,42 @@ def test_chat_completion_keeps_passthrough_model():
     assert response.headers["x-router-reason"] == "passthrough"
 
 
+def test_decision_endpoint_returns_route_decision_without_forwarding():
+    proxy = FakeProxy()
+    app = create_app(
+        router=FakeRouter(
+            RoutingDecision(
+                "pro-router",
+                "hard_rule:线上",
+                rewrite=True,
+                source_model="semantic-router",
+                score=0.91,
+                second_score=0.12,
+            )
+        ),
+        proxy=proxy,
+    )
+
+    response = TestClient(app).post(
+        "/v1/semantic-router/decision",
+        json={
+            "model": "semantic-router",
+            "messages": [{"role": "user", "content": "这个线上 bug 为什么偶发"}],
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "source_model": "semantic-router",
+        "target_model": "pro-router",
+        "reason": "hard_rule:线上",
+        "rewrite": True,
+        "score": 0.91,
+        "second_score": 0.12,
+    }
+    assert proxy.payloads == []
+
+
 def test_streaming_chat_completion_uses_stream_proxy():
     proxy = FakeProxy()
     app = create_app(

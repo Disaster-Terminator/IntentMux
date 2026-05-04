@@ -29,6 +29,8 @@ Next hardening targets:
   remains local liveness
 - route-bank refresh workflow from real, redacted production examples using
   `scripts/import_review_samples.py`
+- route quality review through `/v1/semantic-router/decision`, which returns
+  the would-route decision without forwarding to LiteLLM or a model backend
 
 ## Lifecycle Management
 
