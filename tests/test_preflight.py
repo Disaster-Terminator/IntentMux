@@ -68,6 +68,24 @@ class FakeClient:
         )
 
 
+class DegradedReadyClient(FakeClient):
+    def get(self, url: str) -> FakeResponse:
+        self.urls.append(url)
+        if url.endswith("/ready"):
+            return FakeResponse(
+                status_code=503,
+                payload={
+                    "ready": False,
+                    "components": {
+                        "router": {"ok": True, "detail": None},
+                        "litellm": {"ok": True, "detail": "status=401 auth_required"},
+                        "embedding": {"ok": False, "detail": "ConnectError"},
+                    },
+                },
+            )
+        return FakeResponse(payload={"status": "ok"})
+
+
 def test_require_header_returns_pass_for_expected_header():
     result = require_header(
         name="nonstream_route",
@@ -131,3 +149,25 @@ def test_run_preflight_checks_layered_readiness(monkeypatch):
     assert "http://router.local/ready" in fake_client.urls
     assert CheckResult("ready_status", True, "status=200") in results
     assert CheckResult("ready_payload", True, "ready=True") in results
+
+
+def test_run_preflight_reports_degraded_readiness_components(monkeypatch):
+    fake_client = DegradedReadyClient()
+
+    monkeypatch.setattr(
+        "scripts.preflight.httpx.Client",
+        lambda timeout: fake_client,
+    )
+
+    results = run_preflight(
+        "http://router.local",
+        api_key="test-key",
+        timeout=5,
+    )
+
+    assert CheckResult("ready_status", False, "status=503") in results
+    assert CheckResult(
+        "ready_payload",
+        False,
+        "ready=False degraded=embedding:ConnectError",
+    ) in results
