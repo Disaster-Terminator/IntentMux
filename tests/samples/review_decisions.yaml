@@ -1,0 +1,8 @@
+cases:
+  - name: hard-rule-online
+    text: 线上故障需要紧急排查
+    expected_target: pro-router
+  - name: no-expectation-example
+    messages:
+      - role: user
+        content: 给我一个轻量总结

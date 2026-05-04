@@ -268,6 +268,39 @@ def test_decision_endpoint_returns_route_decision_without_forwarding():
     assert proxy.payloads == []
 
 
+
+
+def test_decision_endpoint_never_calls_proxy_paths():
+    class ExplodingProxy(FakeProxy):
+        async def forward_chat(self, payload, headers):
+            raise AssertionError("forward_chat should not be called")
+
+        @asynccontextmanager
+        async def stream_chat(self, payload, headers):
+            raise AssertionError("stream_chat should not be called")
+            yield
+
+    app = create_app(
+        router=FakeRouter(
+            RoutingDecision(
+                "cheap-router",
+                "embedding",
+                rewrite=True,
+                source_model="semantic-router",
+                score=0.33,
+                second_score=0.22,
+            )
+        ),
+        proxy=ExplodingProxy(),
+    )
+
+    response = TestClient(app).post(
+        "/v1/semantic-router/decision",
+        json={"model": "semantic-router", "messages": [{"role": "user", "content": "hello"}]},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["target_model"] == "cheap-router"
 def test_streaming_chat_completion_uses_stream_proxy():
     proxy = FakeProxy()
     app = create_app(
