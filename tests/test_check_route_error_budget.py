@@ -442,3 +442,72 @@ def test_cli_json_mode_preserves_nonzero_exit_on_budget_failure(monkeypatch, cap
     assert exit_code == 1
     assert payload["passed"] is False
     assert "malformed_json 1 exceeds max_malformed_json 0" in payload["reasons"]
+
+def test_check_budget_passes_when_parse_diagnostic_thresholds_are_met():
+    records = records_from_text('{"event":"route_complete","target_model":"pro-router"}')
+    result = check_budget(
+        records,
+        BudgetConfig(
+            min_total=1,
+            max_error_rate=0.0,
+            max_malformed_json=1,
+            max_missing_event=1,
+            max_unknown_event=1,
+            max_ignored_records=3,
+        ),
+        parse_diagnostics=ParseDiagnostics(
+            malformed_json_lines=1,
+            missing_event_records=1,
+            unknown_event_records=1,
+        ),
+    )
+
+    assert result.passed is True
+    assert result.reasons == []
+
+
+def test_check_budget_passes_when_reason_rate_is_within_budget():
+    records = records_from_text(
+        "\n".join(
+            [
+                '{"event":"route_complete","target_model":"pro-router","reason":"hard_rule:a"}',
+                '{"event":"route_complete","target_model":"cheap-router","reason":"hard_rule:b"}',
+                '{"event":"route_complete","target_model":"cheap-router","reason":"hard_rule:b"}',
+            ]
+        )
+    )
+
+    result = check_budget(
+        records,
+        BudgetConfig(
+            min_total=3,
+            max_error_rate=0.0,
+            max_target_error_rate=0.0,
+            max_reason_rates={"embedding_error": 0.0},
+        ),
+    )
+
+    assert result.passed is True
+    assert result.reason_rates == {"hard_rule:a": 1 / 3, "hard_rule:b": 2 / 3}
+    assert result.reasons == []
+
+
+def test_script_file_execution_returns_nonzero_for_failing_budget():
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "scripts/check_route_error_budget.py",
+            "--min-total",
+            "1",
+            "--max-error-rate",
+            "0",
+        ],
+        input='{"event":"route_error","target_model":"pro-router","error_type":"RemoteProtocolError"}\n',
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode != 0
+    assert completed.stdout.startswith("FAIL route_error_budget\n")
+    assert "error_rate 1.0000 exceeds max_error_rate 0.0000" in completed.stdout
