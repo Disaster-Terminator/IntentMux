@@ -10,7 +10,8 @@ from fastapi.testclient import TestClient
 
 from router.app import create_app, main, stream_with_context
 from router.config import RouteSpec, RouterSettings
-from router.routing import RoutingDecision
+from router.readiness import ComponentStatus, ReadinessReport
+from router.routing import Router, RoutingDecision
 
 
 class FakeRouter:
@@ -21,6 +22,19 @@ class FakeRouter:
     async def decide(self, request_json: dict[str, Any]) -> RoutingDecision:
         self.requests.append(request_json)
         return self.decision
+
+
+class FailingEmbeddingClient:
+    async def embed(self, texts: list[str]) -> list[list[float]]:
+        raise RuntimeError("embedding unavailable")
+
+
+@dataclass
+class FakeReadinessChecker:
+    report: ReadinessReport
+
+    async def check(self) -> ReadinessReport:
+        return self.report
 
 
 @dataclass
@@ -440,6 +454,77 @@ def test_chat_completion_uses_traceparent_when_request_id_headers_are_absent(cap
     route_logs = [record for record in records if record["event"] == "route_complete"]
     assert route_logs[0]["request_id"] == trace_id
     assert route_logs[0]["request_id_source"] == "traceparent"
+
+
+def test_embedding_degraded_readiness_but_chat_falls_back_to_default_route(caplog):
+    settings = RouterSettings(
+        route_model="semantic-router",
+        default_route="cheap-router",
+        routes={
+            "cheap-router": RouteSpec(
+                description="low risk",
+                utterances=["解释一下这个概念"],
+            ),
+            "pro-router": RouteSpec(
+                description="high risk",
+                utterances=["分析这个线上 bug"],
+            ),
+            "free-probe-router": RouteSpec(
+                description="probe",
+                utterances=["测试免费模型"],
+            ),
+        },
+    )
+    proxy = FakeProxy()
+    app = create_app(
+        settings=settings,
+        router=Router(settings, FailingEmbeddingClient()),
+        proxy=proxy,
+        readiness_checker=FakeReadinessChecker(
+            ReadinessReport(
+                ready=False,
+                components={
+                    "router": ComponentStatus(ok=True),
+                    "litellm": ComponentStatus(ok=True, detail="status=200"),
+                    "embedding": ComponentStatus(ok=False, detail="ConnectError"),
+                },
+            )
+        ),
+    )
+    client = TestClient(app)
+
+    readiness = client.get("/ready")
+
+    assert readiness.status_code == 503
+    assert readiness.json()["ready"] is False
+    assert readiness.json()["components"]["embedding"] == {
+        "ok": False,
+        "detail": "ConnectError",
+    }
+
+    with caplog.at_level(logging.INFO, logger="gateway_semantic_router"):
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "semantic-router",
+                "metadata": {"semantic_router_request_id": "embedding-degraded-1"},
+                "messages": [{"role": "user", "content": "敏感 prompt"}],
+            },
+        )
+
+    assert response.status_code == 200
+    assert proxy.payloads[0]["model"] == "cheap-router"
+    assert response.headers["x-router-target-model"] == "cheap-router"
+    records = [json.loads(record.message) for record in caplog.records]
+    route_complete = [record for record in records if record["event"] == "route_complete"]
+    route_errors = [record for record in records if record["event"] == "route_error"]
+    assert route_errors == []
+    assert len(route_complete) == 1
+    assert route_complete[0]["request_id"] == "embedding-degraded-1"
+    assert route_complete[0]["target_model"] == "cheap-router"
+    assert route_complete[0]["reason"] == "embedding_error"
+    serialized = "\n".join(record.message for record in caplog.records)
+    assert "敏感 prompt" not in serialized
 
 
 def test_chat_completion_logs_structured_route_error_without_sensitive_payload(caplog):

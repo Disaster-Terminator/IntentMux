@@ -14,6 +14,9 @@ Current operating target:
   are visible in route-log summaries
 - runtime config validation prevents recursive `semantic-router` targets and
   keeps rewritten routes limited to the three LiteLLM model groups
+- degraded embedding availability is explicit: `/ready` returns `503`, routed
+  chat requests fall back to `default_route` with `reason=embedding_error`, and
+  route summaries count reasons for review
 - health-check noise stays out of default logs
 - production readiness is verified by unit tests, route evals, sidecar preflight,
   LiteLLM-entry E2E, and recent-log summaries
@@ -26,9 +29,8 @@ Next hardening targets:
   `x-request-id` upstream
 - an explicit error-budget threshold for `route_error` rates by target model
   via `scripts/check_route_error_budget.py`
-- lifecycle coupling design for sidecar readiness and LiteLLM restart behavior
-  using `/ready` for layered router/LiteLLM/embedding checks while `/health`
-  remains local liveness
+- lifecycle coupling design for sidecar readiness and LiteLLM restart behavior;
+  current `/ready` reports layered health while `/health` remains local liveness
 - route-bank refresh workflow from real, redacted production examples using
   `scripts/import_review_samples.py`
 - route quality review through `/v1/semantic-router/decision`, which returns
@@ -49,8 +51,8 @@ questions before implementation:
   authenticated `/v1/models` probe?
 - Should router restart when LiteLLM restarts, or only retry upstream calls?
 - Should clients switch to `:4001` only after router and LiteLLM are both ready?
-- How should degraded embedding availability affect readiness versus routing
-  fallback?
+- Should embedding degraded fallback remain fail-open for all routed requests,
+  or should selected high-risk categories fail closed in the future?
 
 This is intentionally not implemented yet. The current standard is a sibling
 Compose service with its own health check and explicit upstream URLs.

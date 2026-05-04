@@ -105,6 +105,12 @@ Runtime probes:
   degraded. Docker health intentionally still uses `/health` so readiness can be
   observed without causing restart loops.
 
+Embedding degraded mode is intentionally fail-open for routed chat requests:
+when the embedding component is unavailable, `/ready` returns `503`, but
+`model=semantic-router` requests fall back to `default_route` with
+`reason=embedding_error`. LiteLLM/upstream proxy failures are different: they
+fail closed as redacted `502` responses and are logged as `route_error`.
+
 Production E2E through the LiteLLM entrypoint:
 
 ```bash
@@ -136,8 +142,9 @@ The summary parser ignores uvicorn access lines and only counts structured
 `route_complete` / `route_error` JSON records. Upstream route exceptions and
 HTTP `5xx` statuses are returned as `502` with a redacted JSON error body and
 are logged as `route_error`; HTTP status failures include `upstream_status` in
-the structured log and `upstream_statuses` in the summary. Prompts and bearer
-tokens are not logged.
+the structured log and `upstream_statuses` in the summary. Route reasons are
+also counted, so degraded embedding fallback shows up as
+`reasons: embedding_error=N`. Prompts and bearer tokens are not logged.
 
 Production route-error budget gate:
 

@@ -39,18 +39,21 @@ def test_summarize_records_counts_routes_errors_and_latency():
         {
             "event": "route_complete",
             "target_model": "pro-router",
+            "reason": "hard_rule:线上",
             "stream": True,
             "duration_ms": 1200,
         },
         {
             "event": "route_complete",
             "target_model": "cheap-router",
+            "reason": "embedding_error",
             "stream": False,
             "duration_ms": 300,
         },
         {
             "event": "route_error",
             "target_model": "pro-router",
+            "reason": "embedding",
             "stream": True,
             "error_type": "RemoteProtocolError",
             "upstream_status": 503,
@@ -65,6 +68,11 @@ def test_summarize_records_counts_routes_errors_and_latency():
     assert summary.errors == 1
     assert summary.streams == 2
     assert summary.targets == {"pro-router": 2, "cheap-router": 1}
+    assert summary.reasons == {
+        "embedding": 1,
+        "embedding_error": 1,
+        "hard_rule:线上": 1,
+    }
     assert summary.error_types == {"RemoteProtocolError": 1}
     assert summary.upstream_statuses == {"503": 1}
     assert summary.max_duration_ms == 1400
@@ -76,6 +84,7 @@ def test_format_summary_is_stable_for_runbooks():
             {
                 "event": "route_error",
                 "target_model": "pro-router",
+                "reason": "embedding_error",
                 "stream": True,
                 "error_type": "RemoteProtocolError",
                 "upstream_status": 503,
@@ -88,6 +97,7 @@ def test_format_summary_is_stable_for_runbooks():
         [
             "total=1 completed=0 errors=1 streams=1 nonstreams=0",
             "targets: pro-router=1",
+            "reasons: embedding_error=1",
             "error_types: RemoteProtocolError=1",
             "upstream_statuses: 503=1",
             "max_duration_ms=1400.00",
