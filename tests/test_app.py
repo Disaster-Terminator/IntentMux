@@ -286,6 +286,72 @@ def test_decision_endpoint_returns_route_decision_without_forwarding():
     assert proxy.stream_called is False
 
 
+
+def test_decision_endpoint_rejects_invalid_json_with_redacted_error():
+    proxy = NoUpstreamProxy()
+    app = create_app(
+        router=FakeRouter(RoutingDecision("pro-router", "explicit", rewrite=True, source_model="semantic-router")),
+        proxy=proxy,
+    )
+
+    response = TestClient(app).post(
+        "/v1/semantic-router/decision",
+        headers={"Authorization": "Bearer super-secret", "content-type": "application/json"},
+        content='{"model":"semantic-router","messages":[{"role":"user","content":"secret prompt"}]',
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {"error": {"message": "invalid JSON payload", "type": "invalid_request_error"}}
+    assert "secret prompt" not in response.text
+    assert "super-secret" not in response.text
+    assert proxy.forward_called is False
+    assert proxy.stream_called is False
+
+
+def test_decision_endpoint_rejects_non_object_payload():
+    proxy = NoUpstreamProxy()
+    app = create_app(
+        router=FakeRouter(RoutingDecision("pro-router", "explicit", rewrite=True, source_model="semantic-router")),
+        proxy=proxy,
+    )
+
+    response = TestClient(app).post(
+        "/v1/semantic-router/decision",
+        json=[{"model": "semantic-router"}],
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {"error": {"message": "request JSON payload must be an object", "type": "invalid_request_error"}}
+    assert proxy.forward_called is False
+    assert proxy.stream_called is False
+
+
+def test_decision_endpoint_rejects_missing_required_fields_without_leaking_body():
+    proxy = NoUpstreamProxy()
+    app = create_app(
+        router=FakeRouter(RoutingDecision("pro-router", "explicit", rewrite=True, source_model="semantic-router")),
+        proxy=proxy,
+    )
+
+    response = TestClient(app).post(
+        "/v1/semantic-router/decision",
+        headers={"Authorization": "Bearer top-secret"},
+        json={"messages": [{"role": "user", "content": "do not leak this prompt"}]},
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "error": {
+            "message": "request JSON payload must include string field 'model' and array field 'messages'",
+            "type": "invalid_request_error",
+        }
+    }
+    assert "do not leak this prompt" not in response.text
+    assert "top-secret" not in response.text
+    assert proxy.forward_called is False
+    assert proxy.stream_called is False
+
+
 def test_streaming_chat_completion_uses_stream_proxy():
     proxy = FakeProxy()
     app = create_app(

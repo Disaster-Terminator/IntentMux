@@ -64,8 +64,20 @@ def create_app(
         )
 
     @app.post("/v1/semantic-router/decision")
-    async def route_decision(request: Request) -> dict[str, Any]:
-        payload: dict[str, Any] = await request.json()
+    async def route_decision(request: Request) -> Response:
+        try:
+            payload = await request.json()
+        except ValueError:
+            return decision_request_error("invalid JSON payload")
+
+        if not isinstance(payload, dict):
+            return decision_request_error("request JSON payload must be an object")
+
+        if not isinstance(payload.get("model"), str) or not isinstance(payload.get("messages"), list):
+            return decision_request_error(
+                "request JSON payload must include string field 'model' and array field 'messages'"
+            )
+
         decision = await router.decide(payload)
         return {
             "source_model": decision.source_model,
@@ -277,3 +289,10 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+def decision_request_error(message: str) -> JSONResponse:
+    return JSONResponse(
+        {"error": {"message": message, "type": "invalid_request_error"}},
+        status_code=400,
+    )
