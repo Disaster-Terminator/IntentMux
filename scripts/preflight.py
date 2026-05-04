@@ -42,6 +42,23 @@ def require_json_field(
     return CheckResult(name, True, f"{key}={value}")
 
 
+def ready_payload_result(payload: dict) -> CheckResult:
+    ready_value = payload.get("ready")
+    degraded_components = []
+    components = payload.get("components")
+    if isinstance(components, dict):
+        for name, status in sorted(components.items()):
+            if not isinstance(status, dict) or status.get("ok") is not False:
+                continue
+            detail = status.get("detail") or "degraded"
+            degraded_components.append(f"{name}:{detail}")
+
+    detail = f"ready={ready_value}"
+    if degraded_components:
+        detail += f" degraded={','.join(degraded_components)}"
+    return CheckResult("ready_payload", ready_value is True, detail)
+
+
 def summarize_results(results: list[CheckResult]) -> None:
     for result in results:
         status = "PASS" if result.ok else "FAIL"
@@ -88,14 +105,14 @@ def run_preflight(router_base_url: str, api_key: str, timeout: float) -> list[Ch
         results.append(
             CheckResult("ready_status", ready.status_code == 200, f"status={ready.status_code}")
         )
-        if ready.status_code == 200:
-            ready_payload = ready.json()
-            ready_value = ready_payload.get("ready")
+        try:
+            results.append(ready_payload_result(ready.json()))
+        except Exception as exc:
             results.append(
                 CheckResult(
                     "ready_payload",
-                    ready_value is True,
-                    f"ready={ready_value}",
+                    False,
+                    f"invalid_json={type(exc).__name__}",
                 )
             )
 
