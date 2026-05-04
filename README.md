@@ -148,6 +148,9 @@ are logged as `route_error`; HTTP status failures include `upstream_status` in
 the structured log and `upstream_statuses` in the summary. Route reasons are
 also counted, so degraded embedding fallback shows up as
 `reasons: embedding_error=N`. Prompts and bearer tokens are not logged.
+When malformed/partial JSON route lines are present, the summary adds an
+`ignored_records` line so operators can see parse-quality drift directly from
+CLI output.
 
 Production route-error budget gate:
 

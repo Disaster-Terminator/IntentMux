@@ -227,3 +227,22 @@ def test_script_file_execution_works_from_repo_root():
 
     assert completed.returncode == 0
     assert completed.stdout.startswith("PASS route_error_budget\n")
+
+
+def test_cli_reports_parse_diagnostics_for_malformed_or_partial_logs(monkeypatch, capsys):
+    monkeypatch.setattr(
+        sys,
+        "stdin",
+        [
+            '{"event":"route_complete","target_model":"pro-router"}\n',
+            '{"event":"route_error",\n',
+            '{"target_model":"cheap-router"}\n',
+        ],
+    )
+
+    exit_code = main(["--min-total", "1", "--max-error-rate", "1"])
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "parse_diagnostics: malformed_json=1" in output
+    assert "missing_event=1" in output

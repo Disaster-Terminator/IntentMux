@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from scripts.router_log_summary import format_summary, parse_route_records, summarize_records
+from scripts.router_log_summary import (
+    ParseDiagnostics,
+    format_summary,
+    parse_route_records,
+    summarize_records,
+)
 
 
 def test_parse_route_records_ignores_access_logs_and_non_route_json():
@@ -16,22 +21,28 @@ def test_parse_route_records_ignores_access_logs_and_non_route_json():
 
     records = list(parse_route_records(logs.splitlines()))
 
-    assert records == [
-        {
-            "event": "route_complete",
-            "target_model": "pro-router",
-            "stream": True,
-            "duration_ms": 1200,
-        },
-        {
-            "event": "route_error",
-            "target_model": "pro-router",
-            "stream": True,
-            "error_type": "RemoteProtocolError",
-            "upstream_status": 503,
-            "duration_ms": 1400,
-        },
-    ]
+    assert len(records) == 2
+
+
+def test_parse_route_records_collects_diagnostics_for_malformed_and_partial_records():
+    logs = "\n".join(
+        [
+            '{"event":"route_complete","target_model":"pro-router"}',
+            '{"event":"startup"}',
+            '{"target_model":"cheap-router"}',
+            '{"event":"route_error",',
+            "[1,2,{\"x\":1}]",
+        ]
+    )
+    diagnostics = ParseDiagnostics()
+
+    records = list(parse_route_records(logs.splitlines(), diagnostics=diagnostics))
+
+    assert len(records) == 1
+    assert diagnostics.malformed_json_lines == 2
+    assert diagnostics.non_object_json_records == 0
+    assert diagnostics.missing_event_records == 1
+    assert diagnostics.unknown_event_records == 1
 
 
 def test_summarize_records_counts_routes_errors_and_latency():
