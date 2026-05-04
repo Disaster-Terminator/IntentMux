@@ -4,7 +4,7 @@ import subprocess
 import sys
 
 from scripts.check_route_error_budget import BudgetConfig, check_budget, format_budget_result, main
-from scripts.router_log_summary import parse_route_records
+from scripts.router_log_summary import ParseDiagnostics, parse_route_records
 
 
 def records_from_text(text: str):
@@ -147,6 +147,22 @@ def test_format_budget_result_is_stable_for_runbooks():
     )
 
 
+def test_format_budget_result_reports_parse_diagnostics_when_present():
+    result = check_budget(
+        [],
+        BudgetConfig(min_total=0),
+        parse_diagnostics=ParseDiagnostics(
+            malformed_json_lines=1,
+            missing_event_records=1,
+            unknown_event_records=1,
+        ),
+    )
+
+    assert format_budget_result(result).endswith(
+        "parse_diagnostics: malformed_json=1, missing_event=1, unknown_event=1"
+    )
+
+
 def test_cli_returns_zero_when_budget_passes(monkeypatch, capsys):
     monkeypatch.setattr(
         sys,
@@ -227,3 +243,22 @@ def test_script_file_execution_works_from_repo_root():
 
     assert completed.returncode == 0
     assert completed.stdout.startswith("PASS route_error_budget\n")
+
+
+def test_cli_reports_parse_diagnostics_for_malformed_or_partial_logs(monkeypatch, capsys):
+    monkeypatch.setattr(
+        sys,
+        "stdin",
+        [
+            '{"event":"route_complete","target_model":"pro-router"}\n',
+            '{"target_model":"cheap-router"}\n',
+            '{"event":"route_error",\n',
+        ],
+    )
+
+    exit_code = main(["--min-total", "1", "--max-error-rate", "1"])
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "parse_diagnostics: malformed_json=1" in output
+    assert "missing_event=1" in output

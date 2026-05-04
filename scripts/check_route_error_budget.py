@@ -7,9 +7,9 @@ import sys
 from typing import Any, Iterable
 
 try:
-    from scripts.router_log_summary import parse_route_records
+    from scripts.router_log_summary import ParseDiagnostics, parse_route_records
 except ModuleNotFoundError:
-    from router_log_summary import parse_route_records
+    from router_log_summary import ParseDiagnostics, parse_route_records
 
 
 @dataclass(frozen=True)
@@ -31,9 +31,14 @@ class BudgetResult:
     reason_rates: dict[str, float]
     error_types: dict[str, int]
     reasons: list[str]
+    parse_diagnostics: ParseDiagnostics
 
 
-def check_budget(records: Iterable[dict[str, Any]], config: BudgetConfig) -> BudgetResult:
+def check_budget(
+    records: Iterable[dict[str, Any]],
+    config: BudgetConfig,
+    parse_diagnostics: ParseDiagnostics | None = None,
+) -> BudgetResult:
     total = 0
     completed = 0
     errors = 0
@@ -102,6 +107,7 @@ def check_budget(records: Iterable[dict[str, Any]], config: BudgetConfig) -> Bud
         reason_rates=reason_rates,
         error_types=dict(error_types),
         reasons=reasons,
+        parse_diagnostics=parse_diagnostics or ParseDiagnostics(),
     )
 
 
@@ -119,6 +125,20 @@ def format_budget_result(result: BudgetResult) -> str:
     ]
     if result.reasons:
         lines.append(f"reasons: {'; '.join(result.reasons)}")
+    diag = result.parse_diagnostics
+    if any(
+        (
+            diag.malformed_json_lines,
+            diag.missing_event_records,
+            diag.unknown_event_records,
+        )
+    ):
+        lines.append(
+            "parse_diagnostics: "
+            f"malformed_json={diag.malformed_json_lines}, "
+            f"missing_event={diag.missing_event_records}, "
+            f"unknown_event={diag.unknown_event_records}"
+        )
     return "\n".join(lines)
 
 
@@ -172,14 +192,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
+    diagnostics = ParseDiagnostics()
+    records = list(parse_route_records(sys.stdin, diagnostics=diagnostics))
     result = check_budget(
-        parse_route_records(sys.stdin),
+        records,
         BudgetConfig(
             min_total=args.min_total,
             max_error_rate=args.max_error_rate,
             max_target_error_rate=args.max_target_error_rate,
             max_reason_rates=dict(args.max_reason_rate),
         ),
+        parse_diagnostics=diagnostics,
     )
     print(format_budget_result(result))
     return 0 if result.passed else 1

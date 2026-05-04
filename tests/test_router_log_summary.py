@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from scripts.router_log_summary import format_summary, parse_route_records, summarize_records
+from scripts.router_log_summary import (
+    ParseDiagnostics,
+    format_summary,
+    parse_route_records,
+    summarize_records,
+)
 
 
 def test_parse_route_records_ignores_access_logs_and_non_route_json():
@@ -32,6 +37,42 @@ def test_parse_route_records_ignores_access_logs_and_non_route_json():
             "duration_ms": 1400,
         },
     ]
+
+
+def test_parse_route_records_collects_diagnostics_for_malformed_and_partial_records():
+    logs = "\n".join(
+        [
+            '{"event":"route_complete","target_model":"pro-router"}',
+            '{"event":"startup"}',
+            '{"target_model":"cheap-router"}',
+            '{"event":"route_error",',
+        ]
+    )
+    diagnostics = ParseDiagnostics()
+
+    records = list(parse_route_records(logs.splitlines(), diagnostics=diagnostics))
+
+    assert len(records) == 1
+    assert diagnostics.malformed_json_lines == 1
+    assert diagnostics.missing_event_records == 1
+    assert diagnostics.unknown_event_records == 1
+
+
+def test_parse_route_records_reports_trailing_malformed_json_after_last_route():
+    diagnostics = ParseDiagnostics()
+
+    records = list(
+        parse_route_records(
+            [
+                '{"event":"route_complete","target_model":"pro-router"}',
+                '{"event":"route_error",',
+            ],
+            diagnostics=diagnostics,
+        )
+    )
+
+    assert len(records) == 1
+    assert diagnostics.malformed_json_lines == 1
 
 
 def test_summarize_records_counts_routes_errors_and_latency():
@@ -102,4 +143,17 @@ def test_format_summary_is_stable_for_runbooks():
             "upstream_statuses: 503=1",
             "max_duration_ms=1400.00",
         ]
+    )
+
+
+def test_format_summary_reports_parse_diagnostics_when_present():
+    diagnostics = ParseDiagnostics(
+        malformed_json_lines=1,
+        missing_event_records=1,
+        unknown_event_records=1,
+    )
+    summary = summarize_records([], parse_diagnostics=diagnostics)
+
+    assert format_summary(summary).endswith(
+        "ignored_records: malformed_json=1, missing_event=1, unknown_event=1"
     )
