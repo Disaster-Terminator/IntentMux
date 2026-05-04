@@ -229,3 +229,32 @@ def test_main_json_output_parses_mixed_stream_and_ignores_access_logs():
         "missing_event": 0,
         "unknown_event": 1,
     }
+
+
+def test_main_json_output_matches_checked_in_fixture():
+    fixture_path = "tests/samples/router_logs_mixed.log"
+    with open(fixture_path, encoding="utf-8") as f:
+        logs = f.read()
+
+    completed = subprocess.run(
+        [sys.executable, "scripts/router_log_summary.py", "--output", "json"],
+        input=logs,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+
+    payload = json.loads(completed.stdout)
+    assert payload == {
+        "error_types": {"UpstreamStatusError": 1},
+        "ignored_records": {"malformed_json": 1, "missing_event": 1, "unknown_event": 1},
+        "max_duration_ms": 125.0,
+        "nonstreams": 1,
+        "reasons": {"embedding": 1, "hard_rule": 1},
+        "route_complete": 1,
+        "route_error": 1,
+        "streams": 1,
+        "targets": {"cheap-router": 1, "pro-router": 1},
+        "total": 2,
+        "upstream_statuses": {"503": 1},
+    }

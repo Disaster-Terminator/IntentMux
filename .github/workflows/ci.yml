@@ -34,6 +34,11 @@ jobs:
           set -o pipefail
           uv run python scripts/eval_routes.py --mock-embeddings 2>&1 | tee mock-route-eval.log
 
+      - name: Run router log summary fixture check (deterministic CLI)
+        run: |
+          set -o pipefail
+          uv run python scripts/router_log_summary.py --output json < tests/samples/router_logs_mixed.log | tee router-log-summary.json
+
       - name: Upload CI diagnostics (failure only)
         if: failure()
         uses: actions/upload-artifact@v4
@@ -42,3 +47,4 @@ jobs:
           path: |
             pytest.log
             mock-route-eval.log
+            router-log-summary.json
