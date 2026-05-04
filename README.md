@@ -80,6 +80,17 @@ sidecar's semantic task router.
 Current proof and acceptance criteria are documented in
 `docs/superpowers/specs/2026-05-03-litellm-semantic-router-entry-design.md`.
 
+## CI
+
+GitHub Actions CI validates baseline pull request safety checks only:
+
+- `uv run python -m pytest -q`
+- `uv run python scripts/eval_routes.py --mock-embeddings`
+
+CI does **not** claim full production validation. Live preflight, LiteLLM-entry
+E2E checks, Docker log review, and route-error budget checks remain
+operator/local-production checks.
+
 ## Verification
 
 ```bash
