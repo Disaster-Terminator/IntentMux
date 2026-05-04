@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from router.config import RouterSettings, RouteSpec
-from router.routing import Router
+from router.routing import Router, latest_user_text
 
 
 class FakeEmbeddingClient:
@@ -39,6 +39,40 @@ def settings() -> RouterSettings:
         },
         pro_hard_rules=["报错", "竞态", "线上", "PR"],
     )
+
+
+def test_latest_user_text_uses_latest_user_message():
+    messages = [
+        {"role": "user", "content": "older user text"},
+        {"role": "assistant", "content": "assistant text"},
+        {"role": "user", "content": "latest user text"},
+    ]
+
+    assert latest_user_text(messages) == "latest user text"
+
+
+def test_latest_user_text_joins_text_parts_and_ignores_non_text_parts():
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "first"},
+                {"type": "image_url", "image_url": {"url": "https://example.com/a.png"}},
+                {"type": "text", "text": "second"},
+            ],
+        }
+    ]
+
+    assert latest_user_text(messages) == "first\nsecond"
+
+
+def test_latest_user_text_invalid_or_empty_inputs_return_empty_string():
+    assert latest_user_text([]) == ""
+    assert latest_user_text([{"role": "system", "content": "ignore"}]) == ""
+    assert latest_user_text([{"role": "user"}]) == ""
+    assert latest_user_text([{"role": "user", "content": None}]) == ""
+    assert latest_user_text([{"role": "user", "content": [{"type": "text", "text": 123}]}]) == ""
+    assert latest_user_text([{"role": "user", "content": [None, "bad", {"type": "image_url"}]}]) == ""
 
 
 @pytest.mark.asyncio
@@ -139,3 +173,26 @@ async def test_embedding_failure_falls_back_to_default_route():
     assert decision.target_model == "cheap-router"
     assert decision.reason == "embedding_error"
 
+
+@pytest.mark.asyncio
+async def test_decide_handles_none_or_invalid_messages_with_low_confidence_or_embedding_error():
+    vectors = {
+        "翻译成中文": [1.0, 0.0, 0.0],
+        "总结这篇文章": [1.0, 0.0, 0.0],
+        "分析这个线上 bug": [0.0, 1.0, 0.0],
+        "代码审查": [0.0, 1.0, 0.0],
+        "测试免费模型": [0.0, 0.0, 1.0],
+        "批量探活": [0.0, 0.0, 1.0],
+        "": [0.0, 0.0, 0.0],
+    }
+    router = Router(settings(), FakeEmbeddingClient(vectors))
+
+    for bad_messages in (None, "bad", [{"role": "user", "content": [{"type": "text", "text": 123}]}]):
+        decision = await router.decide({"model": "smart-router", "messages": bad_messages})
+        assert decision.target_model == "cheap-router"
+        assert decision.reason == "low_confidence"
+
+    failing_router = Router(settings(), FakeEmbeddingClient({}, fail=True))
+    decision = await failing_router.decide({"model": "smart-router", "messages": None})
+    assert decision.target_model == "cheap-router"
+    assert decision.reason == "embedding_error"
