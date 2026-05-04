@@ -117,6 +117,21 @@ The summary parser ignores uvicorn access lines and only counts structured
 returned as `502` with a redacted JSON error body and are logged as
 `route_error`; prompts and bearer tokens are not logged.
 
+Production route-error budget gate:
+
+```bash
+docker logs --since 12h gateway_semantic_router 2>&1 \
+  | uv run python scripts/check_route_error_budget.py \
+      --min-total 1 \
+      --max-error-rate 0 \
+      --max-target-error-rate 0
+```
+
+The budget gate prints a stable PASS/FAIL report and exits non-zero when the
+selected log window has too few route events or exceeds the total/per-target
+`route_error` thresholds. Use this after preflight/E2E and before keeping a new
+router build in production traffic.
+
 For a live sidecar request, pass the same LiteLLM `Authorization` header to
 `http://127.0.0.1:4001/v1/chat/completions`.
 
