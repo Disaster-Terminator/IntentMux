@@ -151,6 +151,18 @@ router build in production traffic.
 For a live sidecar request, pass the same LiteLLM `Authorization` header to
 `http://127.0.0.1:4001/v1/chat/completions`.
 
+Routing decision preview without upstream forwarding:
+
+```bash
+curl http://127.0.0.1:4001/v1/semantic-router/decision \
+  -H "Content-Type: application/json" \
+  -d '{"model":"semantic-router","messages":[{"role":"user","content":"这个线上 bug 为什么偶发？"}]}'
+```
+
+Use this endpoint for route quality review and gray-mode evaluation. It returns
+the selected target, reason, rewrite flag, and scores, but does not call LiteLLM
+or any model backend.
+
 Streaming smoke test:
 
 ```bash
