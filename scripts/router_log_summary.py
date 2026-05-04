@@ -18,6 +18,7 @@ class RouteLogSummary:
     streams: int
     nonstreams: int
     targets: dict[str, int]
+    reasons: dict[str, int]
     error_types: dict[str, int]
     upstream_statuses: dict[str, int]
     max_duration_ms: float
@@ -44,6 +45,7 @@ def summarize_records(records: Iterable[dict[str, Any]]) -> RouteLogSummary:
     streams = 0
     nonstreams = 0
     targets: Counter[str] = Counter()
+    reasons: Counter[str] = Counter()
     error_types: Counter[str] = Counter()
     upstream_statuses: Counter[str] = Counter()
     max_duration_ms = 0.0
@@ -68,6 +70,10 @@ def summarize_records(records: Iterable[dict[str, Any]]) -> RouteLogSummary:
         if isinstance(target_model, str):
             targets[target_model] += 1
 
+        reason = record.get("reason")
+        if isinstance(reason, str):
+            reasons[reason] += 1
+
         duration_ms = record.get("duration_ms")
         if isinstance(duration_ms, int | float):
             max_duration_ms = max(max_duration_ms, float(duration_ms))
@@ -83,6 +89,7 @@ def summarize_records(records: Iterable[dict[str, Any]]) -> RouteLogSummary:
         streams=streams,
         nonstreams=nonstreams,
         targets=dict(targets),
+        reasons=dict(reasons),
         error_types=dict(error_types),
         upstream_statuses=dict(upstream_statuses),
         max_duration_ms=max_duration_ms,
@@ -97,6 +104,7 @@ def format_summary(summary: RouteLogSummary) -> str:
             f"nonstreams={summary.nonstreams}"
         ),
         f"targets: {format_counts(summary.targets)}",
+        f"reasons: {format_counts(summary.reasons)}",
         f"error_types: {format_counts(summary.error_types)}",
         f"upstream_statuses: {format_counts(summary.upstream_statuses)}",
         f"max_duration_ms={summary.max_duration_ms:.2f}",
