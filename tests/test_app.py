@@ -83,6 +83,23 @@ class FakeProxy:
             self.stream_context_closed = True
 
 
+
+
+class NoUpstreamProxy:
+    def __init__(self):
+        self.forward_called = False
+        self.stream_called = False
+
+    async def forward_chat(self, payload: dict[str, Any], headers: dict[str, str]):
+        self.forward_called = True
+        raise AssertionError("/v1/semantic-router/decision must not call forward_chat")
+
+    @asynccontextmanager
+    async def stream_chat(self, payload: dict[str, Any], headers: dict[str, str]):
+        self.stream_called = True
+        raise AssertionError("/v1/semantic-router/decision must not call stream_chat")
+        yield
+
 class FailingProxy(FakeProxy):
     async def forward_chat(self, payload: dict[str, Any], headers: dict[str, str]):
         self.payloads.append(payload)
@@ -233,7 +250,7 @@ def test_chat_completion_keeps_passthrough_model():
 
 
 def test_decision_endpoint_returns_route_decision_without_forwarding():
-    proxy = FakeProxy()
+    proxy = NoUpstreamProxy()
     app = create_app(
         router=FakeRouter(
             RoutingDecision(
@@ -265,7 +282,8 @@ def test_decision_endpoint_returns_route_decision_without_forwarding():
         "score": 0.91,
         "second_score": 0.12,
     }
-    assert proxy.payloads == []
+    assert proxy.forward_called is False
+    assert proxy.stream_called is False
 
 
 def test_streaming_chat_completion_uses_stream_proxy():
