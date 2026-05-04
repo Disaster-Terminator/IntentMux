@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+import json
+import subprocess
+import sys
+
 from scripts.router_log_summary import (
     ParseDiagnostics,
     format_summary,
+    format_summary_json,
     parse_route_records,
     summarize_records,
 )
@@ -157,3 +162,64 @@ def test_format_summary_reports_parse_diagnostics_when_present():
     assert format_summary(summary).endswith(
         "ignored_records: malformed_json=1, missing_event=1, unknown_event=1"
     )
+
+
+def test_format_summary_json_mixed_records_is_deterministic():
+    logs = "\n".join(
+        [
+            'INFO:     127.0.0.1:1 - "GET /health HTTP/1.1" 200 OK',
+            '{"event":"route_complete","target_model":"pro-router","reason":"hard_rule","stream":true,"duration_ms":1200}',
+            '{"event":"route_error","target_model":"cheap-router","reason":"embedding_error","stream":false,"error_type":"RemoteProtocolError","upstream_status":503,"duration_ms":800}',
+            '{"event":"route_error",',
+        ]
+    )
+    diagnostics = ParseDiagnostics()
+    records = list(parse_route_records(logs.splitlines(), diagnostics=diagnostics))
+    summary = summarize_records(records, parse_diagnostics=diagnostics)
+
+    payload = json.loads(format_summary_json(summary))
+
+    assert payload == {
+        "error_types": {"RemoteProtocolError": 1},
+        "ignored_records": {
+            "malformed_json": 1,
+            "missing_event": 0,
+            "unknown_event": 0,
+        },
+        "max_duration_ms": 1200.0,
+        "nonstreams": 1,
+        "reasons": {"embedding_error": 1, "hard_rule": 1},
+        "route_complete": 1,
+        "route_error": 1,
+        "streams": 1,
+        "targets": {"cheap-router": 1, "pro-router": 1},
+        "total": 2,
+        "upstream_statuses": {"503": 1},
+    }
+
+
+def test_main_json_output_flag_outputs_json_summary(tmp_path):
+    logs = "\n".join(
+        [
+            '{"event":"route_complete","target_model":"pro-router","reason":"hard_rule","stream":true,"duration_ms":100}',
+            '{"event":"route_error","target_model":"pro-router","reason":"embedding","stream":true,"error_type":"RemoteProtocolError","upstream_status":504,"duration_ms":200}',
+            "not json",
+        ]
+    )
+
+    result = subprocess.run(
+        [sys.executable, "scripts/router_log_summary.py", "--json"],
+        input=logs,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["route_complete"] == 1
+    assert payload["route_error"] == 1
+    assert payload["ignored_records"] == {
+        "malformed_json": 0,
+        "missing_event": 0,
+        "unknown_event": 0,
+    }
