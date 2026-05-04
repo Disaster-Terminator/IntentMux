@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -114,6 +115,26 @@ def _build_json_result(case: ReviewCase, decision_result: dict[str, Any]) -> dic
     return output
 
 
+def _safe_error_message(exc: Exception) -> str:
+    text = str(exc)
+    text = re.sub(r"(?i)bearer\s+[A-Za-z0-9\-._~+/]+=*", "bearer [REDACTED]", text)
+    text = re.sub(r'("?(?:text|prompt|content|messages)"?\s*:\s*)(".*?")', r"\1\"[REDACTED]\"", text)
+    text = re.sub(r"(?i)\b(text|prompt|content|messages)\b\s*:\s*[^,;\n]+", r"\1: [REDACTED]", text)
+    return text[:500]
+
+
+def _build_error_json_result(case: ReviewCase, exc: Exception) -> dict[str, Any]:
+    return {
+        "case": case.name,
+        "expected_target": case.expected_target,
+        "actual_target": None,
+        "status": "error",
+        "error_type": type(exc).__name__,
+        "error_message": _safe_error_message(exc),
+        "request_payload_model": str(case.payload.get("model", "")),
+    }
+
+
 def call_decision_endpoint(endpoint: str, payload: dict[str, Any], timeout_s: float) -> dict[str, Any]:
     req = request.Request(
         endpoint,
@@ -133,26 +154,33 @@ def run_review(endpoint: str, cases_path: Path, timeout_s: float, output: str = 
     rows: list[list[str]] = []
     json_rows: list[dict[str, Any]] = []
     mismatch_count = 0
+    error_count = 0
 
     for case in load_cases(cases_path):
-        result = call_decision_endpoint(endpoint, case.payload, timeout_s)
-        row = format_result_row(
-            case_name=case.name,
-            target_model=str(result.get("target_model", "")),
-            expected_target=case.expected_target,
-            reason=str(result.get("reason", "")),
-        )
-        rows.append(row)
-        json_rows.append(_build_json_result(case, result))
-        if row[0] == "FAIL":
-            mismatch_count += 1
+        try:
+            result = call_decision_endpoint(endpoint, case.payload, timeout_s)
+            row = format_result_row(
+                case_name=case.name,
+                target_model=str(result.get("target_model", "")),
+                expected_target=case.expected_target,
+                reason=str(result.get("reason", "")),
+            )
+            rows.append(row)
+            json_rows.append(_build_json_result(case, result))
+            if row[0] == "FAIL":
+                mismatch_count += 1
+        except Exception as exc:
+            error_count += 1
+            safe_message = _safe_error_message(exc)
+            rows.append(["ERROR", case.name, "", case.expected_target or "", safe_message])
+            json_rows.append(_build_error_json_result(case, exc))
 
     if output == "json":
         print(json.dumps(json_rows, ensure_ascii=False, indent=2))
     else:
         _print_table(rows)
-        print(f"\nTotal cases: {len(rows)}; mismatches: {mismatch_count}")
-    return 1 if mismatch_count else 0
+        print(f"\nTotal cases: {len(rows)}; mismatches: {mismatch_count}; errors: {error_count}")
+    return 1 if (mismatch_count or error_count) else 0
 
 
 def main() -> None:

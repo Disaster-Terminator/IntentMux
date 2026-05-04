@@ -111,7 +111,7 @@ cases:
     assert exit_code == 0
     assert "status" in output
     assert "PASS" in output
-    assert "Total cases: 1; mismatches: 0" in output
+    assert "Total cases: 1; mismatches: 0; errors: 0" in output
 
 
 def test_run_review_json_output_shape_and_neutral_status(monkeypatch, tmp_path, capsys):
@@ -174,3 +174,93 @@ cases:
     )
 
     assert run_review("http://localhost", path, 1.0, output="json") == 1
+
+
+def test_run_review_endpoint_exception_table_output(monkeypatch, tmp_path, capsys):
+    path = tmp_path / "cases.yaml"
+    path.write_text(
+        """
+cases:
+  - name: broken endpoint
+    text: hello
+    expected_target: cheap-router
+""",
+        encoding="utf-8",
+    )
+
+    def _raise(*_args):
+        raise RuntimeError("decision endpoint returned 500: Bearer abc123 content: secret")
+
+    monkeypatch.setattr(review_decisions, "call_decision_endpoint", _raise)
+    exit_code = run_review("http://localhost", path, 1.0, output="table")
+    output = capsys.readouterr().out
+
+    assert exit_code == 1
+    assert "ERROR" in output
+    assert "broken endpoint" in output
+    assert "secret" not in output
+    assert "abc123" not in output
+
+
+def test_run_review_endpoint_exception_json_output(monkeypatch, tmp_path, capsys):
+    path = tmp_path / "cases.yaml"
+    path.write_text(
+        """
+cases:
+  - name: broken endpoint
+    text: hello
+    expected_target: cheap-router
+""",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(review_decisions, "call_decision_endpoint", lambda *_args: (_ for _ in ()).throw(ValueError("boom")))
+    exit_code = run_review("http://localhost", path, 1.0, output="json")
+    output = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 1
+    assert output == [
+        {
+            "case": "broken endpoint",
+            "expected_target": "cheap-router",
+            "actual_target": None,
+            "status": "error",
+            "error_type": "ValueError",
+            "error_message": "boom",
+            "request_payload_model": DEFAULT_ROUTE_MODEL,
+        }
+    ]
+
+
+def test_run_review_preserves_previous_success_before_later_error(monkeypatch, tmp_path, capsys):
+    path = tmp_path / "cases.yaml"
+    path.write_text(
+        """
+cases:
+  - name: first ok
+    text: hello
+    expected_target: cheap-router
+  - name: then broken
+    text: hi
+    expected_target: pro-router
+""",
+        encoding="utf-8",
+    )
+
+    calls = {"count": 0}
+
+    def _call(*_args):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            return {"target_model": "cheap-router", "reason": "semantic_similarity"}
+        raise RuntimeError("endpoint down")
+
+    monkeypatch.setattr(review_decisions, "call_decision_endpoint", _call)
+    exit_code = run_review("http://localhost", path, 1.0, output="json")
+    output = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 1
+    assert output[0]["case"] == "first ok"
+    assert output[0]["status"] == "pass"
+    assert output[1]["case"] == "then broken"
+    assert output[1]["status"] == "error"
