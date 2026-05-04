@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from pathlib import Path
 
 from scripts.router_log_summary import (
     ParseDiagnostics,
@@ -228,4 +229,31 @@ def test_main_json_output_parses_mixed_stream_and_ignores_access_logs():
         "malformed_json": 1,
         "missing_event": 0,
         "unknown_event": 1,
+    }
+
+
+def test_main_json_output_matches_checked_in_fixture():
+    fixture = Path("tests/samples/router_logs.ndjson").read_text()
+
+    completed = subprocess.run(
+        [sys.executable, "scripts/router_log_summary.py", "--output", "json"],
+        input=fixture,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+
+    payload = json.loads(completed.stdout)
+    assert payload == {
+        "error_types": {"UpstreamStatusError": 1},
+        "ignored_records": {"malformed_json": 1, "missing_event": 0, "unknown_event": 1},
+        "max_duration_ms": 480.0,
+        "nonstreams": 1,
+        "reasons": {"embedding": 1, "embedding_error": 1, "hard_rule:vip": 1},
+        "route_complete": 2,
+        "route_error": 1,
+        "streams": 2,
+        "targets": {"cheap-router": 1, "pro-router": 2},
+        "total": 3,
+        "upstream_statuses": {"503": 1},
     }
