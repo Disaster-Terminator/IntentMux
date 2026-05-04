@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from collections import Counter
 from dataclasses import dataclass
+import json
 import sys
 from typing import Any, Iterable
 
@@ -171,6 +172,34 @@ def format_budget_result(result: BudgetResult) -> str:
     return "\n".join(lines)
 
 
+def budget_result_to_dict(result: BudgetResult) -> dict[str, Any]:
+    return {
+        "passed": result.passed,
+        "total": result.total,
+        "completed": result.completed,
+        "errors": result.errors,
+        "error_rate": result.error_rate,
+        "target_error_rates": result.target_error_rates,
+        "reason_rates": result.reason_rates,
+        "error_types": result.error_types,
+        "reasons": result.reasons,
+        "ignored_records": result.ignored_records,
+        "parse_diagnostics": {
+            "malformed_json": result.parse_diagnostics.malformed_json_lines,
+            "missing_event": result.parse_diagnostics.missing_event_records,
+            "unknown_event": result.parse_diagnostics.unknown_event_records,
+        },
+    }
+
+
+def format_budget_result_json(result: BudgetResult) -> str:
+    return json.dumps(
+        budget_result_to_dict(result),
+        sort_keys=True,
+        ensure_ascii=False,
+    )
+
+
 def format_rates(rates: dict[str, float]) -> str:
     if not rates:
         return "none"
@@ -220,6 +249,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "Repeat for multiple reasons, for example embedding_error=0."
         ),
     )
+    parser.add_argument("--output", choices=("text", "json"), default="text")
+    parser.add_argument("--json", action="store_true", help="Shorthand for --output json")
     return parser.parse_args(argv)
 
 
@@ -241,7 +272,11 @@ def main(argv: list[str] | None = None) -> int:
         ),
         parse_diagnostics=diagnostics,
     )
-    print(format_budget_result(result))
+    output_mode = "json" if args.json else args.output
+    if output_mode == "json":
+        print(format_budget_result_json(result))
+    else:
+        print(format_budget_result(result))
     return 0 if result.passed else 1
 
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 
@@ -349,3 +350,95 @@ def test_cli_fails_when_parse_diagnostics_threshold_exceeded(monkeypatch, capsys
     output = capsys.readouterr().out
     assert exit_code == 1
     assert "reasons: malformed_json 1 exceeds max_malformed_json 0" in output
+
+
+def test_cli_json_output_on_passing_budget(monkeypatch, capsys):
+    monkeypatch.setattr(
+        sys,
+        "stdin",
+        ['{"event":"route_complete","target_model":"pro-router","reason":"hard_rule:x"}\n'],
+    )
+
+    exit_code = main(["--min-total", "1", "--output", "json"])
+
+    output = capsys.readouterr().out
+    payload = json.loads(output)
+    assert exit_code == 0
+    assert payload["passed"] is True
+    assert payload["total"] == 1
+    assert payload["completed"] == 1
+    assert payload["errors"] == 0
+    assert payload["error_rate"] == 0.0
+    assert payload["target_error_rates"] == {"pro-router": 0.0}
+    assert payload["reason_rates"] == {"hard_rule:x": 1.0}
+    assert payload["error_types"] == {}
+    assert payload["reasons"] == []
+    assert payload["ignored_records"] == 0
+    assert payload["parse_diagnostics"] == {
+        "malformed_json": 0,
+        "missing_event": 0,
+        "unknown_event": 0,
+    }
+
+
+def test_cli_json_output_on_failing_budget(monkeypatch, capsys):
+    monkeypatch.setattr(
+        sys,
+        "stdin",
+        [
+            '{"event":"route_error","target_model":"pro-router","error_type":"RemoteProtocolError"}\n',
+        ],
+    )
+
+    exit_code = main(["--min-total", "1", "--output", "json"])
+
+    output = capsys.readouterr().out
+    payload = json.loads(output)
+    assert exit_code == 1
+    assert payload["passed"] is False
+    assert payload["reasons"] == [
+        "error_rate 1.0000 exceeds max_error_rate 0.0000",
+        "target pro-router error_rate 1.0000 exceeds max_target_error_rate 0.0000",
+    ]
+
+
+def test_cli_json_output_includes_parse_diagnostics(monkeypatch, capsys):
+    monkeypatch.setattr(
+        sys,
+        "stdin",
+        [
+            '{"event":"route_complete","target_model":"pro-router"}\n',
+            '{"target_model":"cheap-router"}\n',
+            '{"event":"route_error",\n',
+        ],
+    )
+
+    exit_code = main(["--min-total", "1", "--max-error-rate", "1", "--output", "json"])
+
+    output = capsys.readouterr().out
+    payload = json.loads(output)
+    assert exit_code == 0
+    assert payload["parse_diagnostics"] == {
+        "malformed_json": 1,
+        "missing_event": 1,
+        "unknown_event": 0,
+    }
+    assert payload["ignored_records"] == 2
+
+
+def test_cli_json_mode_preserves_nonzero_exit_on_budget_failure(monkeypatch, capsys):
+    monkeypatch.setattr(
+        sys,
+        "stdin",
+        ['{"event":"route_complete","target_model":"pro-router"}\n', '{"event":"route_error",\n'],
+    )
+
+    exit_code = main(
+        ["--min-total", "1", "--max-error-rate", "1", "--max-malformed-json", "0", "--json"]
+    )
+
+    output = capsys.readouterr().out
+    payload = json.loads(output)
+    assert exit_code == 1
+    assert payload["passed"] is False
+    assert "malformed_json 1 exceeds max_malformed_json 0" in payload["reasons"]
