@@ -18,6 +18,7 @@ from router.observability import (
     route_headers,
 )
 from router.proxy import LiteLLMProxy
+from router.readiness import ReadinessChecker
 from router.routing import Router
 
 
@@ -28,6 +29,7 @@ def create_app(
     settings: RouterSettings | None = None,
     router: Router | None = None,
     proxy: LiteLLMProxy | None = None,
+    readiness_checker: ReadinessChecker | None = None,
 ) -> FastAPI:
     if settings is None:
         settings = load_settings()
@@ -38,12 +40,22 @@ def create_app(
         )
     if proxy is None:
         proxy = LiteLLMProxy(settings.litellm_base_url, timeout=settings.litellm_timeout)
+    if readiness_checker is None:
+        readiness_checker = ReadinessChecker(settings)
 
     app = FastAPI(title="Gateway Semantic Router")
 
     @app.get("/health")
     async def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.get("/ready")
+    async def ready() -> JSONResponse:
+        report = await readiness_checker.check()
+        return JSONResponse(
+            report.to_dict(),
+            status_code=200 if report.ready else 503,
+        )
 
     @app.post("/v1/chat/completions")
     async def chat_completions(request: Request) -> Response:
