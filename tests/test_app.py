@@ -85,6 +85,39 @@ class FailingStreamProxy(FakeProxy):
         yield
 
 
+class UpstreamStatusProxy(FakeProxy):
+    async def forward_chat(
+        self, payload: dict[str, Any], headers: dict[str, str]
+    ) -> FakeProxyResponse:
+        self.payloads.append(payload)
+        self.headers.append(headers)
+        return FakeProxyResponse(
+            status_code=503,
+            content=b'{"error":{"message":"upstream leaked sensitive body"}}',
+            headers={"content-type": "application/json"},
+        )
+
+
+class UpstreamStatusStreamProxy(FakeProxy):
+    @asynccontextmanager
+    async def stream_chat(self, payload: dict[str, Any], headers: dict[str, str]):
+        self.payloads.append(payload)
+        self.headers.append(headers)
+        self.stream_context_closed = False
+
+        async def chunks():
+            yield b'data: {"error":"upstream leaked sensitive stream"}\n\n'
+
+        try:
+            yield FakeProxyResponse(
+                status_code=503,
+                content=chunks(),
+                headers={"content-type": "text/event-stream"},
+            )
+        finally:
+            self.stream_context_closed = True
+
+
 def test_health_reports_ready():
     app = create_app(
         router=FakeRouter(
@@ -453,6 +486,55 @@ def test_chat_completion_logs_structured_route_error_without_sensitive_payload(c
     assert "Bearer litellm-test" not in serialized
 
 
+def test_chat_completion_maps_upstream_5xx_to_redacted_route_error(caplog):
+    app = create_app(
+        router=FakeRouter(
+            RoutingDecision(
+                "cheap-router",
+                "embedding",
+                rewrite=True,
+                source_model="semantic-router",
+                score=0.7,
+                second_score=0.2,
+            )
+        ),
+        proxy=UpstreamStatusProxy(),
+    )
+
+    with caplog.at_level(logging.INFO, logger="gateway_semantic_router"):
+        response = TestClient(app, raise_server_exceptions=False).post(
+            "/v1/chat/completions",
+            headers={"Authorization": "Bearer litellm-test"},
+            json={
+                "model": "semantic-router",
+                "metadata": {"semantic_router_request_id": "status-error-request-1"},
+                "messages": [{"role": "user", "content": "敏感 prompt"}],
+            },
+        )
+
+    assert response.status_code == 502
+    assert response.json() == {
+        "error": {
+            "message": "upstream route failed",
+            "type": "UpstreamStatusError",
+        }
+    }
+    records = [json.loads(record.message) for record in caplog.records]
+    route_complete = [record for record in records if record["event"] == "route_complete"]
+    route_errors = [record for record in records if record["event"] == "route_error"]
+    assert route_complete == []
+    assert len(route_errors) == 1
+    assert route_errors[0]["request_id"] == "status-error-request-1"
+    assert route_errors[0]["target_model"] == "cheap-router"
+    assert route_errors[0]["error_type"] == "UpstreamStatusError"
+    assert route_errors[0]["upstream_status"] == 503
+    serialized = "\n".join(record.message for record in caplog.records)
+    assert "敏感 prompt" not in serialized
+    assert "Bearer litellm-test" not in serialized
+    assert "upstream leaked sensitive body" not in response.text
+    assert "upstream leaked sensitive body" not in serialized
+
+
 def test_streaming_chat_completion_returns_gateway_error_when_upstream_disconnects(caplog):
     app = create_app(
         router=FakeRouter(
@@ -490,6 +572,53 @@ def test_streaming_chat_completion_returns_gateway_error_when_upstream_disconnec
     serialized = "\n".join(record.message for record in caplog.records)
     assert "敏感 prompt" not in serialized
     assert "Bearer litellm-test" not in serialized
+
+
+def test_streaming_chat_completion_maps_upstream_5xx_to_redacted_route_error(caplog):
+    proxy = UpstreamStatusStreamProxy()
+    app = create_app(
+        router=FakeRouter(
+            RoutingDecision(
+                "pro-router",
+                "hard_rule:PR",
+                rewrite=True,
+                source_model="semantic-router",
+            )
+        ),
+        proxy=proxy,
+    )
+
+    with caplog.at_level(logging.INFO, logger="gateway_semantic_router"):
+        response = TestClient(app, raise_server_exceptions=False).post(
+            "/v1/chat/completions",
+            headers={"Authorization": "Bearer litellm-test"},
+            json={
+                "model": "semantic-router",
+                "stream": True,
+                "metadata": {"semantic_router_request_id": "stream-status-error-request-1"},
+                "messages": [{"role": "user", "content": "敏感 prompt"}],
+            },
+        )
+
+    assert response.status_code == 502
+    assert response.headers["x-router-request-id"] == "stream-status-error-request-1"
+    assert response.headers["x-router-target-model"] == "pro-router"
+    assert response.json()["error"]["type"] == "UpstreamStatusError"
+    assert proxy.stream_context_closed is True
+    records = [json.loads(record.message) for record in caplog.records]
+    route_complete = [record for record in records if record["event"] == "route_complete"]
+    route_errors = [record for record in records if record["event"] == "route_error"]
+    assert route_complete == []
+    assert len(route_errors) == 1
+    assert route_errors[0]["request_id"] == "stream-status-error-request-1"
+    assert route_errors[0]["stream"] is True
+    assert route_errors[0]["error_type"] == "UpstreamStatusError"
+    assert route_errors[0]["upstream_status"] == 503
+    serialized = "\n".join(record.message for record in caplog.records)
+    assert "敏感 prompt" not in serialized
+    assert "Bearer litellm-test" not in serialized
+    assert "upstream leaked sensitive stream" not in response.text
+    assert "upstream leaked sensitive stream" not in serialized
 
 
 def test_streaming_chat_completion_logs_after_body_iteration(caplog):

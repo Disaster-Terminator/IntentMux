@@ -129,9 +129,11 @@ docker logs --since 12h gateway_semantic_router 2>&1 \
 ```
 
 The summary parser ignores uvicorn access lines and only counts structured
-`route_complete` / `route_error` JSON records. Upstream route failures are
-returned as `502` with a redacted JSON error body and are logged as
-`route_error`; prompts and bearer tokens are not logged.
+`route_complete` / `route_error` JSON records. Upstream route exceptions and
+HTTP `5xx` statuses are returned as `502` with a redacted JSON error body and
+are logged as `route_error`; HTTP status failures include `upstream_status` in
+the structured log and `upstream_statuses` in the summary. Prompts and bearer
+tokens are not logged.
 
 Production route-error budget gate:
 

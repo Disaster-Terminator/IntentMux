@@ -25,6 +25,12 @@ from router.routing import Router
 logger = logging.getLogger("gateway_semantic_router")
 
 
+class UpstreamStatusError(Exception):
+    def __init__(self, status_code: int):
+        super().__init__(f"upstream returned status {status_code}")
+        self.status_code = status_code
+
+
 def create_app(
     settings: RouterSettings | None = None,
     router: Router | None = None,
@@ -101,6 +107,24 @@ def create_app(
                     decision=decision,
                     error=exc,
                 )
+            if is_upstream_failure(upstream.status_code):
+                error = UpstreamStatusError(upstream.status_code)
+                log_route_error(
+                    logger,
+                    request_id=request_id,
+                    request_id_source=request_identity.source,
+                    decision=decision,
+                    stream=True,
+                    error=error,
+                    started_ms=started_ms,
+                    upstream_status=upstream.status_code,
+                )
+                await stream_context.__aexit__(None, None, None)
+                return upstream_error_response(
+                    request_id=request_id,
+                    decision=decision,
+                    error=error,
+                )
             headers = dict(upstream.headers)
             headers.update(router_headers)
             return StreamingResponse(
@@ -134,6 +158,23 @@ def create_app(
                 request_id=request_id,
                 decision=decision,
                 error=exc,
+            )
+        if is_upstream_failure(upstream.status_code):
+            error = UpstreamStatusError(upstream.status_code)
+            log_route_error(
+                logger,
+                request_id=request_id,
+                request_id_source=request_identity.source,
+                decision=decision,
+                stream=False,
+                error=error,
+                started_ms=started_ms,
+                upstream_status=upstream.status_code,
+            )
+            return upstream_error_response(
+                request_id=request_id,
+                decision=decision,
+                error=error,
             )
         headers = dict(upstream.headers)
         headers.update(router_headers)
@@ -217,6 +258,10 @@ def upstream_error_response(
         status_code=502,
         headers=route_headers(decision.target_model, decision.reason, request_id),
     )
+
+
+def is_upstream_failure(status_code: int) -> bool:
+    return status_code >= 500
 
 
 def main() -> None:

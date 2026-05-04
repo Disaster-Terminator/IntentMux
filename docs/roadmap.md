@@ -10,8 +10,8 @@ Current operating target:
 
 - every routed request emits one structured `route_complete` or `route_error`
   event without prompt or bearer-token leakage
-- upstream disconnects return a controlled `502` and are visible in route-log
-  summaries
+- upstream disconnects and HTTP `5xx` statuses return a controlled `502` and
+  are visible in route-log summaries
 - health-check noise stays out of default logs
 - production readiness is verified by unit tests, route evals, sidecar preflight,
   LiteLLM-entry E2E, and recent-log summaries
