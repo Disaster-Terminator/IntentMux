@@ -97,7 +97,8 @@ The preflight requires `LITELLM_MASTER_KEY` in the environment or `--api-key`.
 It checks liveness, layered readiness, non-streaming route headers, streaming
 route headers, and SSE body shape without printing secrets or prompts. When
 readiness is degraded, it prints the degraded component detail, for example
-`ready=False degraded=embedding:ConnectError`.
+`ready=False degraded=embedding:ConnectError`. Readiness is retried briefly by
+default; use `--ready-attempts` and `--ready-interval` to tune that gate.
 
 Runtime probes:
 
