@@ -4,6 +4,7 @@ import json
 import logging
 import time
 import uuid
+from dataclasses import dataclass
 from typing import Any
 
 from router.routing import RoutingDecision
@@ -12,7 +13,19 @@ from router.routing import RoutingDecision
 LOGGER_NAME = "gateway_semantic_router"
 
 
+@dataclass(frozen=True)
+class RequestIdentity:
+    value: str
+    source: str
+
+
 def request_id_from_request(headers: dict[str, str], payload: dict[str, Any]) -> str:
+    return request_identity_from_request(headers, payload).value
+
+
+def request_identity_from_request(
+    headers: dict[str, str], payload: dict[str, Any]
+) -> RequestIdentity:
     metadata = payload.get("metadata")
     metadata_request_id = None
     if isinstance(metadata, dict):
@@ -20,13 +33,34 @@ def request_id_from_request(headers: dict[str, str], payload: dict[str, Any]) ->
     user_request_id = payload.get("user")
     if not isinstance(user_request_id, str):
         user_request_id = None
-    return (
-        headers.get("x-request-id")
-        or headers.get("x-correlation-id")
-        or metadata_request_id
-        or user_request_id
-        or str(uuid.uuid4())
-    )
+    if headers.get("x-request-id"):
+        return RequestIdentity(headers["x-request-id"], "x-request-id")
+    if headers.get("x-correlation-id"):
+        return RequestIdentity(headers["x-correlation-id"], "x-correlation-id")
+    trace_id = trace_id_from_traceparent(headers.get("traceparent"))
+    if trace_id:
+        return RequestIdentity(trace_id, "traceparent")
+    if metadata_request_id:
+        return RequestIdentity(metadata_request_id, "metadata.semantic_router_request_id")
+    if user_request_id:
+        return RequestIdentity(user_request_id, "user")
+    return RequestIdentity(str(uuid.uuid4()), "generated")
+
+
+def trace_id_from_traceparent(traceparent: str | None) -> str | None:
+    if not traceparent:
+        return None
+    parts = traceparent.split("-")
+    if len(parts) != 4:
+        return None
+    trace_id = parts[1]
+    if len(trace_id) != 32 or set(trace_id) == {"0"}:
+        return None
+    try:
+        int(trace_id, 16)
+    except ValueError:
+        return None
+    return trace_id
 
 
 def now_ms() -> float:
@@ -47,6 +81,7 @@ def log_route_complete(
     logger: logging.Logger,
     *,
     request_id: str,
+    request_id_source: str,
     decision: RoutingDecision,
     stream: bool,
     upstream_status: int,
@@ -57,6 +92,7 @@ def log_route_complete(
             {
                 "event": "route_complete",
                 "request_id": request_id,
+                "request_id_source": request_id_source,
                 "source_model": decision.source_model,
                 "target_model": decision.target_model,
                 "reason": decision.reason,
@@ -77,6 +113,7 @@ def log_route_error(
     logger: logging.Logger,
     *,
     request_id: str,
+    request_id_source: str,
     decision: RoutingDecision,
     stream: bool,
     error: BaseException,
@@ -87,6 +124,7 @@ def log_route_error(
             {
                 "event": "route_error",
                 "request_id": request_id,
+                "request_id_source": request_id_source,
                 "source_model": decision.source_model,
                 "target_model": decision.target_model,
                 "reason": decision.reason,

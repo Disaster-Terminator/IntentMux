@@ -14,7 +14,7 @@ from router.observability import (
     log_route_complete,
     log_route_error,
     now_ms,
-    request_id_from_request,
+    request_identity_from_request,
     route_headers,
 )
 from router.proxy import LiteLLMProxy
@@ -50,7 +50,9 @@ def create_app(
         started_ms = now_ms()
         request_headers = dict(request.headers)
         payload: dict[str, Any] = await request.json()
-        request_id = request_id_from_request(request_headers, payload)
+        request_identity = request_identity_from_request(request_headers, payload)
+        request_id = request_identity.value
+        request_headers["x-request-id"] = request_id
         decision = await router.decide(payload)
         forwarded_payload = dict(payload)
         forwarded_payload["model"] = decision.target_model
@@ -63,6 +65,7 @@ def create_app(
                 log_route_error(
                     logger,
                     request_id=request_id,
+                    request_id_source=request_identity.source,
                     decision=decision,
                     stream=True,
                     error=exc,
@@ -80,6 +83,7 @@ def create_app(
                     upstream.content,
                     stream_context,
                     request_id=request_id,
+                    request_id_source=request_identity.source,
                     decision=decision,
                     upstream_status=upstream.status_code,
                     started_ms=started_ms,
@@ -95,6 +99,7 @@ def create_app(
             log_route_error(
                 logger,
                 request_id=request_id,
+                request_id_source=request_identity.source,
                 decision=decision,
                 stream=False,
                 error=exc,
@@ -110,6 +115,7 @@ def create_app(
         log_route_complete(
             logger,
             request_id=request_id,
+            request_id_source=request_identity.source,
             decision=decision,
             stream=False,
             upstream_status=upstream.status_code,
@@ -130,6 +136,7 @@ async def stream_with_context(
     stream_context,
     *,
     request_id: str,
+    request_id_source: str,
     decision,
     upstream_status: int,
     started_ms: float,
@@ -145,6 +152,7 @@ async def stream_with_context(
         log_route_error(
             logger,
             request_id=request_id,
+            request_id_source=request_id_source,
             decision=decision,
             stream=True,
             error=exc,
@@ -160,6 +168,7 @@ async def stream_with_context(
             log_route_complete(
                 logger,
                 request_id=request_id,
+                request_id_source=request_id_source,
                 decision=decision,
                 stream=True,
                 upstream_status=upstream_status,

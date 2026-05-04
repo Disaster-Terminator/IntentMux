@@ -19,7 +19,9 @@ Current operating target:
 Next hardening targets:
 
 - strict cross-layer correlation for LiteLLM model-entry requests; current
-  LiteLLM entry mode does not forward client request IDs to the sidecar
+  LiteLLM entry mode does not forward client request IDs to the sidecar, while
+  the sidecar now records `request_id_source` and injects its final
+  `x-request-id` upstream
 - an explicit error-budget threshold for `route_error` rates by target model
   via `scripts/check_route_error_budget.py`
 - lifecycle coupling design for sidecar readiness and LiteLLM restart behavior
