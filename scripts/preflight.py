@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import time
 from dataclasses import dataclass
 
 import httpx
@@ -59,6 +60,41 @@ def ready_payload_result(payload: dict) -> CheckResult:
     return CheckResult("ready_payload", ready_value is True, detail)
 
 
+def check_readiness(
+    client: httpx.Client,
+    base_url: str,
+    *,
+    attempts: int,
+    interval: float,
+) -> list[CheckResult]:
+    attempts = max(1, attempts)
+    last_results: list[CheckResult] = []
+    for attempt in range(attempts):
+        ready = client.get(f"{base_url}/ready")
+        last_results = [
+            CheckResult(
+                "ready_status",
+                ready.status_code == 200,
+                f"status={ready.status_code}",
+            )
+        ]
+        try:
+            last_results.append(ready_payload_result(ready.json()))
+        except Exception as exc:
+            last_results.append(
+                CheckResult(
+                    "ready_payload",
+                    False,
+                    f"invalid_json={type(exc).__name__}",
+                )
+            )
+        if all(result.ok for result in last_results):
+            return last_results
+        if attempt < attempts - 1 and interval > 0:
+            time.sleep(interval)
+    return last_results
+
+
 def summarize_results(results: list[CheckResult]) -> None:
     for result in results:
         status = "PASS" if result.ok else "FAIL"
@@ -81,7 +117,13 @@ def chat_payload(stream: bool) -> dict:
     }
 
 
-def run_preflight(router_base_url: str, api_key: str, timeout: float) -> list[CheckResult]:
+def run_preflight(
+    router_base_url: str,
+    api_key: str,
+    timeout: float,
+    ready_attempts: int = 3,
+    ready_interval: float = 1.0,
+) -> list[CheckResult]:
     base_url = router_base_url.rstrip("/")
     headers = {"Authorization": f"Bearer {api_key}"}
     results: list[CheckResult] = []
@@ -101,20 +143,14 @@ def run_preflight(router_base_url: str, api_key: str, timeout: float) -> list[Ch
                 )
             )
 
-        ready = client.get(f"{base_url}/ready")
-        results.append(
-            CheckResult("ready_status", ready.status_code == 200, f"status={ready.status_code}")
-        )
-        try:
-            results.append(ready_payload_result(ready.json()))
-        except Exception as exc:
-            results.append(
-                CheckResult(
-                    "ready_payload",
-                    False,
-                    f"invalid_json={type(exc).__name__}",
-                )
+        results.extend(
+            check_readiness(
+                client,
+                base_url,
+                attempts=ready_attempts,
+                interval=ready_interval,
             )
+        )
 
         nonstream = client.post(
             f"{base_url}/v1/chat/completions",
@@ -178,11 +214,21 @@ def main() -> None:
     )
     parser.add_argument("--api-key", default=os.getenv("LITELLM_MASTER_KEY"))
     parser.add_argument("--timeout", type=float, default=45.0)
+    parser.add_argument("--ready-attempts", type=int, default=3)
+    parser.add_argument("--ready-interval", type=float, default=1.0)
     args = parser.parse_args()
 
     if not args.api_key:
         raise SystemExit("LITELLM_MASTER_KEY or --api-key is required")
-    summarize_results(run_preflight(args.router_base_url, args.api_key, args.timeout))
+    summarize_results(
+        run_preflight(
+            args.router_base_url,
+            args.api_key,
+            args.timeout,
+            ready_attempts=args.ready_attempts,
+            ready_interval=args.ready_interval,
+        )
+    )
 
 
 if __name__ == "__main__":
