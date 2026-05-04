@@ -4,9 +4,22 @@ from scripts.e2e_litellm_entry import (
     Probe,
     find_matching_route_log,
     find_route_log,
+    format_route_failure_detail,
     parse_route_logs,
+    validate_nonstream_probe_response,
     validate_route_logs,
+    validate_streaming_probe_response,
 )
+
+
+class FakeResponse:
+    def __init__(self, *, status_code: int = 200, headers: dict[str, str] | None = None, payload: dict | None = None):
+        self.status_code = status_code
+        self.headers = headers or {}
+        self._payload = payload or {}
+
+    def json(self) -> dict:
+        return self._payload
 
 
 def test_parse_route_logs_ignores_non_json_lines():
@@ -178,3 +191,44 @@ def test_validate_route_logs_redaction_detects_prompt_and_bearer_token_leaks():
     results = validate_route_logs(raw_logs=raw_logs, probes=[(probe, "rid-1")])
     by_name = {result.name: result for result in results}
     assert by_name["log_redaction"].ok is False
+
+
+def test_validate_nonstream_probe_response_detects_missing_model_field():
+    probe = Probe("p1", "prompt", "pro-router", stream=False)
+    passed = FakeResponse(
+        status_code=200,
+        headers={"content-type": "application/json"},
+        payload={"model": "semantic-router"},
+    )
+    failed = FakeResponse(
+        status_code=200,
+        headers={"content-type": "application/json"},
+        payload={"id": "chatcmpl-1"},
+    )
+
+    pass_by_name = {r.name: r for r in validate_nonstream_probe_response(probe=probe, response=passed)}
+    fail_by_name = {r.name: r for r in validate_nonstream_probe_response(probe=probe, response=failed)}
+    assert pass_by_name["p1_outer_model"].ok is True
+    assert fail_by_name["p1_outer_model"].ok is False
+    assert fail_by_name["p1_outer_model"].detail == "model=None"
+
+
+def test_validate_streaming_probe_response_detects_missing_sse_marker():
+    probe = Probe("p1", "prompt", "pro-router", stream=True)
+    response = FakeResponse(status_code=200)
+
+    pass_by_name = {
+        r.name: r
+        for r in validate_streaming_probe_response(probe=probe, response=response, first_chunk=b"data: chunk\n\n")
+    }
+    fail_by_name = {
+        r.name: r
+        for r in validate_streaming_probe_response(probe=probe, response=response, first_chunk=b"{\"delta\":\"x\"}")
+    }
+    assert pass_by_name["p1_sse"].ok is True
+    assert fail_by_name["p1_sse"].ok is False
+
+
+def test_format_route_failure_detail_is_stable():
+    detail = format_route_failure_detail({"event": "route_error", "error_type": "upstream_timeout"})
+    assert detail == "event=route_error, error_type=upstream_timeout"

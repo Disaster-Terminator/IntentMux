@@ -101,6 +101,44 @@ def summarize_results(results: list[CheckResult]) -> None:
         raise SystemExit(1)
 
 
+def format_route_failure_detail(record: dict[str, Any]) -> str:
+    return f"event={record.get('event')}, error_type={record.get('error_type')}"
+
+
+def validate_nonstream_probe_response(*, probe: Probe, response: httpx.Response) -> list[CheckResult]:
+    model = None
+    if response.headers.get("content-type", "").startswith("application/json"):
+        model = response.json().get("model")
+    return [
+        CheckResult(
+            f"{probe.name}_status",
+            response.status_code == 200,
+            f"status={response.status_code}",
+        ),
+        CheckResult(
+            f"{probe.name}_outer_model",
+            model == "semantic-router",
+            f"model={model}",
+        ),
+    ]
+
+
+def validate_streaming_probe_response(*, probe: Probe, response: httpx.Response, first_chunk: bytes) -> list[CheckResult]:
+    starts_with_data = first_chunk.startswith(b"data:")
+    return [
+        CheckResult(
+            f"{probe.name}_status",
+            response.status_code == 200,
+            f"status={response.status_code}",
+        ),
+        CheckResult(
+            f"{probe.name}_sse",
+            starts_with_data,
+            f"starts_with_data={starts_with_data}",
+        ),
+    ]
+
+
 def run_probe(
     *,
     client: httpx.Client,
@@ -130,18 +168,11 @@ def run_probe(
                 json=payload,
             ) as response:
                 first_chunk = next(response.iter_bytes(), b"")
-                return [
-                    CheckResult(
-                        f"{probe.name}_status",
-                        response.status_code == 200,
-                        f"status={response.status_code}",
-                    ),
-                    CheckResult(
-                        f"{probe.name}_sse",
-                        first_chunk.startswith(b"data:"),
-                        f"starts_with_data={first_chunk.startswith(b'data:')}",
-                    ),
-                ]
+                return validate_streaming_probe_response(
+                    probe=probe,
+                    response=response,
+                    first_chunk=first_chunk,
+                )
         except httpx.HTTPError as exc:
             return [
                 CheckResult(
@@ -165,21 +196,7 @@ def run_probe(
                 f"{type(exc).__name__}: {exc}",
             )
         ]
-    model = None
-    if response.headers.get("content-type", "").startswith("application/json"):
-        model = response.json().get("model")
-    return [
-        CheckResult(
-            f"{probe.name}_status",
-            response.status_code == 200,
-            f"status={response.status_code}",
-        ),
-        CheckResult(
-            f"{probe.name}_outer_model",
-            model == "semantic-router",
-            f"model={model}",
-        ),
-    ]
+    return validate_nonstream_probe_response(probe=probe, response=response)
 
 
 def docker_logs(container: str, tail: int) -> str:
@@ -234,7 +251,7 @@ def validate_route_logs(
                 CheckResult(
                     f"{probe.name}_route_completed",
                     False,
-                    f"event={record.get('event')}, error_type={record.get('error_type')}",
+                    format_route_failure_detail(record),
                 )
             )
             continue

@@ -60,6 +60,44 @@ def ready_payload_result(payload: dict) -> CheckResult:
     return CheckResult("ready_payload", ready_value is True, detail)
 
 
+def validate_nonstream_chat_response(response: httpx.Response) -> list[CheckResult]:
+    return [
+        CheckResult(
+            "nonstream_status",
+            response.status_code == 200,
+            f"status={response.status_code}",
+        ),
+        require_header(
+            name="nonstream_route",
+            headers={key.lower(): value for key, value in response.headers.items()},
+            key="x-router-target-model",
+            expected="pro-router",
+        ),
+    ]
+
+
+def validate_streaming_sse_response(response: httpx.Response, body_head: bytes) -> list[CheckResult]:
+    starts_with_data = body_head.startswith(b"data:")
+    return [
+        CheckResult(
+            "stream_status",
+            response.status_code == 200,
+            f"status={response.status_code}",
+        ),
+        require_header(
+            name="stream_route",
+            headers={key.lower(): value for key, value in response.headers.items()},
+            key="x-router-target-model",
+            expected="pro-router",
+        ),
+        CheckResult(
+            "stream_body",
+            starts_with_data,
+            f"starts_with_data={starts_with_data}",
+        ),
+    ]
+
+
 def check_readiness(
     client: httpx.Client,
     base_url: str,
@@ -157,21 +195,7 @@ def run_preflight(
             headers=headers,
             json=chat_payload(stream=False),
         )
-        results.append(
-            CheckResult(
-                "nonstream_status",
-                nonstream.status_code == 200,
-                f"status={nonstream.status_code}",
-            )
-        )
-        results.append(
-            require_header(
-                name="nonstream_route",
-                headers={key.lower(): value for key, value in nonstream.headers.items()},
-                key="x-router-target-model",
-                expected="pro-router",
-            )
-        )
+        results.extend(validate_nonstream_chat_response(nonstream))
 
         with client.stream(
             "POST",
@@ -180,28 +204,7 @@ def run_preflight(
             json=chat_payload(stream=True),
         ) as stream_response:
             body_head = next(stream_response.iter_bytes(), b"")
-            results.append(
-                CheckResult(
-                    "stream_status",
-                    stream_response.status_code == 200,
-                    f"status={stream_response.status_code}",
-                )
-            )
-            results.append(
-                require_header(
-                    name="stream_route",
-                    headers={key.lower(): value for key, value in stream_response.headers.items()},
-                    key="x-router-target-model",
-                    expected="pro-router",
-                )
-            )
-            results.append(
-                CheckResult(
-                    "stream_body",
-                    body_head.startswith(b"data:"),
-                    f"starts_with_data={body_head.startswith(b'data:')}",
-                )
-            )
+            results.extend(validate_streaming_sse_response(stream_response, body_head))
 
     return results
 
