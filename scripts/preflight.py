@@ -84,6 +84,21 @@ def run_preflight(router_base_url: str, api_key: str, timeout: float) -> list[Ch
                 )
             )
 
+        ready = client.get(f"{base_url}/ready")
+        results.append(
+            CheckResult("ready_status", ready.status_code == 200, f"status={ready.status_code}")
+        )
+        if ready.status_code == 200:
+            ready_payload = ready.json()
+            ready_value = ready_payload.get("ready")
+            results.append(
+                CheckResult(
+                    "ready_payload",
+                    ready_value is True,
+                    f"ready={ready_value}",
+                )
+            )
+
         nonstream = client.post(
             f"{base_url}/v1/chat/completions",
             headers=headers,
