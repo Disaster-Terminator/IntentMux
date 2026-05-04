@@ -1,5 +1,29 @@
 # Roadmap
 
+## Long-Term Operational Goal
+
+Make `semantic-router` a low-intrusion LiteLLM model-entry sidecar that can stay
+in production traffic with auditable routing decisions, bounded failure modes,
+and repeatable E2E checks.
+
+Current operating target:
+
+- every routed request emits one structured `route_complete` or `route_error`
+  event without prompt or bearer-token leakage
+- upstream disconnects return a controlled `502` and are visible in route-log
+  summaries
+- health-check noise stays out of default logs
+- production readiness is verified by unit tests, route evals, sidecar preflight,
+  LiteLLM-entry E2E, and recent-log summaries
+
+Next hardening targets:
+
+- strict cross-layer correlation for LiteLLM model-entry requests; current
+  LiteLLM entry mode does not forward client request IDs to the sidecar
+- an explicit error-budget threshold for `route_error` rates by target model
+- lifecycle coupling design for sidecar readiness and LiteLLM restart behavior
+- route-bank refresh workflow from real, redacted production examples
+
 ## Lifecycle Management
 
 The router is a third-party sidecar, not an internal LiteLLM component. It may
@@ -31,4 +55,3 @@ hand-written keyword expansion. The first production-grade milestone is:
 - generated utterance records that retain source names
 - eval cases expanded from the generated bank plus local ambiguous examples
 - no runtime dependency on Hugging Face tooling
-
