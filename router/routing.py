@@ -132,16 +132,20 @@ def latest_user_text(messages: list[Any]) -> str:
     for message in reversed(messages):
         if not isinstance(message, dict) or message.get("role") != "user":
             continue
-        content = message.get("content", "")
+
+        content = message.get("content")
         if isinstance(content, str):
             return content
         if isinstance(content, list):
-            parts = [
-                part.get("text", "")
-                for part in content
-                if isinstance(part, dict) and part.get("type") == "text"
-            ]
-            return "\n".join(part for part in parts if part)
+            parts: list[str] = []
+            for part in content:
+                if not isinstance(part, dict) or part.get("type") != "text":
+                    continue
+                text = part.get("text")
+                if isinstance(text, str) and text:
+                    parts.append(text)
+            return "\n".join(parts)
+        return ""
     return ""
 
 
