@@ -105,6 +105,13 @@ path does not currently preserve client-supplied correlation IDs to the sidecar,
 so the script first tries request-id matching and then falls back to recent route
 shape matching.
 
+Within the sidecar, route logs include both `request_id` and
+`request_id_source`. The sidecar accepts `x-request-id`, `x-correlation-id`,
+W3C `traceparent`, `metadata.semantic_router_request_id`, and `user` as request
+identity sources, then injects the final value into the upstream `x-request-id`
+header. This makes sidecar-to-upstream correlation stable even when LiteLLM's
+model-entry layer does not preserve the original client id.
+
 Production route-log summary from sidecar logs:
 
 ```bash

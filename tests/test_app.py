@@ -257,6 +257,7 @@ def test_chat_completion_emits_structured_log_without_sensitive_payload(caplog):
         {
             "event": "route_complete",
             "request_id": "external-request-1",
+            "request_id_source": "x-request-id",
             "source_model": "smart-router",
             "target_model": "pro-router",
             "reason": "hard_rule:线上",
@@ -300,9 +301,11 @@ def test_chat_completion_uses_metadata_request_id_when_header_is_not_forwarded(c
         )
 
     assert response.headers["x-router-request-id"] == "metadata-request-1"
+    assert proxy.headers[0]["x-request-id"] == "metadata-request-1"
     records = [json.loads(record.message) for record in caplog.records]
     route_logs = [record for record in records if record["event"] == "route_complete"]
     assert route_logs[0]["request_id"] == "metadata-request-1"
+    assert route_logs[0]["request_id_source"] == "metadata.semantic_router_request_id"
 
 
 def test_chat_completion_uses_user_request_id_when_proxy_drops_metadata(caplog):
@@ -330,9 +333,44 @@ def test_chat_completion_uses_user_request_id_when_proxy_drops_metadata(caplog):
         )
 
     assert response.headers["x-router-request-id"] == "user-request-1"
+    assert proxy.headers[0]["x-request-id"] == "user-request-1"
     records = [json.loads(record.message) for record in caplog.records]
     route_logs = [record for record in records if record["event"] == "route_complete"]
     assert route_logs[0]["request_id"] == "user-request-1"
+    assert route_logs[0]["request_id_source"] == "user"
+
+
+def test_chat_completion_uses_traceparent_when_request_id_headers_are_absent(caplog):
+    proxy = FakeProxy()
+    app = create_app(
+        router=FakeRouter(
+            RoutingDecision(
+                "pro-router",
+                "hard_rule:线上",
+                rewrite=True,
+                source_model="semantic-router",
+            )
+        ),
+        proxy=proxy,
+    )
+
+    trace_id = "0123456789abcdef0123456789abcdef"
+    with caplog.at_level(logging.INFO, logger="gateway_semantic_router"):
+        response = TestClient(app).post(
+            "/v1/chat/completions",
+            headers={"traceparent": f"00-{trace_id}-0123456789abcdef-01"},
+            json={
+                "model": "semantic-router",
+                "messages": [{"role": "user", "content": "这个线上 bug 为什么偶发"}],
+            },
+        )
+
+    assert response.headers["x-router-request-id"] == trace_id
+    assert proxy.headers[0]["x-request-id"] == trace_id
+    records = [json.loads(record.message) for record in caplog.records]
+    route_logs = [record for record in records if record["event"] == "route_complete"]
+    assert route_logs[0]["request_id"] == trace_id
+    assert route_logs[0]["request_id_source"] == "traceparent"
 
 
 def test_chat_completion_logs_structured_route_error_without_sensitive_payload(caplog):
@@ -450,6 +488,7 @@ def test_streaming_chat_completion_logs_after_body_iteration(caplog):
     route_logs = [record for record in records if record["event"] == "route_complete"]
     assert len(route_logs) == 1
     assert route_logs[0]["request_id"] == "stream-request-1"
+    assert route_logs[0]["request_id_source"] == "x-request-id"
     assert route_logs[0]["target_model"] == "pro-router"
     assert route_logs[0]["stream"] is True
     assert route_logs[0]["upstream_status"] == 200
@@ -474,6 +513,7 @@ async def test_streaming_chat_completion_logs_when_client_closes_early(caplog):
             chunks(),
             stream_context,
             request_id="stream-request-closed",
+            request_id_source="x-request-id",
             decision=RoutingDecision(
                 "pro-router",
                 "hard_rule:线上",
@@ -513,6 +553,7 @@ async def test_streaming_chat_completion_logs_route_error_when_body_iteration_fa
             chunks(),
             stream_context,
             request_id="stream-body-error",
+            request_id_source="x-request-id",
             decision=RoutingDecision(
                 "pro-router",
                 "hard_rule:PR",
@@ -535,5 +576,6 @@ async def test_streaming_chat_completion_logs_route_error_when_body_iteration_fa
     assert route_complete == []
     assert len(route_errors) == 1
     assert route_errors[0]["request_id"] == "stream-body-error"
+    assert route_errors[0]["request_id_source"] == "x-request-id"
     assert route_errors[0]["stream"] is True
     assert route_errors[0]["error_type"] == "TimeoutError"
