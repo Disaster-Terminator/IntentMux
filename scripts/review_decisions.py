@@ -10,6 +10,8 @@ from urllib import error, request
 
 import yaml
 
+DEFAULT_ROUTE_MODEL = "semantic-router"
+
 
 @dataclass(frozen=True)
 class ReviewCase:
@@ -32,8 +34,7 @@ def _normalize_case(raw: dict[str, Any], source: str) -> ReviewCase:
     else:
         payload = {"messages": raw["messages"]}
 
-    if "model" in raw:
-        payload["model"] = raw["model"]
+    payload["model"] = raw.get("model", DEFAULT_ROUTE_MODEL)
 
     return ReviewCase(
         name=str(raw["name"]),
