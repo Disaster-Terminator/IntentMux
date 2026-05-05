@@ -95,6 +95,11 @@ examples, but it is not part of the public contract.
 Hard rules must select a configured `route_id`, then resolve that route to
 `target_model`. They must never return a hardcoded local LiteLLM group name.
 
+Routes with empty `utterances` are allowed as hard-rule-only routes. Semantic
+embedding ranking must safely skip empty-utterance routes. If no route has any
+semantic utterances to score, routing must deterministically return
+`fallback_route_id` with `policy_id=low_confidence` (not `embedding_error`).
+
 The router must retain recursive-routing protection:
 
 - The entry model must not be a target model.
