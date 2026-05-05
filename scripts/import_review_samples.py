@@ -13,12 +13,26 @@ class ReviewSampleError(ValueError):
     pass
 
 
-def convert_review_samples(lines: Iterable[str]) -> dict[str, list[dict[str, str]]]:
-    converted = convert_review_samples_with_summary(lines)
+def load_route_ids(routes_path: Path) -> set[str]:
+    raw = yaml.safe_load(routes_path.read_text(encoding="utf-8"))
+    routes = raw.get("routes") if isinstance(raw, dict) else None
+    if not isinstance(routes, dict) or not routes:
+        raise ReviewSampleError(f"routes file has no routes mapping: {routes_path}")
+    return {str(route_id).strip() for route_id in routes.keys() if str(route_id).strip()}
+
+
+def convert_review_samples(
+    lines: Iterable[str],
+    *,
+    valid_route_ids: set[str] | None = None,
+) -> dict[str, list[dict[str, str]]]:
+    converted = convert_review_samples_with_summary(lines, valid_route_ids=valid_route_ids)
     return {"cases": converted["cases"]}
 
 
-def convert_review_samples_with_summary(lines: Iterable[str]) -> dict[str, Any]:
+def convert_review_samples_with_summary(
+    lines: Iterable[str], *, valid_route_ids: set[str] | None = None
+) -> dict[str, Any]:
     cases: list[dict[str, str]] = []
     seen: set[str] = set()
     route_counts: Counter[str] = Counter()
@@ -35,7 +49,11 @@ def convert_review_samples_with_summary(lines: Iterable[str]) -> dict[str, Any]:
             sample = json.loads(line)
         except json.JSONDecodeError as exc:
             raise ReviewSampleError(f"line {line_number}: invalid json") from exc
-        case = review_sample_to_case(sample, line_number=line_number)
+        case = review_sample_to_case(
+            sample,
+            line_number=line_number,
+            valid_route_ids=valid_route_ids,
+        )
         if case["text"] in seen:
             duplicate_text_count += 1
             continue
@@ -65,7 +83,9 @@ def format_text_summary(summary: dict[str, Any]) -> str:
     )
 
 
-def review_sample_to_case(sample: dict[str, Any], *, line_number: int) -> dict[str, str]:
+def review_sample_to_case(
+    sample: dict[str, Any], *, line_number: int, valid_route_ids: set[str] | None = None
+) -> dict[str, str]:
     if sample.get("redacted") is not True:
         raise ReviewSampleError(f"line {line_number}: review sample must set redacted=true")
 
@@ -77,6 +97,10 @@ def review_sample_to_case(sample: dict[str, Any], *, line_number: int) -> dict[s
     if not isinstance(expect, str) or not expect.strip():
         raise ReviewSampleError(f"line {line_number}: expect must be a non-empty route_id")
     expect = expect.strip()
+    if valid_route_ids is not None and expect not in valid_route_ids:
+        raise ReviewSampleError(
+            f"line {line_number}: expect route_id '{expect}' is not present in configured routes"
+        )
 
     source = sample.get("source")
     case_source = "production_review"
@@ -103,11 +127,18 @@ def main() -> None:
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--summary-json", action="store_true")
     parser.add_argument("--output-summary", choices=("text", "json"), default="text")
+    parser.add_argument("--routes", help="Optional routes config path used to validate expect route_id values")
     args = parser.parse_args()
 
     input_path = Path(args.input)
     output_path = Path(args.output)
-    result = convert_review_samples_with_summary(input_path.read_text(encoding="utf-8").splitlines())
+    valid_route_ids: set[str] | None = None
+    if args.routes:
+        valid_route_ids = load_route_ids(Path(args.routes))
+    result = convert_review_samples_with_summary(
+        input_path.read_text(encoding="utf-8").splitlines(),
+        valid_route_ids=valid_route_ids,
+    )
     summary = dict(result["summary"])
 
     if not args.dry_run:

@@ -51,6 +51,18 @@ def test_convert_review_samples_rejects_empty_route_id():
         convert_review_samples(raw_lines)
 
 
+def test_convert_review_samples_validates_route_ids_when_provided():
+    raw_lines = ['{"text":"sample","expect":"fast","redacted":true}']
+    result = convert_review_samples(raw_lines, valid_route_ids={"fast", "strong"})
+    assert result["cases"][0]["expect"] == "fast"
+
+
+def test_convert_review_samples_rejects_target_model_like_expect_when_route_validation_enabled():
+    raw_lines = ['{"text":"sample","expect":"pro-router","redacted":true}']
+    with pytest.raises(ReviewSampleError, match="not present in configured routes"):
+        convert_review_samples(raw_lines, valid_route_ids={"fast", "strong"})
+
+
 def test_convert_review_samples_deduplicates_text():
     raw_lines = [
         '{"text":"重复样本","expect":"strong","redacted":true}',
@@ -179,3 +191,34 @@ def test_main_invalid_unredacted_input_fails_before_writing(tmp_path, monkeypatc
     with pytest.raises(ReviewSampleError, match="redacted=true"):
         import_review_samples.main()
     assert not output_path.exists()
+
+
+def test_main_routes_flag_rejects_expect_not_in_route_ids(tmp_path, monkeypatch):
+    input_path = tmp_path / "samples.jsonl"
+    output_path = tmp_path / "out.yaml"
+    routes_path = tmp_path / "routes.yaml"
+    input_path.write_text('{"text":"ok","expect":"pro-router","redacted":true}', encoding="utf-8")
+    routes_path.write_text(
+        """
+routes:
+  fast:
+    description: fast
+    utterances: [a]
+    target_model: cheap-router
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "import_review_samples.py",
+            "--input",
+            str(input_path),
+            "--output",
+            str(output_path),
+            "--routes",
+            str(routes_path),
+        ],
+    )
+    with pytest.raises(ReviewSampleError, match="not present in configured routes"):
+        import_review_samples.main()
