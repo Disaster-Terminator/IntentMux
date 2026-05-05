@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
+
 import pytest
 import yaml
 
@@ -197,3 +199,23 @@ def test_main_invalid_unredacted_input_fails_before_writing(tmp_path, monkeypatc
     with pytest.raises(ReviewSampleError, match="redacted=true"):
         import_review_samples.main()
     assert not output_path.exists()
+
+
+def test_redacted_fixture_is_redacted_and_uses_route_id_expectation():
+    fixture_path = Path("tests/samples/redacted_review_fixture.jsonl")
+    line = fixture_path.read_text(encoding="utf-8").strip()
+    sample = json.loads(line)
+
+    assert sample["redacted"] is True
+    assert sample["expect"] == "strong"
+    assert sample["expect"] not in {"cheap-router", "pro-router", "free-probe-router"}
+
+
+def test_redacted_fixture_converts_with_route_validation():
+    fixture_path = Path("tests/samples/redacted_review_fixture.jsonl")
+    raw_lines = fixture_path.read_text(encoding="utf-8").splitlines()
+
+    result = convert_review_samples(raw_lines, allowed_route_ids={"fast", "strong", "experimental"})
+
+    assert result["cases"][0]["expect"] == "strong"
+    assert result["cases"][0]["source"] == "production_review:synthetic_fixture"
