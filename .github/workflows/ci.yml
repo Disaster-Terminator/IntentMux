@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - review/route-contract-hardening-*
 
 jobs:
   test:
@@ -40,6 +41,11 @@ jobs:
           uv run python scripts/router_log_summary.py --output json < tests/samples/router_logs.ndjson 2>&1 | tee router-log-summary.json
           uv run python -c "import json; payload=json.load(open('router-log-summary.json')); assert payload['total']==3; assert payload['route_complete']==2; assert payload['route_error']==1"
 
+      - name: Run route error budget fixture check
+        run: |
+          set -o pipefail
+          uv run python scripts/check_route_error_budget.py --min-total 1 --max-error-rate 0 < tests/samples/router_logs.ndjson 2>&1 | tee route-error-budget.log
+
       - name: Upload CI diagnostics (failure only)
         if: failure()
         uses: actions/upload-artifact@v4
@@ -49,3 +55,4 @@ jobs:
             pytest.log
             mock-route-eval.log
             router-log-summary.json
+            route-error-budget.log
