@@ -21,6 +21,8 @@ class HardRuleSpec(BaseModel):
 class RouterSettings(BaseModel):
     # entry_model is the product-facing alias; route_model remains supported for
     # backward compatibility with existing routes.yaml deployments.
+    # When both keys are present, route_model takes precedence via AliasChoices
+    # ordering for deterministic compatibility.
     route_model: str = Field(
         default="semantic-router",
         validation_alias=AliasChoices("route_model", "entry_model"),

@@ -343,3 +343,75 @@ def test_router_settings_rejects_recursive_target_model():
                 ),
             },
         )
+
+
+def test_router_settings_accepts_entry_model_alias_key():
+    settings = RouterSettings.model_validate(
+        {
+            "entry_model": "smart-router",
+            "routes": {"fast": {"description": "low risk", "utterances": ["x"]}},
+        }
+    )
+    assert settings.route_model == "smart-router"
+    assert settings.entry_model == "smart-router"
+
+
+def test_router_settings_prefers_route_model_when_both_alias_keys_present():
+    settings = RouterSettings.model_validate(
+        {
+            "route_model": "route-model-wins",
+            "entry_model": "entry-model-loses",
+            "routes": {"fast": {"description": "low risk", "utterances": ["x"]}},
+        }
+    )
+
+    assert settings.route_model == "route-model-wins"
+
+
+def test_router_settings_accepts_fallback_route_id_key():
+    settings = RouterSettings.model_validate(
+        {
+            "fallback_route_id": "fast",
+            "routes": {"fast": {"description": "low risk", "utterances": ["x"]}},
+        }
+    )
+
+    assert settings.fallback_route_id == "fast"
+    assert settings.default_route == "fast"
+
+
+def test_router_settings_accepts_default_route_legacy_alias_key():
+    settings = RouterSettings.model_validate(
+        {
+            "default_route": "fast",
+            "routes": {"fast": {"description": "low risk", "utterances": ["x"]}},
+        }
+    )
+
+    assert settings.fallback_route_id == "fast"
+
+
+def test_router_settings_defaults_target_model_to_route_id_when_omitted():
+    settings = RouterSettings.model_validate(
+        {
+            "routes": {
+                "fast": {"description": "low risk", "utterances": ["x"]},
+                "strong": {"description": "high risk", "utterances": ["y"]},
+            }
+        }
+    )
+
+    assert settings.routes["fast"].target_model == "fast"
+    assert settings.routes["strong"].target_model == "strong"
+
+
+def test_router_settings_rejects_missing_fallback_route_id_in_routes():
+    with pytest.raises(ValidationError, match="fallback_route_id must be present"):
+        RouterSettings.model_validate(
+            {
+                "fallback_route_id": "missing",
+                "routes": {
+                    "fast": {"description": "low risk", "utterances": ["x"]},
+                },
+            }
+        )
