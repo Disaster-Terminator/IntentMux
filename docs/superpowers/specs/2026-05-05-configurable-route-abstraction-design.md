@@ -81,6 +81,16 @@ examples, but it is not part of the public contract.
 
 ## Runtime Contract
 
+### Empty-Utterance Route Contract
+
+Routes with empty `utterances` are allowed to support hard-rule-only or explicit-only routes.
+Semantic embedding ranking must skip routes that have zero utterance vectors.
+If no route has scorable utterances, routing must deterministically fall back to
+`fallback_route_id` with `policy_id=low_confidence` and `reason=low_confidence`.
+Hard rules that reference an empty-utterance route remain valid and must resolve to
+that route's configured `target_model`.
+
+
 `RoutingDecision` should carry both route and target information:
 
 - `route_id`

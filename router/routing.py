@@ -69,6 +69,7 @@ class Router:
             route_scores = {
                 route: max(cosine_similarity(query_vector, vector) for vector in vectors)
                 for route, vectors in self._route_vectors.items()
+                if vectors
             }
         except Exception:
             return RoutingDecision(
@@ -81,6 +82,18 @@ class Router:
             )
 
         ranked = sorted(route_scores.items(), key=lambda item: item[1], reverse=True)
+        if not ranked:
+            return RoutingDecision(
+                route_id=self.settings.fallback_route_id,
+                target_model=self._target_model_for_route(self.settings.fallback_route_id),
+                source_model=source_model,
+                reason="low_confidence",
+                policy_id="low_confidence",
+                rewrite=True,
+                score=0.0,
+                second_score=0.0,
+            )
+
         best_route, best_score = ranked[0]
         second_score = ranked[1][1] if len(ranked) > 1 else 0.0
         if (

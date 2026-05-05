@@ -240,3 +240,100 @@ async def test_decide_with_empty_messages_and_embedding_failure_returns_embeddin
 
     assert decision.target_model == "cheap-router"
     assert decision.reason == "embedding_error"
+
+
+@pytest.mark.asyncio
+async def test_empty_utterance_route_is_skipped_in_embedding_ranking():
+    empty_route_settings = settings().model_copy(
+        update={
+            "routes": {
+                **settings().routes,
+                "rules_only": RouteSpec(
+                    target_model="rules-only-router",
+                    description="hard rules only",
+                    utterances=[],
+                ),
+            }
+        }
+    )
+    vectors = {
+        "翻译成中文": [1.0, 0.0, 0.0],
+        "总结这篇文章": [1.0, 0.0, 0.0],
+        "分析这个线上 bug": [0.0, 1.0, 0.0],
+        "代码审查": [0.0, 1.0, 0.0],
+        "测试免费模型": [0.0, 0.0, 1.0],
+        "批量探活": [0.0, 0.0, 1.0],
+        "帮我总结一下": [1.0, 0.0, 0.0],
+    }
+    router = Router(empty_route_settings, FakeEmbeddingClient(vectors))
+
+    decision = await router.decide(
+        {
+            "model": "smart-router",
+            "messages": [{"role": "user", "content": "帮我总结一下"}],
+        }
+    )
+
+    assert decision.policy_id == "embedding"
+    assert decision.route_id == "fast"
+
+
+@pytest.mark.asyncio
+async def test_all_empty_utterance_routes_deterministically_fallback():
+    empty_routes = {
+        "fast": RouteSpec(target_model="cheap-router", description="fallback", utterances=[]),
+        "strong": RouteSpec(target_model="pro-router", description="strong", utterances=[]),
+    }
+    local_settings = RouterSettings(
+        route_model="smart-router",
+        fallback_route_id="fast",
+        threshold=0.5,
+        margin=0.05,
+        routes=empty_routes,
+    )
+    router = Router(local_settings, FakeEmbeddingClient({"anything": [1.0, 0.0, 0.0]}))
+
+    decision = await router.decide(
+        {
+            "model": "smart-router",
+            "messages": [{"role": "user", "content": "anything"}],
+        }
+    )
+
+    assert decision.route_id == "fast"
+    assert decision.target_model == "cheap-router"
+    assert decision.policy_id == "low_confidence"
+    assert decision.reason == "low_confidence"
+    assert decision.score == 0.0
+    assert decision.second_score == 0.0
+
+
+@pytest.mark.asyncio
+async def test_hard_rule_can_target_empty_utterance_route():
+    local_settings = RouterSettings(
+        route_model="smart-router",
+        fallback_route_id="fast",
+        threshold=0.5,
+        margin=0.05,
+        routes={
+            "fast": RouteSpec(target_model="cheap-router", description="fallback", utterances=["foo"]),
+            "rules_only": RouteSpec(
+                target_model="rules-only-router",
+                description="hard-rules-only",
+                utterances=[],
+            ),
+        },
+        hard_rules=[{"route_id": "rules_only", "keywords": ["incident"]}],
+    )
+    router = Router(local_settings, FakeEmbeddingClient({}))
+
+    decision = await router.decide(
+        {
+            "model": "smart-router",
+            "messages": [{"role": "user", "content": "this is an incident"}],
+        }
+    )
+
+    assert decision.route_id == "rules_only"
+    assert decision.target_model == "rules-only-router"
+    assert decision.policy_id == "hard_rule"
