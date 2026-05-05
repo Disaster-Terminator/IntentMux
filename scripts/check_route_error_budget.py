@@ -3,13 +3,14 @@ from __future__ import annotations
 import argparse
 from collections import Counter
 from dataclasses import dataclass
+import json
 import sys
 from typing import Any, Iterable
 
 try:
-    from scripts.router_log_summary import parse_route_records
+    from scripts.router_log_summary import ParseDiagnostics, parse_route_records
 except ModuleNotFoundError:
-    from router_log_summary import parse_route_records
+    from router_log_summary import ParseDiagnostics, parse_route_records
 
 
 @dataclass(frozen=True)
@@ -18,6 +19,11 @@ class BudgetConfig:
     max_error_rate: float = 0.0
     max_target_error_rate: float = 0.0
     max_reason_rates: dict[str, float] | None = None
+    max_upstream_status_rates: dict[str, float] | None = None
+    max_malformed_json: int | None = None
+    max_missing_event: int | None = None
+    max_unknown_event: int | None = None
+    max_ignored_records: int | None = None
 
 
 @dataclass(frozen=True)
@@ -29,17 +35,25 @@ class BudgetResult:
     error_rate: float
     target_error_rates: dict[str, float]
     reason_rates: dict[str, float]
+    upstream_status_rates: dict[str, float]
     error_types: dict[str, int]
     reasons: list[str]
+    parse_diagnostics: ParseDiagnostics
+    ignored_records: int
 
 
-def check_budget(records: Iterable[dict[str, Any]], config: BudgetConfig) -> BudgetResult:
+def check_budget(
+    records: Iterable[dict[str, Any]],
+    config: BudgetConfig,
+    parse_diagnostics: ParseDiagnostics | None = None,
+) -> BudgetResult:
     total = 0
     completed = 0
     errors = 0
     target_totals: Counter[str] = Counter()
     target_errors: Counter[str] = Counter()
     reason_totals: Counter[str] = Counter()
+    upstream_status_totals: Counter[str] = Counter()
     error_types: Counter[str] = Counter()
 
     for record in records:
@@ -50,6 +64,9 @@ def check_budget(records: Iterable[dict[str, Any]], config: BudgetConfig) -> Bud
         reason = record.get("reason")
         if isinstance(reason, str):
             reason_totals[reason] += 1
+        upstream_status = record.get("upstream_status")
+        if isinstance(upstream_status, int):
+            upstream_status_totals[str(upstream_status)] += 1
 
         event = record.get("event")
         if event == "route_complete":
@@ -69,6 +86,10 @@ def check_budget(records: Iterable[dict[str, Any]], config: BudgetConfig) -> Bud
     }
     reason_rates = {
         reason: reason_total / total for reason, reason_total in reason_totals.items()
+    }
+    upstream_status_rates = {
+        status: status_total / total
+        for status, status_total in upstream_status_totals.items()
     }
 
     reasons: list[str] = []
@@ -91,6 +112,38 @@ def check_budget(records: Iterable[dict[str, Any]], config: BudgetConfig) -> Bud
                 f"reason {reason} rate {reason_rate:.4f} "
                 f"exceeds max_reason_rate {max_reason_rate:.4f}"
             )
+    for status, max_status_rate in sorted(
+        (config.max_upstream_status_rates or {}).items()
+    ):
+        status_rate = upstream_status_rates.get(status, 0.0)
+        if status_rate > max_status_rate:
+            reasons.append(
+                f"upstream_status {status} rate {status_rate:.4f} "
+                f"exceeds max_upstream_status_rate {max_status_rate:.4f}"
+            )
+    diagnostics = parse_diagnostics or ParseDiagnostics()
+    diagnostics_budgets = (
+        ("malformed_json", diagnostics.malformed_json_lines, config.max_malformed_json),
+        ("missing_event", diagnostics.missing_event_records, config.max_missing_event),
+        ("unknown_event", diagnostics.unknown_event_records, config.max_unknown_event),
+    )
+    for name, count, max_count in diagnostics_budgets:
+        if max_count is not None and count > max_count:
+            reasons.append(f"{name} {count} exceeds max_{name} {max_count}")
+
+    ignored_records = (
+        diagnostics.malformed_json_lines
+        + diagnostics.missing_event_records
+        + diagnostics.unknown_event_records
+    )
+    if (
+        config.max_ignored_records is not None
+        and ignored_records > config.max_ignored_records
+    ):
+        reasons.append(
+            f"ignored_records {ignored_records} exceeds "
+            f"max_ignored_records {config.max_ignored_records}"
+        )
 
     return BudgetResult(
         passed=not reasons,
@@ -100,8 +153,11 @@ def check_budget(records: Iterable[dict[str, Any]], config: BudgetConfig) -> Bud
         error_rate=error_rate,
         target_error_rates=target_error_rates,
         reason_rates=reason_rates,
+        upstream_status_rates=upstream_status_rates,
         error_types=dict(error_types),
         reasons=reasons,
+        parse_diagnostics=diagnostics,
+        ignored_records=ignored_records,
     )
 
 
@@ -115,11 +171,55 @@ def format_budget_result(result: BudgetResult) -> str:
         ),
         f"target_error_rates: {format_rates(result.target_error_rates)}",
         f"reason_rates: {format_rates(result.reason_rates)}",
+        f"upstream_status_rates: {format_rates(result.upstream_status_rates)}",
         f"error_types: {format_counts(result.error_types)}",
     ]
     if result.reasons:
         lines.append(f"reasons: {'; '.join(result.reasons)}")
+    diag = result.parse_diagnostics
+    if any(
+        (
+            diag.malformed_json_lines,
+            diag.missing_event_records,
+            diag.unknown_event_records,
+        )
+    ):
+        lines.append(
+            "parse_diagnostics: "
+            f"malformed_json={diag.malformed_json_lines}, "
+            f"missing_event={diag.missing_event_records}, "
+            f"unknown_event={diag.unknown_event_records}"
+        )
     return "\n".join(lines)
+
+
+def budget_result_to_dict(result: BudgetResult) -> dict[str, Any]:
+    return {
+        "passed": result.passed,
+        "total": result.total,
+        "completed": result.completed,
+        "errors": result.errors,
+        "error_rate": result.error_rate,
+        "target_error_rates": result.target_error_rates,
+        "reason_rates": result.reason_rates,
+        "upstream_status_rates": result.upstream_status_rates,
+        "error_types": result.error_types,
+        "reasons": result.reasons,
+        "ignored_records": result.ignored_records,
+        "parse_diagnostics": {
+            "malformed_json": result.parse_diagnostics.malformed_json_lines,
+            "missing_event": result.parse_diagnostics.missing_event_records,
+            "unknown_event": result.parse_diagnostics.unknown_event_records,
+        },
+    }
+
+
+def format_budget_result_json(result: BudgetResult) -> str:
+    return json.dumps(
+        budget_result_to_dict(result),
+        sort_keys=True,
+        ensure_ascii=False,
+    )
 
 
 def format_rates(rates: dict[str, float]) -> str:
@@ -149,6 +249,21 @@ def parse_reason_rate_budget(raw_budget: str) -> tuple[str, float]:
     return reason, rate
 
 
+def parse_upstream_status_rate_budget(raw_budget: str) -> tuple[str, float]:
+    if "=" not in raw_budget:
+        raise argparse.ArgumentTypeError("expected STATUS=RATE")
+    status, raw_rate = raw_budget.split("=", 1)
+    if not status.isdigit():
+        raise argparse.ArgumentTypeError("status must be an HTTP status code")
+    try:
+        rate = float(raw_rate)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("rate must be a float") from exc
+    if rate < 0:
+        raise argparse.ArgumentTypeError("rate must be non-negative")
+    return status, rate
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Fail when structured semantic-router logs exceed route_error budgets.",
@@ -156,6 +271,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--min-total", type=int, default=1)
     parser.add_argument("--max-error-rate", type=float, default=0.0)
     parser.add_argument("--max-target-error-rate", type=float, default=0.0)
+    parser.add_argument("--max-malformed-json", type=int, default=None)
+    parser.add_argument("--max-missing-event", type=int, default=None)
+    parser.add_argument("--max-unknown-event", type=int, default=None)
+    parser.add_argument("--max-ignored-records", type=int, default=None)
     parser.add_argument(
         "--max-reason-rate",
         action="append",
@@ -167,21 +286,46 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "Repeat for multiple reasons, for example embedding_error=0."
         ),
     )
+    parser.add_argument(
+        "--max-upstream-status-rate",
+        action="append",
+        default=[],
+        type=parse_upstream_status_rate_budget,
+        metavar="STATUS=RATE",
+        help=(
+            "Fail when an upstream_status exceeds the given rate. "
+            "Repeat for multiple statuses, for example 400=0."
+        ),
+    )
+    parser.add_argument("--output", choices=("text", "json"), default="text")
+    parser.add_argument("--json", action="store_true", help="Shorthand for --output json")
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
+    diagnostics = ParseDiagnostics()
+    records = list(parse_route_records(sys.stdin, diagnostics=diagnostics))
     result = check_budget(
-        parse_route_records(sys.stdin),
+        records,
         BudgetConfig(
             min_total=args.min_total,
             max_error_rate=args.max_error_rate,
             max_target_error_rate=args.max_target_error_rate,
             max_reason_rates=dict(args.max_reason_rate),
+            max_upstream_status_rates=dict(args.max_upstream_status_rate),
+            max_malformed_json=args.max_malformed_json,
+            max_missing_event=args.max_missing_event,
+            max_unknown_event=args.max_unknown_event,
+            max_ignored_records=args.max_ignored_records,
         ),
+        parse_diagnostics=diagnostics,
     )
-    print(format_budget_result(result))
+    output_mode = "json" if args.json else args.output
+    if output_mode == "json":
+        print(format_budget_result_json(result))
+    else:
+        print(format_budget_result(result))
     return 0 if result.passed else 1
 
 

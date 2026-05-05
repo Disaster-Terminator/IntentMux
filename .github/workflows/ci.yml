@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Install dependencies
+        run: uv sync --frozen --group dev
+
+      - name: Run unit tests
+        run: |
+          set -o pipefail
+          uv run python -m pytest -q 2>&1 | tee pytest.log
+
+      - name: Run mock route evaluation
+        run: |
+          set -o pipefail
+          uv run python scripts/eval_routes.py --mock-embeddings 2>&1 | tee mock-route-eval.log
+
+      - name: Run router log summary fixture check
+        run: |
+          set -o pipefail
+          uv run python scripts/router_log_summary.py --output json < tests/samples/router_logs.ndjson 2>&1 | tee router-log-summary.json
+          uv run python -c "import json; payload=json.load(open('router-log-summary.json')); assert payload['total']==3; assert payload['route_complete']==2; assert payload['route_error']==1"
+
+      - name: Upload CI diagnostics (failure only)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-failure-diagnostics
+          path: |
+            pytest.log
+            mock-route-eval.log
+            router-log-summary.json

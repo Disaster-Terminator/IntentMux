@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 from collections import Counter
 from dataclasses import dataclass
 import json
@@ -8,6 +9,13 @@ from typing import Any, Iterable
 
 
 ROUTE_EVENTS = {"route_complete", "route_error"}
+
+
+@dataclass
+class ParseDiagnostics:
+    malformed_json_lines: int = 0
+    missing_event_records: int = 0
+    unknown_event_records: int = 0
 
 
 @dataclass(frozen=True)
@@ -22,9 +30,13 @@ class RouteLogSummary:
     error_types: dict[str, int]
     upstream_statuses: dict[str, int]
     max_duration_ms: float
+    parse_diagnostics: ParseDiagnostics
 
 
-def parse_route_records(lines: Iterable[str]) -> Iterable[dict[str, Any]]:
+def parse_route_records(
+    lines: Iterable[str],
+    diagnostics: ParseDiagnostics | None = None,
+) -> Iterable[dict[str, Any]]:
     for line in lines:
         line = line.strip()
         if not line or "{" not in line:
@@ -33,12 +45,27 @@ def parse_route_records(lines: Iterable[str]) -> Iterable[dict[str, Any]]:
         try:
             record = json.loads(line[json_start:])
         except json.JSONDecodeError:
+            if diagnostics is not None:
+                diagnostics.malformed_json_lines += 1
             continue
-        if record.get("event") in ROUTE_EVENTS:
-            yield record
+
+        event = record.get("event")
+        if event is None:
+            if diagnostics is not None:
+                diagnostics.missing_event_records += 1
+            continue
+        if event not in ROUTE_EVENTS:
+            if diagnostics is not None:
+                diagnostics.unknown_event_records += 1
+            continue
+
+        yield record
 
 
-def summarize_records(records: Iterable[dict[str, Any]]) -> RouteLogSummary:
+def summarize_records(
+    records: Iterable[dict[str, Any]],
+    parse_diagnostics: ParseDiagnostics | None = None,
+) -> RouteLogSummary:
     total = 0
     completed = 0
     errors = 0
@@ -93,6 +120,7 @@ def summarize_records(records: Iterable[dict[str, Any]]) -> RouteLogSummary:
         error_types=dict(error_types),
         upstream_statuses=dict(upstream_statuses),
         max_duration_ms=max_duration_ms,
+        parse_diagnostics=parse_diagnostics or ParseDiagnostics(),
     )
 
 
@@ -109,7 +137,43 @@ def format_summary(summary: RouteLogSummary) -> str:
         f"upstream_statuses: {format_counts(summary.upstream_statuses)}",
         f"max_duration_ms={summary.max_duration_ms:.2f}",
     ]
+    diag = summary.parse_diagnostics
+    if any(
+        (
+            diag.malformed_json_lines,
+            diag.missing_event_records,
+            diag.unknown_event_records,
+        )
+    ):
+        lines.append(
+            "ignored_records: "
+            f"malformed_json={diag.malformed_json_lines}, "
+            f"missing_event={diag.missing_event_records}, "
+            f"unknown_event={diag.unknown_event_records}"
+        )
     return "\n".join(lines)
+
+
+def format_summary_json(summary: RouteLogSummary) -> str:
+    diag = summary.parse_diagnostics
+    payload = {
+        "total": summary.total,
+        "route_complete": summary.completed,
+        "route_error": summary.errors,
+        "streams": summary.streams,
+        "nonstreams": summary.nonstreams,
+        "targets": summary.targets,
+        "reasons": summary.reasons,
+        "error_types": summary.error_types,
+        "upstream_statuses": summary.upstream_statuses,
+        "max_duration_ms": summary.max_duration_ms,
+        "ignored_records": {
+            "malformed_json": diag.malformed_json_lines,
+            "missing_event": diag.missing_event_records,
+            "unknown_event": diag.unknown_event_records,
+        },
+    }
+    return json.dumps(payload, sort_keys=True)
 
 
 def format_counts(counts: dict[str, int]) -> str:
@@ -119,8 +183,25 @@ def format_counts(counts: dict[str, int]) -> str:
 
 
 def main() -> None:
-    summary = summarize_records(parse_route_records(sys.stdin))
-    print(format_summary(summary))
+    parser = argparse.ArgumentParser(description="Summarize semantic-router route logs.")
+    parser.add_argument(
+        "--output",
+        choices=("text", "json"),
+        default="text",
+        help="Output format (default: text).",
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Shortcut for --output json.",
+    )
+    args = parser.parse_args()
+
+    diagnostics = ParseDiagnostics()
+    records = list(parse_route_records(sys.stdin, diagnostics=diagnostics))
+    summary = summarize_records(records, parse_diagnostics=diagnostics)
+    output_json = args.json or args.output == "json"
+    print(format_summary_json(summary) if output_json else format_summary(summary))
 
 
 if __name__ == "__main__":
