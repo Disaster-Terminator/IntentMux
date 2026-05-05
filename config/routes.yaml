@@ -1,5 +1,5 @@
 route_model: semantic-router
-default_route: cheap-router
+fallback_route_id: fast
 threshold: 0.55
 margin: 0.04
 route_bank_path: data/semantic_sets/route_bank.yaml
@@ -10,47 +10,50 @@ litellm_timeout: 120
 listen_host: 127.0.0.1
 listen_port: 4001
 
-pro_hard_rules:
-  - debug
-  - 报错
-  - 异常
-  - 栈
-  - stacktrace
-  - traceback
-  - PR
-  - diff
-  - patch
-  - review
-  - 代码审查
-  - 竞态
-  - 死锁
-  - 并发
-  - 锁
-  - 线程
-  - 内存泄漏
-  - 性能瓶颈
-  - 数据库性能
-  - SQL 优化
-  - 索引
-  - 事务
-  - 一致性
-  - 架构
-  - 高并发
-  - 分布式
-  - 部署
-  - 线上
-  - 回滚
-  - 安全
-  - 漏洞
-  - 泄露
-  - token
-  - 密钥
-  - 认证
-  - 鉴权
-  - 权限
+hard_rules:
+  - route_id: strong
+    keywords:
+      - debug
+      - 报错
+      - 异常
+      - 栈
+      - stacktrace
+      - traceback
+      - PR
+      - diff
+      - patch
+      - review
+      - 代码审查
+      - 竞态
+      - 死锁
+      - 并发
+      - 锁
+      - 线程
+      - 内存泄漏
+      - 性能瓶颈
+      - 数据库性能
+      - SQL 优化
+      - 索引
+      - 事务
+      - 一致性
+      - 架构
+      - 高并发
+      - 分布式
+      - 部署
+      - 线上
+      - 回滚
+      - 安全
+      - 漏洞
+      - 泄露
+      - token
+      - 密钥
+      - 认证
+      - 鉴权
+      - 权限
 
 routes:
-  cheap-router:
+  fast:
+    target_model: cheap-router
     description: 低风险、普通问答、解释、翻译、格式转换、轻量总结
     utterances:
       - 什么是 Java File 类
@@ -63,7 +66,8 @@ routes:
       - 你好
       - 谢谢
 
-  pro-router:
+  strong:
+    target_model: pro-router
     description: 代码、debug、架构、agent、多步推理、高风险判断
     utterances:
       - 帮我分析这个 PR 有没有问题
@@ -76,7 +80,8 @@ routes:
       - 帮我看这段代码为什么卡死
       - 这个方案靠谱吗
 
-  free-probe-router:
+  experimental:
+    target_model: free-probe-router
     description: 免费端点探活、批量试探、低价值质量比较
     utterances:
       - 批量测试这些免费模型是否可用

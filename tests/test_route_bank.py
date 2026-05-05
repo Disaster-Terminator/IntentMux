@@ -28,7 +28,7 @@ def test_build_route_bank_maps_rows_to_routes_and_keeps_sources():
         RouteSource(
             name="massive_zh_cn_general",
             kind="local_rows",
-            route="cheap-router",
+            route="fast",
             text_field="utt",
             limit=2,
             mappings=[
@@ -38,7 +38,7 @@ def test_build_route_bank_maps_rows_to_routes_and_keeps_sources():
         RouteSource(
             name="swebench_issue_resolution",
             kind="local_rows",
-            route="pro-router",
+            route="strong",
             text_field="problem_statement",
             limit=1,
         ),
@@ -57,7 +57,7 @@ def test_build_route_bank_maps_rows_to_routes_and_keeps_sources():
 
     bank = build_route_bank(sources, rows)
 
-    assert bank["routes"]["cheap-router"]["utterances"] == [
+    assert bank["routes"]["fast"]["utterances"] == [
         {
             "text": "翻译 成 中文",
             "source": "massive_zh_cn_general",
@@ -67,7 +67,7 @@ def test_build_route_bank_maps_rows_to_routes_and_keeps_sources():
             "source": "massive_zh_cn_general",
         },
     ]
-    assert bank["routes"]["pro-router"]["utterances"] == [
+    assert bank["routes"]["strong"]["utterances"] == [
         {
             "text": "Fix crash when parsing config files.",
             "source": "swebench_issue_resolution",
@@ -105,7 +105,7 @@ def test_load_rows_reads_remote_tar_jsonl_from_cache(tmp_path):
         RouteSource(
             name="sample",
             kind="remote_tar_jsonl",
-            route="cheap-router",
+            route="fast",
             text_field="utt",
             limit=10,
             url="https://example.com/sample.tar.gz",

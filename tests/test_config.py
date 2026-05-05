@@ -8,6 +8,41 @@ from pydantic import ValidationError
 from router.config import RouteSpec, RouterSettings, load_settings
 
 
+def test_load_settings_supports_route_ids_mapped_to_target_models(tmp_path: Path):
+    routes_path = tmp_path / "routes.yaml"
+    routes_path.write_text(
+        """
+route_model: semantic-router
+fallback_route_id: fast
+routes:
+  fast:
+    target_model: local-fast-model
+    description: low risk
+    utterances:
+      - seed fast utterance
+  strong:
+    target_model: local-strong-model
+    description: high risk
+    utterances:
+      - seed strong utterance
+hard_rules:
+  - route_id: strong
+    keywords:
+      - PR
+      - 线上
+""",
+        encoding="utf-8",
+    )
+
+    settings = load_settings(routes_path)
+
+    assert settings.fallback_route_id == "fast"
+    assert settings.routes["fast"].target_model == "local-fast-model"
+    assert settings.routes["strong"].target_model == "local-strong-model"
+    assert settings.hard_rules[0].route_id == "strong"
+    assert settings.hard_rules[0].keywords == ["PR", "线上"]
+
+
 def test_load_settings_merges_seed_utterances_with_route_bank(tmp_path: Path):
     routes_path = tmp_path / "routes.yaml"
     bank_path = tmp_path / "route_bank.yaml"
@@ -44,10 +79,10 @@ routes:
     utterances:
       - text: generated pro utterance
         source: swebench_issue_resolution
-  free-probe-router:
+  undeclared:
     utterances:
-      - text: generated probe utterance
-        source: local_model_probe
+      - text: generated undeclared utterance
+        source: old_bank
 """,
         encoding="utf-8",
     )
@@ -62,9 +97,7 @@ routes:
         "seed pro utterance",
         "generated pro utterance",
     ]
-    assert settings.routes["free-probe-router"].utterances == [
-        "generated probe utterance",
-    ]
+    assert "undeclared" not in settings.routes
 
 
 def test_load_settings_ignores_missing_route_bank_by_default(tmp_path: Path):
@@ -134,8 +167,10 @@ routes:
 def test_default_hard_rules_do_not_include_ambiguous_production_word():
     settings = load_settings("config/routes.yaml")
 
-    assert "生产" not in settings.pro_hard_rules
-    assert "线上" in settings.pro_hard_rules
+    keywords = [keyword for hard_rule in settings.hard_rules for keyword in hard_rule.keywords]
+    assert "生产" not in keywords
+    assert "线上" in keywords
+    assert settings.hard_rules[0].route_id == "strong"
 
 
 def test_load_settings_reads_litellm_timeout_override(tmp_path: Path, monkeypatch):
@@ -222,7 +257,7 @@ routes:
 
 
 def test_router_settings_rejects_default_route_that_points_back_to_entry_model():
-    with pytest.raises(ValidationError, match="default_route"):
+    with pytest.raises(ValidationError, match="fallback_route_id"):
         RouterSettings(
             route_model="semantic-router",
             default_route="semantic-router",
@@ -253,19 +288,38 @@ def test_router_settings_rejects_recursive_route_target():
         )
 
 
-def test_router_settings_rejects_targets_outside_litellm_model_group_contract():
-    with pytest.raises(ValidationError, match="target routes"):
+def test_router_settings_allows_user_defined_route_ids_and_target_models():
+    settings = RouterSettings(
+        route_model="semantic-router",
+        fallback_route_id="local",
+        routes={
+            "local": RouteSpec(
+                target_model="my-local-litellm-group",
+                description="local fast target",
+                utterances=["quick local prompt"],
+            ),
+            "premium": RouteSpec(
+                target_model="my-premium-litellm-group",
+                description="premium target",
+                utterances=["hard analysis prompt"],
+            ),
+        },
+    )
+
+    assert set(settings.routes) == {"local", "premium"}
+    assert settings.routes["local"].target_model == "my-local-litellm-group"
+
+
+def test_router_settings_rejects_recursive_target_model():
+    with pytest.raises(ValidationError, match="target_model"):
         RouterSettings(
             route_model="semantic-router",
-            default_route="cheap-router",
+            fallback_route_id="fast",
             routes={
-                "cheap-router": RouteSpec(
-                    description="seed cheap",
-                    utterances=["seed cheap utterance"],
-                ),
-                "experimental-router": RouteSpec(
-                    description="not part of the production target contract",
-                    utterances=["try an experimental route"],
+                "fast": RouteSpec(
+                    target_model="semantic-router",
+                    description="recursive target",
+                    utterances=["send back to entry model"],
                 ),
             },
         )

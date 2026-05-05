@@ -13,7 +13,7 @@ def test_load_cases_from_yaml_supports_text_and_messages(tmp_path):
 cases:
   - name: text case
     text: hello
-    expected_target: cheap-router
+    expected_route: fast
   - name: messages case
     messages:
       - role: user
@@ -29,12 +29,12 @@ cases:
         "model": DEFAULT_ROUTE_MODEL,
         "messages": [{"role": "user", "content": "hello"}],
     }
-    assert cases[0].expected_target == "cheap-router"
+    assert cases[0].expected_route == "fast"
     assert cases[1].payload == {
         "model": DEFAULT_ROUTE_MODEL,
         "messages": [{"role": "user", "content": "hi"}],
     }
-    assert cases[1].expected_target is None
+    assert cases[1].expected_route is None
 
 
 def test_load_cases_from_jsonl(tmp_path):
@@ -42,7 +42,7 @@ def test_load_cases_from_jsonl(tmp_path):
     path.write_text(
         "\n".join(
             [
-                json.dumps({"name": "a", "text": "hello", "expected_target": "cheap-router"}),
+                json.dumps({"name": "a", "text": "hello", "expected_route": "fast"}),
                 json.dumps(
                     {
                         "name": "b",
@@ -70,20 +70,20 @@ def test_load_cases_from_jsonl(tmp_path):
 def test_format_result_row_supports_pass_fail_and_na():
     assert format_result_row(
         case_name="match",
-        target_model="pro-router",
-        expected_target="pro-router",
+        route_id="strong",
+        expected_route="strong",
         reason="hard_rule:线上",
-    ) == ["PASS", "match", "pro-router", "pro-router", "hard_rule:线上"]
+    ) == ["PASS", "match", "strong", "strong", "hard_rule:线上"]
     assert format_result_row(
         case_name="mismatch",
-        target_model="cheap-router",
-        expected_target="pro-router",
+        route_id="fast",
+        expected_route="strong",
         reason="semantic_similarity",
     )[0] == "FAIL"
     assert format_result_row(
         case_name="no-expected",
-        target_model="cheap-router",
-        expected_target=None,
+        route_id="fast",
+        expected_route=None,
         reason="semantic_similarity",
     )[0] == "N/A"
 
@@ -95,7 +95,7 @@ def test_run_review_default_table_output_and_success_exit(monkeypatch, tmp_path,
 cases:
   - name: expects match
     text: hello
-    expected_target: cheap-router
+    expected_route: fast
 """,
         encoding="utf-8",
     )
@@ -103,7 +103,11 @@ cases:
     monkeypatch.setattr(
         review_decisions,
         "call_decision_endpoint",
-        lambda endpoint, payload, timeout_s: {"target_model": "cheap-router", "reason": "semantic_similarity"},
+        lambda endpoint, payload, timeout_s: {
+            "route_id": "fast",
+            "target_model": "cheap-router",
+            "reason": "semantic_similarity",
+        },
     )
 
     exit_code = run_review("http://localhost", path, 1.0)
@@ -121,7 +125,7 @@ def test_run_review_json_output_shape_and_neutral_status(monkeypatch, tmp_path, 
 cases:
   - name: expected match
     text: hello
-    expected_target: cheap-router
+    expected_route: fast
   - name: no expectation
     text: hi
 """,
@@ -130,8 +134,18 @@ cases:
 
     responses = iter(
         [
-            {"target_model": "cheap-router", "reason": "semantic_similarity", "score": 0.88},
-            {"target_model": "pro-router", "reason": "semantic_similarity", "scores": {"cheap-router": 0.2}},
+            {
+                "route_id": "fast",
+                "target_model": "cheap-router",
+                "reason": "semantic_similarity",
+                "score": 0.88,
+            },
+            {
+                "route_id": "strong",
+                "target_model": "pro-router",
+                "reason": "semantic_similarity",
+                "scores": {"fast": 0.2},
+            },
         ]
     )
     monkeypatch.setattr(review_decisions, "call_decision_endpoint", lambda *_args: next(responses))
@@ -142,17 +156,18 @@ cases:
     assert exit_code == 0
     assert output[0] == {
         "case": "expected match",
-        "expected_target": "cheap-router",
-        "actual_target": "cheap-router",
+        "expected_route": "fast",
+        "actual_route": "fast",
+        "target_model": "cheap-router",
         "status": "pass",
         "reason": "semantic_similarity",
         "request_payload_model": DEFAULT_ROUTE_MODEL,
         "score": 0.88,
     }
     assert output[1]["case"] == "no expectation"
-    assert output[1]["expected_target"] is None
+    assert output[1]["expected_route"] is None
     assert output[1]["status"] is None
-    assert output[1]["scores"] == {"cheap-router": 0.2}
+    assert output[1]["scores"] == {"fast": 0.2}
 
 
 def test_run_review_mismatch_expected_route_exits_nonzero(monkeypatch, tmp_path):
@@ -162,7 +177,7 @@ def test_run_review_mismatch_expected_route_exits_nonzero(monkeypatch, tmp_path)
 cases:
   - name: mismatch
     text: hello
-    expected_target: cheap-router
+    expected_route: fast
 """,
         encoding="utf-8",
     )
@@ -170,7 +185,11 @@ cases:
     monkeypatch.setattr(
         review_decisions,
         "call_decision_endpoint",
-        lambda *_args: {"target_model": "pro-router", "reason": "semantic_similarity"},
+        lambda *_args: {
+            "route_id": "strong",
+            "target_model": "pro-router",
+            "reason": "semantic_similarity",
+        },
     )
 
     assert run_review("http://localhost", path, 1.0, output="json") == 1
@@ -183,7 +202,7 @@ def test_run_review_endpoint_exception_table_output_nonzero_and_error_row(monkey
 cases:
   - name: endpoint down
     text: hello
-    expected_target: cheap-router
+    expected_route: fast
 """,
         encoding="utf-8",
     )
@@ -209,7 +228,7 @@ def test_run_review_endpoint_exception_json_output_nonzero_and_error_status(monk
 cases:
   - name: endpoint down
     text: hello
-    expected_target: cheap-router
+    expected_route: fast
 """,
         encoding="utf-8",
     )
@@ -225,7 +244,7 @@ cases:
     assert exit_code == 1
     assert output[0]["case"] == "endpoint down"
     assert output[0]["status"] == "error"
-    assert output[0]["actual_target"] is None
+    assert output[0]["actual_route"] is None
     assert output[0]["error_type"] == "request_error"
     assert "RuntimeError" in output[0]["error_message"]
     assert "bearer" not in output[0]["error_message"].lower()
@@ -238,10 +257,10 @@ def test_run_review_includes_successful_cases_before_later_endpoint_error(monkey
 cases:
   - name: first ok
     text: hello
-    expected_target: cheap-router
+    expected_route: fast
   - name: then fails
     text: hi
-    expected_target: pro-router
+    expected_route: strong
 """,
         encoding="utf-8",
     )
@@ -249,7 +268,11 @@ cases:
     def fake_call(*_args):
         if fake_call.calls == 0:
             fake_call.calls += 1
-            return {"target_model": "cheap-router", "reason": "semantic_similarity"}
+            return {
+                "route_id": "fast",
+                "target_model": "cheap-router",
+                "reason": "semantic_similarity",
+            }
         raise RuntimeError("boom")
 
     fake_call.calls = 0
@@ -273,10 +296,10 @@ def test_run_review_mismatch_and_endpoint_error_both_nonzero(monkeypatch, tmp_pa
 cases:
   - name: mismatch
     text: hello
-    expected_target: cheap-router
+    expected_route: fast
   - name: endpoint error
     text: hi
-    expected_target: pro-router
+    expected_route: strong
 """,
         encoding="utf-8",
     )
@@ -284,7 +307,11 @@ cases:
     def fake_call(*_args):
         if fake_call.calls == 0:
             fake_call.calls += 1
-            return {"target_model": "pro-router", "reason": "semantic_similarity"}
+            return {
+                "route_id": "strong",
+                "target_model": "pro-router",
+                "reason": "semantic_similarity",
+            }
         raise RuntimeError("boom")
 
     fake_call.calls = 0

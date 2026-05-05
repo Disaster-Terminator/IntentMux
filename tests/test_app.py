@@ -257,6 +257,8 @@ def test_decision_endpoint_returns_route_decision_without_forwarding():
                 "pro-router",
                 "hard_rule:线上",
                 rewrite=True,
+                route_id="strong",
+                policy_id="hard_rule",
                 source_model="semantic-router",
                 score=0.91,
                 second_score=0.12,
@@ -276,7 +278,9 @@ def test_decision_endpoint_returns_route_decision_without_forwarding():
     assert response.status_code == 200
     assert response.json() == {
         "source_model": "semantic-router",
+        "route_id": "strong",
         "target_model": "pro-router",
+        "policy_id": "hard_rule",
         "reason": "hard_rule:线上",
         "rewrite": True,
         "score": 0.91,
@@ -352,7 +356,9 @@ def test_decision_endpoint_missing_model_and_messages_preserves_router_semantics
     assert router.requests == [{"metadata": {"k": "v"}}]
     assert response.json() == {
         "source_model": None,
+        "route_id": None,
         "target_model": "cheap-router",
+        "policy_id": None,
         "reason": "passthrough",
         "rewrite": False,
         "score": None,
@@ -370,6 +376,8 @@ def test_streaming_chat_completion_uses_stream_proxy():
                 "pro-router",
                 "hard_rule:线上",
                 rewrite=True,
+                route_id="strong",
+                policy_id="hard_rule",
                 source_model="smart-router",
             )
         ),
@@ -403,6 +411,8 @@ def test_chat_completion_emits_structured_log_without_sensitive_payload(caplog):
                 "pro-router",
                 "hard_rule:线上",
                 rewrite=True,
+                route_id="strong",
+                policy_id="hard_rule",
                 source_model="smart-router",
             )
         ),
@@ -436,7 +446,9 @@ def test_chat_completion_emits_structured_log_without_sensitive_payload(caplog):
             "request_id": "external-request-1",
             "request_id_source": "x-request-id",
             "source_model": "smart-router",
+            "route_id": "strong",
             "target_model": "pro-router",
+            "policy_id": "hard_rule",
             "reason": "hard_rule:线上",
             "rewrite": True,
             "stream": False,

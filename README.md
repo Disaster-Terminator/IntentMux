@@ -1,17 +1,20 @@
 # Gateway Semantic Router
 
-Lightweight OpenAI-compatible sidecar for `/v1/chat/completions`.
+Lightweight, local-first OpenAI/LiteLLM-compatible routing sidecar for
+`/v1/chat/completions`.
 
 It rewrites the configured semantic entry model, currently
-`model=semantic-router`, into the local LiteLLM groups:
+`model=semantic-router`, by selecting a configured `route_id` and resolving that
+route to a deployment-specific `target_model`.
 
-- `cheap-router`
-- `pro-router`
-- `free-probe-router`
+The checked-in sample config uses route ids such as `fast`, `strong`, and
+`experimental`, mapped to local example LiteLLM targets such as `cheap-router`,
+`pro-router`, and `free-probe-router`. Those target names are examples from this
+machine's LiteLLM setup, not product-level route names.
 
-Runtime config validation enforces that rewritten targets stay inside those
-three groups. The semantic entry model itself cannot appear as a target route or
-default route, which prevents recursive forwarding back to `semantic-router`.
+Runtime config validation enforces that the semantic entry model itself cannot
+appear as a route target and that the fallback route exists, which prevents
+recursive forwarding back to `semantic-router`.
 
 All other model names pass through unchanged. LiteLLM's native `smart-router`
 is intentionally kept as a separate upstream model group.
@@ -22,6 +25,11 @@ LiteLLM response body and routing headers.
 
 This repository is intentionally separate from `/home/raystorm/gateway/litellm`.
 Do not add LiteLLM mount files, tokens, or `.env` material here.
+
+The project is not public-release ready yet. Public repository visibility,
+license polish, and release documentation are deferred until the configurable
+route abstraction, observability contract, and redacted eval workflow have been
+audited together.
 
 ## Local Run
 
@@ -121,7 +129,7 @@ Runtime probes:
 
 Embedding degraded mode is intentionally fail-open for routed chat requests:
 when the embedding component is unavailable, `/ready` returns `503`, but
-`model=semantic-router` requests fall back to `default_route` with
+`model=semantic-router` requests fall back to `fallback_route_id` with
 `reason=embedding_error`. LiteLLM/upstream proxy failures are different: they
 fail closed as redacted `502` responses and are logged as `route_error`.
 
@@ -132,8 +140,9 @@ uv run python scripts/e2e_litellm_entry.py --litellm-base-url http://127.0.0.1:4
 ```
 
 The E2E checks `model=semantic-router` through LiteLLM `:4000`, verifies
-non-streaming and streaming responses, and confirms sidecar route logs for
-`pro-router`, `cheap-router`, and `free-probe-router`. LiteLLM's model-entry
+non-streaming and streaming responses, and confirms sidecar route logs for the
+sample `fast`, `strong`, and `experimental` route ids plus their configured
+target models. LiteLLM's model-entry
 path does not currently preserve client-supplied correlation IDs to the sidecar,
 so the script first tries request-id matching and then falls back to recent route
 shape matching. The script prints `RUN` lines before each probe so slow upstream
@@ -143,12 +152,13 @@ requests can be localized; use `--timeout` to tune HTTP timeouts or
 expected to preserve request IDs end to end; failed probes are not allowed to
 pass route-log checks by matching old route-shape logs.
 
-Within the sidecar, route logs include both `request_id` and
-`request_id_source`. The sidecar accepts `x-request-id`, `x-correlation-id`,
-W3C `traceparent`, `metadata.semantic_router_request_id`, and `user` as request
-identity sources, then injects the final value into the upstream `x-request-id`
-header. This makes sidecar-to-upstream correlation stable even when LiteLLM's
-model-entry layer does not preserve the original client id.
+Within the sidecar, route logs include `route_id`, `target_model`, `policy_id`,
+`request_id`, and `request_id_source`. The sidecar accepts `x-request-id`,
+`x-correlation-id`, W3C `traceparent`, `metadata.semantic_router_request_id`,
+and `user` as request identity sources, then injects the final value into the
+upstream `x-request-id` header. This makes sidecar-to-upstream correlation
+stable even when LiteLLM's model-entry layer does not preserve the original
+client id.
 
 Production route-log summary from sidecar logs:
 
@@ -161,8 +171,9 @@ The summary parser ignores uvicorn access lines and only counts structured
 `route_complete` / `route_error` JSON records. Upstream route exceptions and
 HTTP `5xx` statuses are returned as `502` with a redacted JSON error body and
 are logged as `route_error`; HTTP status failures include `upstream_status` in
-the structured log and `upstream_statuses` in the summary. Route reasons are
-also counted, so degraded embedding fallback shows up as
+the structured log and `upstream_statuses` in the summary. Route ids, deployment
+targets, and route reasons are counted separately, so degraded embedding
+fallback shows up as
 `reasons: embedding_error=N`. Prompts and bearer tokens are not logged.
 When malformed JSON, missing-event JSON records, or unknown-event JSON records
 are present after the first `{` in a log line, the summary adds an
@@ -170,7 +181,8 @@ are present after the first `{` in a log line, the summary adds an
 real routed traffic. Plain access-log lines without JSON objects are still
 ignored silently. Non-200 upstream statuses are also grouped by status, target,
 reason, and stream mode under `upstream_non_200` so an operator can quickly see
-patterns such as `status=400 target=cheap-router reason=low_confidence`.
+deployment patterns such as `status=400 target=cheap-router
+reason=low_confidence`.
 
 Production route-error budget gate:
 
@@ -205,8 +217,8 @@ curl http://127.0.0.1:4001/v1/semantic-router/decision \
 ```
 
 Use this endpoint for route quality review and gray-mode evaluation. It returns
-the selected target, reason, rewrite flag, and scores, but does not call LiteLLM
-or any model backend.
+the selected `route_id`, resolved `target_model`, `policy_id`, reason, rewrite
+flag, and scores, but does not call LiteLLM or any model backend.
 
 Streaming smoke test:
 
@@ -270,5 +282,5 @@ uv run python scripts/build_eval_bank.py \
 ```
 
 Each JSONL sample must set `redacted: true`, include `text`, and set `expect`
-to one of `cheap-router`, `pro-router`, or `free-probe-router`. The importer
-rejects unredacted samples by default.
+to a configured route id such as `fast` or `strong`. The importer rejects
+unredacted samples by default.

@@ -1,22 +1,22 @@
 cases:
   - text: 帮我把这段话润色一下
-    expect: cheap-router
+    expect: fast
   - text: 什么是 Java 序列化
-    expect: cheap-router
+    expect: fast
   - text: 翻译成中文
-    expect: cheap-router
+    expect: fast
   - text: 帮我分析这个 PR 有没有竞态条件
-    expect: pro-router
+    expect: strong
   - text: 这个 NPE 为什么只在线上偶发
-    expect: pro-router
+    expect: strong
   - text: 这个 SQL 查询为什么越来越慢
-    expect: pro-router
+    expect: strong
   - text: 这个方案靠谱吗
-    expect: pro-router
+    expect: strong
   - text: 批量测试这些免费模型哪个还活着
-    expect: free-probe-router
+    expect: experimental
   - text: 探活这些端点
-    expect: free-probe-router
+    expect: experimental
   - text: 跑一组非关键样例比较免费模型输出
-    expect: free-probe-router
+    expect: experimental
 

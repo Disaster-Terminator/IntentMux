@@ -5,18 +5,18 @@ from scripts.build_eval_bank import build_eval_bank, load_manual_cases
 
 def test_build_eval_bank_keeps_manual_cases_and_adds_route_bank_cases():
     manual_cases = [
-        {"text": "手工 cheap", "expect": "cheap-router"},
-        {"text": "手工 pro", "expect": "pro-router"},
+        {"text": "手工 cheap", "expect": "fast"},
+        {"text": "手工 pro", "expect": "strong"},
     ]
     route_bank = {
         "routes": {
-            "cheap-router": {
+            "fast": {
                 "utterances": [
                     {"text": "生成 cheap 1", "source": "massive"},
                     {"text": "生成 cheap 2", "source": "massive"},
                 ]
             },
-            "pro-router": {
+            "strong": {
                 "utterances": [
                     {"text": "generated pro", "source": "swebench"},
                 ]
@@ -31,18 +31,18 @@ def test_build_eval_bank_keeps_manual_cases_and_adds_route_bank_cases():
     )
 
     assert eval_bank["cases"] == [
-        {"text": "手工 cheap", "expect": "cheap-router", "source": "manual"},
-        {"text": "手工 pro", "expect": "pro-router", "source": "manual"},
-        {"text": "生成 cheap 1", "expect": "cheap-router", "source": "massive"},
-        {"text": "generated pro", "expect": "pro-router", "source": "swebench"},
+        {"text": "手工 cheap", "expect": "fast", "source": "manual"},
+        {"text": "手工 pro", "expect": "strong", "source": "manual"},
+        {"text": "生成 cheap 1", "expect": "fast", "source": "massive"},
+        {"text": "generated pro", "expect": "strong", "source": "swebench"},
     ]
 
 
 def test_build_eval_bank_deduplicates_manual_and_generated_cases():
-    manual_cases = [{"text": "重复", "expect": "cheap-router"}]
+    manual_cases = [{"text": "重复", "expect": "fast"}]
     route_bank = {
         "routes": {
-            "cheap-router": {
+            "fast": {
                 "utterances": [
                     {"text": "重复", "source": "massive"},
                     {"text": "新样本", "source": "massive"},
@@ -58,8 +58,8 @@ def test_build_eval_bank_deduplicates_manual_and_generated_cases():
     )
 
     assert eval_bank["cases"] == [
-        {"text": "重复", "expect": "cheap-router", "source": "manual"},
-        {"text": "新样本", "expect": "cheap-router", "source": "massive"},
+        {"text": "重复", "expect": "fast", "source": "manual"},
+        {"text": "新样本", "expect": "fast", "source": "massive"},
     ]
 
 
@@ -69,7 +69,7 @@ def test_load_manual_cases_merges_multiple_files(tmp_path):
         """
 cases:
   - text: 手工 cheap
-    expect: cheap-router
+    expect: fast
 """,
         encoding="utf-8",
     )
@@ -78,13 +78,13 @@ cases:
         """
 cases:
   - text: 生产复核 pro
-    expect: pro-router
+    expect: strong
     source: production_review
 """,
         encoding="utf-8",
     )
 
     assert load_manual_cases([first, second]) == [
-        {"text": "手工 cheap", "expect": "cheap-router"},
-        {"text": "生产复核 pro", "expect": "pro-router", "source": "production_review"},
+        {"text": "手工 cheap", "expect": "fast"},
+        {"text": "生产复核 pro", "expect": "strong", "source": "production_review"},
     ]

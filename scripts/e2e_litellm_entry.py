@@ -23,7 +23,8 @@ class CheckResult:
 class Probe:
     name: str
     prompt: str
-    expected_target: str
+    expected_route: str
+    expected_target_model: str
     stream: bool = False
 
 
@@ -31,23 +32,27 @@ DEFAULT_PROBES = [
     Probe(
         name="pro_nonstream",
         prompt="这个线上 bug 为什么偶发？只回答 OK",
-        expected_target="pro-router",
+        expected_route="strong",
+        expected_target_model="pro-router",
     ),
     Probe(
         name="pro_stream",
         prompt="这个线上 bug 为什么偶发？只回答 OK",
-        expected_target="pro-router",
+        expected_route="strong",
+        expected_target_model="pro-router",
         stream=True,
     ),
     Probe(
         name="cheap_nonstream",
         prompt="帮我把这段话润色一下，只回答 OK",
-        expected_target="cheap-router",
+        expected_route="fast",
+        expected_target_model="cheap-router",
     ),
     Probe(
         name="free_probe_nonstream",
         prompt="探活这些端点，只回答 OK",
-        expected_target="free-probe-router",
+        expected_route="experimental",
+        expected_target_model="free-probe-router",
     ),
 ]
 
@@ -86,7 +91,8 @@ def find_matching_route_log(
         if (
             record.get("event") == "route_complete"
             and record.get("source_model") == "semantic-router"
-            and record.get("target_model") == probe.expected_target
+            and record.get("route_id") == probe.expected_route
+            and record.get("target_model") == probe.expected_target_model
             and record.get("stream") is probe.stream
             and record.get("upstream_status") == 200
         ):
@@ -272,8 +278,13 @@ def validate_route_logs(
                     f"source_model={record.get('source_model')}",
                 ),
                 CheckResult(
+                    f"{probe.name}_route_id",
+                    record.get("route_id") == probe.expected_route,
+                    f"route_id={record.get('route_id')}",
+                ),
+                CheckResult(
                     f"{probe.name}_target_model",
-                    record.get("target_model") == probe.expected_target,
+                    record.get("target_model") == probe.expected_target_model,
                     f"target_model={record.get('target_model')}",
                 ),
                 CheckResult(

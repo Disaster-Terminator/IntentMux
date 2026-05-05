@@ -25,6 +25,7 @@ class RouteLogSummary:
     errors: int
     streams: int
     nonstreams: int
+    routes: dict[str, int]
     targets: dict[str, int]
     reasons: dict[str, int]
     error_types: dict[str, int]
@@ -72,6 +73,7 @@ def summarize_records(
     errors = 0
     streams = 0
     nonstreams = 0
+    routes: Counter[str] = Counter()
     targets: Counter[str] = Counter()
     reasons: Counter[str] = Counter()
     error_types: Counter[str] = Counter()
@@ -94,6 +96,10 @@ def summarize_records(
             streams += 1
         else:
             nonstreams += 1
+
+        route_id = record.get("route_id")
+        if isinstance(route_id, str):
+            routes[route_id] += 1
 
         target_model = record.get("target_model")
         if isinstance(target_model, str):
@@ -119,6 +125,7 @@ def summarize_records(
         errors=errors,
         streams=streams,
         nonstreams=nonstreams,
+        routes=dict(routes),
         targets=dict(targets),
         reasons=dict(reasons),
         error_types=dict(error_types),
@@ -150,6 +157,7 @@ def format_summary(summary: RouteLogSummary) -> str:
             f"errors={summary.errors} streams={summary.streams} "
             f"nonstreams={summary.nonstreams}"
         ),
+        f"routes: {format_counts(summary.routes)}",
         f"targets: {format_counts(summary.targets)}",
         f"reasons: {format_counts(summary.reasons)}",
         f"error_types: {format_counts(summary.error_types)}",
@@ -182,6 +190,7 @@ def format_summary_json(summary: RouteLogSummary) -> str:
         "route_error": summary.errors,
         "streams": summary.streams,
         "nonstreams": summary.nonstreams,
+        "routes": summary.routes,
         "targets": summary.targets,
         "reasons": summary.reasons,
         "error_types": summary.error_types,

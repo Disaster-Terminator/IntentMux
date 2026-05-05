@@ -81,7 +81,9 @@ def create_app(
         decision = await router.decide(payload)
         return {
             "source_model": decision.source_model,
+            "route_id": decision.route_id,
             "target_model": decision.target_model,
+            "policy_id": decision.policy_id,
             "reason": decision.reason,
             "rewrite": decision.rewrite,
             "score": decision.score,
