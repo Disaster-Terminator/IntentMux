@@ -77,6 +77,7 @@ def test_check_budget_fails_when_target_error_rate_exceeds_budget():
 
     assert result.passed is False
     assert result.target_error_rates == {"pro-router": 0.0, "cheap-router": 1.0}
+    assert result.route_error_rates == {"unknown": 1 / 2}
     assert result.reasons == [
         "target cheap-router error_rate 1.0000 exceeds max_target_error_rate 0.0000"
     ]
@@ -141,6 +142,7 @@ def test_format_budget_result_is_stable_for_runbooks():
         [
             "PASS route_error_budget",
             "total=2 completed=1 errors=1 error_rate=0.5000",
+            "route_error_rates: unknown=0.5000",
             "target_error_rates: cheap-router=1.0000, pro-router=0.0000",
             "reason_rates: none",
             "upstream_status_rates: none",
@@ -370,6 +372,7 @@ def test_cli_json_output_on_passing_budget(monkeypatch, capsys):
     assert payload["completed"] == 1
     assert payload["errors"] == 0
     assert payload["error_rate"] == 0.0
+    assert payload["route_error_rates"] == {"unknown": 0.0}
     assert payload["target_error_rates"] == {"pro-router": 0.0}
     assert payload["reason_rates"] == {"hard_rule:x": 1.0}
     assert payload["error_types"] == {}
@@ -564,3 +567,45 @@ def test_script_file_execution_returns_nonzero_for_failing_budget():
     assert completed.returncode != 0
     assert completed.stdout.startswith("FAIL route_error_budget\n")
     assert "error_rate 1.0000 exceeds max_error_rate 0.0000" in completed.stdout
+
+
+def test_check_budget_fails_when_route_error_rate_exceeds_budget():
+    records = records_from_text(
+        "\n".join(
+            [
+                '{"event":"route_complete","route_id":"chat.v1","target_model":"pro-router"}',
+                '{"event":"route_error","route_id":"chat.v1","target_model":"cheap-router","error_type":"TimeoutError"}',
+                '{"event":"route_complete","route_id":"search.v1","target_model":"cheap-router"}',
+            ]
+        )
+    )
+
+    result = check_budget(
+        records,
+        BudgetConfig(min_total=1, max_error_rate=1.0, max_route_error_rate=0.4, max_target_error_rate=1.0),
+    )
+
+    assert result.passed is False
+    assert result.route_error_rates == {"chat.v1": 0.5, "search.v1": 0.0}
+    assert result.target_error_rates == {"pro-router": 0.0, "cheap-router": 0.5}
+    assert result.reasons == [
+        "route chat.v1 error_rate 0.5000 exceeds max_route_error_rate 0.4000"
+    ]
+
+
+def test_cli_accepts_max_route_error_rate(monkeypatch, capsys):
+    monkeypatch.setattr(
+        sys,
+        "stdin",
+        [
+            '{"event":"route_complete","route_id":"chat.v1","target_model":"pro-router"}\n',
+            '{"event":"route_error","route_id":"chat.v1","target_model":"cheap-router","error_type":"TimeoutError"}\n',
+        ],
+    )
+
+    exit_code = main(["--min-total", "1", "--max-error-rate", "1", "--max-target-error-rate", "1", "--max-route-error-rate", "0.4"])
+
+    output = capsys.readouterr().out
+    assert exit_code == 1
+    assert "route_error_rates: chat.v1=0.5000" in output
+    assert "route chat.v1 error_rate 0.5000 exceeds max_route_error_rate 0.4000" in output
