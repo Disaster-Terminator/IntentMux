@@ -70,6 +70,24 @@ def test_convert_review_samples_deduplicates_text():
     }
 
 
+def test_convert_review_samples_validates_expect_against_routes_config():
+    raw_lines = [
+        '{"text":"合法","expect":"fast","redacted":true}',
+    ]
+
+    result = convert_review_samples(raw_lines, allowed_route_ids={"fast", "strong"})
+    assert result["cases"][0]["expect"] == "fast"
+
+
+def test_convert_review_samples_rejects_target_model_name_when_routes_validation_enabled():
+    raw_lines = [
+        '{"text":"非法","expect":"pro-router","redacted":true}',
+    ]
+
+    with pytest.raises(ReviewSampleError, match="not found in routes config"):
+        convert_review_samples(raw_lines, allowed_route_ids={"fast", "strong"})
+
+
 def test_main_dry_run_does_not_write_output_and_prints_summary(tmp_path, monkeypatch, capsys):
     input_path = tmp_path / "samples.jsonl"
     output_path = tmp_path / "out.yaml"

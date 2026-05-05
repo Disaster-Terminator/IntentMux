@@ -2,8 +2,16 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from scripts import review_decisions
-from scripts.review_decisions import DEFAULT_ROUTE_MODEL, format_result_row, load_cases, run_review
+from scripts.review_decisions import (
+    DEFAULT_ROUTE_MODEL,
+    format_result_row,
+    load_cases,
+    run_review,
+    validate_expected_routes,
+)
 
 
 def test_load_cases_from_yaml_supports_text_and_messages(tmp_path):
@@ -86,6 +94,16 @@ def test_format_result_row_supports_pass_fail_and_na():
         expected_route=None,
         reason="semantic_similarity",
     )[0] == "N/A"
+
+
+def test_validate_expected_routes_rejects_target_model_name():
+    cases = [
+        review_decisions.ReviewCase(
+            name="bad", payload={"model": DEFAULT_ROUTE_MODEL, "messages": []}, expected_route="pro-router"
+        )
+    ]
+    with pytest.raises(ValueError, match="pro-router"):
+        validate_expected_routes(cases, {"fast", "strong"})
 
 
 def test_run_review_default_table_output_and_success_exit(monkeypatch, tmp_path, capsys):
