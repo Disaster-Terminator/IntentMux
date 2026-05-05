@@ -12,11 +12,12 @@ Current operating target:
   event without prompt or bearer-token leakage
 - upstream disconnects and HTTP `5xx` statuses return a controlled `502` and
   are visible in route-log summaries
-- runtime config validation prevents recursive `semantic-router` targets and
-  keeps rewritten routes limited to the three LiteLLM model groups
+- runtime config validation prevents recursive `semantic-router` targets while
+  allowing user-defined route ids mapped to deployment-specific target models
 - degraded embedding availability is explicit: `/ready` returns `503`, routed
-  chat requests fall back to `default_route` with `reason=embedding_error`, and
-  route summaries count reasons for review
+  chat requests fall back to `fallback_route_id` with
+  `reason=embedding_error`, and route summaries count route ids, targets, and
+  reasons for review
 - health-check noise stays out of default logs
 - production readiness is verified by unit tests, route evals, sidecar preflight,
   LiteLLM-entry E2E, and recent-log summaries
@@ -35,6 +36,9 @@ Next hardening targets:
   `scripts/import_review_samples.py`
 - route quality review through `/v1/semantic-router/decision`, which returns
   the would-route decision without forwarding to LiteLLM or a model backend
+- public-readiness work after the configurable route abstraction and
+  observability contract have both been audited; the current repository should
+  not be treated as public-release frozen
 
 ## Lifecycle Management
 

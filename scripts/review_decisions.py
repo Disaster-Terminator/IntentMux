@@ -17,7 +17,7 @@ DEFAULT_ROUTE_MODEL = "semantic-router"
 class ReviewCase:
     name: str
     payload: dict[str, Any]
-    expected_target: str | None
+    expected_route: str | None
 
 
 def _normalize_case(raw: dict[str, Any], source: str) -> ReviewCase:
@@ -39,7 +39,7 @@ def _normalize_case(raw: dict[str, Any], source: str) -> ReviewCase:
     return ReviewCase(
         name=str(raw["name"]),
         payload=payload,
-        expected_target=raw.get("expected_target"),
+        expected_route=raw.get("expected_route"),
     )
 
 
@@ -67,19 +67,19 @@ def load_cases(path: Path) -> list[ReviewCase]:
 def format_result_row(
     *,
     case_name: str,
-    target_model: str,
-    expected_target: str | None,
+    route_id: str,
+    expected_route: str | None,
     reason: str,
 ) -> list[str]:
-    if expected_target is None:
+    if expected_route is None:
         status = "N/A"
     else:
-        status = "PASS" if target_model == expected_target else "FAIL"
-    return [status, case_name, target_model, expected_target or "", reason]
+        status = "PASS" if route_id == expected_route else "FAIL"
+    return [status, case_name, route_id, expected_route or "", reason]
 
 
 def _print_table(rows: list[list[str]]) -> None:
-    headers = ["status", "case", "selected_target", "expected_target", "reason"]
+    headers = ["status", "case", "selected_route", "expected_route", "reason"]
     table = [headers] + rows
     widths = [max(len(str(row[i])) for row in table) for i in range(len(headers))]
 
@@ -92,19 +92,20 @@ def _print_table(rows: list[list[str]]) -> None:
         print(render(row))
 
 
-def _status_for(expected_target: str | None, actual_target: str) -> str | None:
-    if expected_target is None:
+def _status_for(expected_route: str | None, actual_route: str) -> str | None:
+    if expected_route is None:
         return None
-    return "pass" if actual_target == expected_target else "fail"
+    return "pass" if actual_route == expected_route else "fail"
 
 
 def _build_json_result(case: ReviewCase, decision_result: dict[str, Any]) -> dict[str, Any]:
-    actual_target = str(decision_result.get("target_model", ""))
+    actual_route = str(decision_result.get("route_id") or decision_result.get("target_model", ""))
     output = {
         "case": case.name,
-        "expected_target": case.expected_target,
-        "actual_target": actual_target,
-        "status": _status_for(case.expected_target, actual_target),
+        "expected_route": case.expected_route,
+        "actual_route": actual_route,
+        "target_model": decision_result.get("target_model"),
+        "status": _status_for(case.expected_route, actual_route),
         "reason": str(decision_result.get("reason", "")),
         "request_payload_model": str(case.payload.get("model", "")),
     }
@@ -127,8 +128,9 @@ def _build_error_json_result(case: ReviewCase, exc: Exception) -> dict[str, Any]
     error_type, error_message = _safe_error_message(exc)
     return {
         "case": case.name,
-        "expected_target": case.expected_target,
-        "actual_target": None,
+        "expected_route": case.expected_route,
+        "actual_route": None,
+        "target_model": None,
         "status": "error",
         "reason": "",
         "error_type": error_type,
@@ -160,14 +162,14 @@ def run_review(endpoint: str, cases_path: Path, timeout_s: float, output: str = 
         except Exception as exc:
             endpoint_error_count += 1
             _, error_message = _safe_error_message(exc)
-            rows.append(["ERROR", case.name, "", case.expected_target or "", error_message])
+            rows.append(["ERROR", case.name, "", case.expected_route or "", error_message])
             json_rows.append(_build_error_json_result(case, exc))
             continue
 
         row = format_result_row(
             case_name=case.name,
-            target_model=str(result.get("target_model", "")),
-            expected_target=case.expected_target,
+            route_id=str(result.get("route_id") or result.get("target_model", "")),
+            expected_route=case.expected_route,
             reason=str(result.get("reason", "")),
         )
         rows.append(row)

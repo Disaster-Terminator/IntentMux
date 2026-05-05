@@ -20,24 +20,27 @@ class FakeEmbeddingClient:
 def settings() -> RouterSettings:
     return RouterSettings(
         route_model="smart-router",
-        default_route="cheap-router",
+        fallback_route_id="fast",
         threshold=0.5,
         margin=0.05,
         routes={
-            "cheap-router": RouteSpec(
+            "fast": RouteSpec(
+                target_model="cheap-router",
                 description="low risk",
                 utterances=["翻译成中文", "总结这篇文章"],
             ),
-            "pro-router": RouteSpec(
+            "strong": RouteSpec(
+                target_model="pro-router",
                 description="high risk",
                 utterances=["分析这个线上 bug", "代码审查"],
             ),
-            "free-probe-router": RouteSpec(
+            "experimental": RouteSpec(
+                target_model="free-probe-router",
                 description="probe",
                 utterances=["测试免费模型", "批量探活"],
             ),
         },
-        pro_hard_rules=["报错", "竞态", "线上", "PR"],
+        hard_rules=[{"route_id": "strong", "keywords": ["报错", "竞态", "线上", "PR"]}],
     )
 
 
@@ -53,6 +56,8 @@ async def test_non_smart_router_passes_through_without_embedding():
     )
 
     assert decision.target_model == "deepseek-v4-pro"
+    assert decision.route_id is None
+    assert decision.policy_id == "passthrough"
     assert decision.reason == "passthrough"
     assert decision.rewrite is False
 
@@ -68,7 +73,9 @@ async def test_hard_rule_routes_smart_router_to_pro_without_embedding():
         }
     )
 
+    assert decision.route_id == "strong"
     assert decision.target_model == "pro-router"
+    assert decision.policy_id == "hard_rule"
     assert decision.reason == "hard_rule:线上"
     assert decision.rewrite is True
 
@@ -96,7 +103,9 @@ async def test_embedding_similarity_routes_probe_request():
         }
     )
 
+    assert decision.route_id == "experimental"
     assert decision.target_model == "free-probe-router"
+    assert decision.policy_id == "embedding"
     assert decision.reason == "embedding"
     assert decision.score == 1.0
 
@@ -121,7 +130,9 @@ async def test_low_confidence_embedding_falls_back_to_default_route():
         }
     )
 
+    assert decision.route_id == "fast"
     assert decision.target_model == "cheap-router"
+    assert decision.policy_id == "low_confidence"
     assert decision.reason == "low_confidence"
 
 
@@ -136,7 +147,9 @@ async def test_embedding_failure_falls_back_to_default_route():
         }
     )
 
+    assert decision.route_id == "fast"
     assert decision.target_model == "cheap-router"
+    assert decision.policy_id == "embedding_error"
     assert decision.reason == "embedding_error"
 
 

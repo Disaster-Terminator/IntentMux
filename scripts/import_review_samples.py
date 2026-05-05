@@ -9,9 +9,6 @@ from typing import Any, Iterable
 import yaml
 
 
-ALLOWED_ROUTES = {"cheap-router", "pro-router", "free-probe-router"}
-
-
 class ReviewSampleError(ValueError):
     pass
 
@@ -77,8 +74,9 @@ def review_sample_to_case(sample: dict[str, Any], *, line_number: int) -> dict[s
         raise ReviewSampleError(f"line {line_number}: text must be a non-empty string")
 
     expect = sample.get("expect")
-    if expect not in ALLOWED_ROUTES:
-        raise ReviewSampleError(f"line {line_number}: unknown expect route {expect!r}")
+    if not isinstance(expect, str) or not expect.strip():
+        raise ReviewSampleError(f"line {line_number}: expect must be a non-empty route_id")
+    expect = expect.strip()
 
     source = sample.get("source")
     case_source = "production_review"

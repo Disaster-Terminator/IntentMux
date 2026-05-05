@@ -82,6 +82,7 @@ def test_find_matching_route_log_matches_recent_route_shape_once():
         {
             "event": "route_complete",
             "source_model": "semantic-router",
+                "route_id": "strong",
             "target_model": "pro-router",
             "stream": False,
             "upstream_status": 200,
@@ -89,6 +90,7 @@ def test_find_matching_route_log_matches_recent_route_shape_once():
         {
             "event": "route_complete",
             "source_model": "semantic-router",
+                "route_id": "strong",
             "target_model": "pro-router",
             "stream": True,
             "upstream_status": 200,
@@ -98,7 +100,7 @@ def test_find_matching_route_log_matches_recent_route_shape_once():
 
     match = find_matching_route_log(
         logs,
-        probe=Probe("pro_stream", "prompt", "pro-router", stream=True),
+        probe=Probe("pro_stream", "prompt", "strong", "pro-router", stream=True),
         used_indexes=used_indexes,
     )
 
@@ -112,13 +114,14 @@ def _log_line(record: dict) -> str:
 
 
 def test_validate_route_logs_strict_request_id_match():
-    probe = Probe("p1", "safe prompt", "pro-router", stream=False)
+    probe = Probe("p1", "safe prompt", "strong", "pro-router", stream=False)
     raw_logs = _log_line(
         {
             "event": "route_complete",
             "request_id": "rid-1",
             "stream": False,
             "source_model": "semantic-router",
+                "route_id": "strong",
             "target_model": "pro-router",
             "upstream_status": 200,
         }
@@ -132,13 +135,14 @@ def test_validate_route_logs_strict_request_id_match():
 
 
 def test_validate_route_logs_fallback_route_shape_match():
-    probe = Probe("p1", "safe prompt", "pro-router", stream=False)
+    probe = Probe("p1", "safe prompt", "strong", "pro-router", stream=False)
     raw_logs = _log_line(
         {
             "event": "route_complete",
             "request_id": "other-id",
             "stream": False,
             "source_model": "semantic-router",
+                "route_id": "strong",
             "target_model": "pro-router",
             "upstream_status": 200,
         }
@@ -153,8 +157,8 @@ def test_validate_route_logs_fallback_route_shape_match():
 
 def test_validate_route_logs_duplicate_route_shape_records_are_not_reused():
     probes = [
-        (Probe("p1", "safe prompt", "pro-router", stream=False), "rid-1"),
-        (Probe("p2", "safe prompt", "pro-router", stream=False), "rid-2"),
+        (Probe("p1", "safe prompt", "strong", "pro-router", stream=False), "rid-1"),
+        (Probe("p2", "safe prompt", "strong", "pro-router", stream=False), "rid-2"),
     ]
     raw_logs = _log_line(
         {
@@ -162,6 +166,7 @@ def test_validate_route_logs_duplicate_route_shape_records_are_not_reused():
             "request_id": "other-id",
             "stream": False,
             "source_model": "semantic-router",
+                "route_id": "strong",
             "target_model": "pro-router",
             "upstream_status": 200,
         }
@@ -176,13 +181,14 @@ def test_validate_route_logs_duplicate_route_shape_records_are_not_reused():
 
 
 def test_validate_route_logs_require_request_id_match_fails_on_fallback():
-    probe = Probe("p1", "safe prompt", "pro-router", stream=False)
+    probe = Probe("p1", "safe prompt", "strong", "pro-router", stream=False)
     raw_logs = _log_line(
         {
             "event": "route_complete",
             "request_id": "other-id",
             "stream": False,
             "source_model": "semantic-router",
+                "route_id": "strong",
             "target_model": "pro-router",
             "upstream_status": 200,
         }
@@ -199,7 +205,7 @@ def test_validate_route_logs_require_request_id_match_fails_on_fallback():
 
 
 def test_validate_route_logs_redaction_detects_prompt_and_bearer_token_leaks():
-    probe = Probe("p1", "my secret prompt", "pro-router", stream=False)
+    probe = Probe("p1", "my secret prompt", "strong", "pro-router", stream=False)
     raw_logs = "\n".join(
         [
             "Bearer top-secret-token",
@@ -209,6 +215,7 @@ def test_validate_route_logs_redaction_detects_prompt_and_bearer_token_leaks():
                     "request_id": "rid-1",
                     "stream": False,
                     "source_model": "semantic-router",
+                "route_id": "strong",
                     "target_model": "pro-router",
                     "upstream_status": 200,
                 }
@@ -224,7 +231,7 @@ def test_validate_route_logs_redaction_detects_prompt_and_bearer_token_leaks():
 
 
 def test_validate_nonstream_probe_response_detects_missing_model_field():
-    probe = Probe("p1", "prompt", "pro-router", stream=False)
+    probe = Probe("p1", "prompt", "strong", "pro-router", stream=False)
     passed = FakeResponse(
         status_code=200,
         headers={"content-type": "application/json"},
@@ -251,7 +258,7 @@ def test_validate_nonstream_probe_response_detects_missing_model_field():
 
 
 def test_validate_streaming_probe_response_detects_missing_sse_marker():
-    probe = Probe("p1", "prompt", "pro-router", stream=True)
+    probe = Probe("p1", "prompt", "strong", "pro-router", stream=True)
     response = FakeResponse(status_code=200)
 
     pass_by_name = {
@@ -352,6 +359,7 @@ def test_run_e2e_does_not_shape_match_logs_for_failed_probe(monkeypatch):
                 "request_id": "old-request",
                 "stream": False,
                 "source_model": "semantic-router",
+                "route_id": "strong",
                 "target_model": "pro-router",
                 "upstream_status": 200,
             }

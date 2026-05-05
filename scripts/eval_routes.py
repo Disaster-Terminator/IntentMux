@@ -29,9 +29,15 @@ class MockEmbeddingClient:
         return [self._vector(text) for text in texts]
 
     def _vector(self, text: str) -> list[float]:
-        if any(marker in text for marker in ("免费模型", "探活", "benchmark", "非关键样例")):
+        if any(
+            marker in text
+            for marker in ("免费模型", "探活", "端点", "benchmark", "非关键样例", "测试模型")
+        ):
             return [0.0, 0.0, 1.0]
-        if any(marker in text for marker in ("代码", "PR", "bug", "SQL", "方案", "架构", "竞态", "线上")):
+        if any(
+            marker in text
+            for marker in ("代码", "PR", "bug", "SQL", "数据库", "查询", "方案", "靠谱", "架构", "竞态", "线上")
+        ):
             return [0.0, 1.0, 0.0]
         return [1.0, 0.0, 0.0]
 
@@ -62,9 +68,10 @@ async def run_eval(
                 "messages": [{"role": "user", "content": case.text}],
             }
         )
-        status = "PASS" if decision.target_model == case.expect else "FAIL"
+        actual_route = decision.route_id or decision.target_model
+        status = "PASS" if actual_route == case.expect else "FAIL"
         print(
-            f"{status}\t{case.expect}\t{decision.target_model}\t"
+            f"{status}\t{case.expect}\t{actual_route}\t{decision.target_model}\t"
             f"{decision.reason}\t{case.text}"
         )
         if status == "FAIL":

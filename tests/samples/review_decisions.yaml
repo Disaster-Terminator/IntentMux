@@ -1,9 +1,9 @@
 cases:
   - name: cheap-writing-case
     text: 帮我润色这句话
-    expected_target: cheap-router
+    expected_route: fast
   - name: pro-debug-case
     messages:
       - role: user
         content: 这个线上 bug 为什么偶发
-    expected_target: pro-router
+    expected_route: strong

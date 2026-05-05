@@ -14,6 +14,8 @@ class RoutingDecision:
     target_model: str
     reason: str
     rewrite: bool
+    route_id: str | None = None
+    policy_id: str | None = None
     source_model: str | None = None
     score: float | None = None
     second_score: float | None = None
@@ -32,25 +34,32 @@ class Router:
                 target_model=source_model,
                 source_model=source_model,
                 reason="passthrough",
+                policy_id="passthrough",
                 rewrite=False,
             )
 
         explicit_route = self._explicit_route(request_json)
         if explicit_route:
+            target_model = self._target_model_for_route(explicit_route)
             return RoutingDecision(
-                target_model=explicit_route,
+                route_id=explicit_route,
+                target_model=target_model,
                 source_model=source_model,
                 reason="explicit",
+                policy_id="explicit",
                 rewrite=True,
             )
 
         text = latest_user_text(request_json.get("messages", []))
         hard_rule = self._matching_hard_rule(text)
         if hard_rule:
+            route_id, keyword = hard_rule
             return RoutingDecision(
-                target_model="pro-router",
+                route_id=route_id,
+                target_model=self._target_model_for_route(route_id),
                 source_model=source_model,
-                reason=f"hard_rule:{hard_rule}",
+                reason=f"hard_rule:{keyword}",
+                policy_id="hard_rule",
                 rewrite=True,
             )
 
@@ -63,9 +72,11 @@ class Router:
             }
         except Exception:
             return RoutingDecision(
-                target_model=self.settings.default_route,
+                route_id=self.settings.fallback_route_id,
+                target_model=self._target_model_for_route(self.settings.fallback_route_id),
                 source_model=source_model,
                 reason="embedding_error",
+                policy_id="embedding_error",
                 rewrite=True,
             )
 
@@ -77,18 +88,22 @@ class Router:
             or best_score - second_score < self.settings.margin
         ):
             return RoutingDecision(
-                target_model=self.settings.default_route,
+                route_id=self.settings.fallback_route_id,
+                target_model=self._target_model_for_route(self.settings.fallback_route_id),
                 source_model=source_model,
                 reason="low_confidence",
+                policy_id="low_confidence",
                 rewrite=True,
                 score=round(best_score, 6),
                 second_score=round(second_score, 6),
             )
 
         return RoutingDecision(
-            target_model=best_route,
+            route_id=best_route,
+            target_model=self._target_model_for_route(best_route),
             source_model=source_model,
             reason="embedding",
+            policy_id="embedding",
             rewrite=True,
             score=round(best_score, 6),
             second_score=round(second_score, 6),
@@ -103,12 +118,19 @@ class Router:
             return route
         return None
 
-    def _matching_hard_rule(self, text: str) -> str | None:
+    def _matching_hard_rule(self, text: str) -> tuple[str, str] | None:
         lowered = text.lower()
-        for rule in self.settings.pro_hard_rules:
-            if rule.lower() in lowered:
-                return rule
+        for hard_rule in self.settings.hard_rules:
+            for keyword in hard_rule.keywords:
+                if keyword.lower() in lowered:
+                    return hard_rule.route_id, keyword
         return None
+
+    def _target_model_for_route(self, route_id: str) -> str:
+        target_model = self.settings.routes[route_id].target_model
+        if target_model is None:
+            return route_id
+        return target_model
 
     async def _ensure_route_vectors(self) -> None:
         if self._route_vectors is not None:
@@ -159,4 +181,3 @@ def cosine_similarity(left: list[float], right: list[float]) -> float:
     if denominator == 0.0:
         return 0.0
     return float(np.dot(left_array, right_array) / denominator)
-

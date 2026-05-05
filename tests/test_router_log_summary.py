@@ -32,7 +32,7 @@ def test_parse_route_records_ignores_access_logs_and_non_route_json():
         [
             'INFO:     127.0.0.1:1 - "GET /health HTTP/1.1" 200 OK',
             '{"event":"startup","status":"ok"}',
-            '{"event":"route_complete","target_model":"pro-router","stream":true,"duration_ms":1200}',
+            '{"event":"route_complete","route_id":"strong","target_model":"pro-router","stream":true,"duration_ms":1200}',
             '{"event":"route_error","target_model":"pro-router","stream":true,"error_type":"RemoteProtocolError","upstream_status":503,"duration_ms":1400}',
             "not json",
         ]
@@ -43,6 +43,7 @@ def test_parse_route_records_ignores_access_logs_and_non_route_json():
     assert records == [
         {
             "event": "route_complete",
+            "route_id": "strong",
             "target_model": "pro-router",
             "stream": True,
             "duration_ms": 1200,
@@ -98,6 +99,7 @@ def test_summarize_records_counts_routes_errors_and_latency():
     records = [
         {
             "event": "route_complete",
+            "route_id": "strong",
             "target_model": "pro-router",
             "reason": "hard_rule:线上",
             "stream": True,
@@ -105,6 +107,7 @@ def test_summarize_records_counts_routes_errors_and_latency():
         },
         {
             "event": "route_complete",
+            "route_id": "fast",
             "target_model": "cheap-router",
             "reason": "embedding_error",
             "stream": False,
@@ -112,6 +115,7 @@ def test_summarize_records_counts_routes_errors_and_latency():
         },
         {
             "event": "route_error",
+            "route_id": "strong",
             "target_model": "pro-router",
             "reason": "embedding",
             "stream": True,
@@ -129,6 +133,7 @@ def test_summarize_records_counts_routes_errors_and_latency():
     assert summary.streams == 2
     assert summary.nonstreams == 1
     assert summary.targets == {"pro-router": 2, "cheap-router": 1}
+    assert summary.routes == {"strong": 2, "fast": 1}
     assert summary.reasons == {
         "embedding": 1,
         "embedding_error": 1,
@@ -147,6 +152,7 @@ def test_format_summary_is_stable_for_runbooks():
         [
             {
                 "event": "route_error",
+                "route_id": "strong",
                 "target_model": "pro-router",
                 "reason": "embedding_error",
                 "stream": True,
@@ -160,6 +166,7 @@ def test_format_summary_is_stable_for_runbooks():
     assert format_summary(summary) == "\n".join(
         [
             "total=1 completed=0 errors=1 streams=1 nonstreams=0",
+            "routes: strong=1",
             "targets: pro-router=1",
             "reasons: embedding_error=1",
             "error_types: RemoteProtocolError=1",
@@ -221,6 +228,7 @@ def test_format_summary_json_is_deterministic_and_includes_diagnostics():
         "reasons": {"embedding": 1, "hard_rule": 1},
         "route_complete": 1,
         "route_error": 1,
+        "routes": {},
         "streams": 1,
         "targets": {"cheap-router": 1, "pro-router": 1},
         "total": 2,
@@ -294,6 +302,7 @@ INFO:     127.0.0.1:53000 - \"POST /v1/chat/completions HTTP/1.1\" 200 OK
         "reasons": {"embedding_error": 1, "hard_rule": 1},
         "route_complete": 1,
         "route_error": 1,
+        "routes": {},
         "streams": 1,
         "targets": {"fallback-model": 1, "safe-model": 1},
         "total": 2,

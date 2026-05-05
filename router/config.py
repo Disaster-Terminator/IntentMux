@@ -2,32 +2,33 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import ClassVar
 
 import yaml
-from pydantic import BaseModel, Field, model_validator
-
-
-ALLOWED_TARGET_ROUTES = frozenset(
-    {"cheap-router", "pro-router", "free-probe-router"}
-)
+from pydantic import AliasChoices, BaseModel, Field, model_validator
 
 
 class RouteSpec(BaseModel):
+    target_model: str | None = None
     description: str
     utterances: list[str]
 
 
-class RouterSettings(BaseModel):
-    allowed_target_routes: ClassVar[frozenset[str]] = ALLOWED_TARGET_ROUTES
+class HardRuleSpec(BaseModel):
+    route_id: str
+    keywords: list[str]
 
+
+class RouterSettings(BaseModel):
     route_model: str = "smart-router"
-    default_route: str = "cheap-router"
+    fallback_route_id: str = Field(
+        default="fast",
+        validation_alias=AliasChoices("fallback_route_id", "default_route"),
+    )
     threshold: float = 0.55
     margin: float = 0.04
     routes: dict[str, RouteSpec]
     route_bank_path: str | None = None
-    pro_hard_rules: list[str] = Field(default_factory=list)
+    hard_rules: list[HardRuleSpec] = Field(default_factory=list)
     embedding_url: str = "http://127.0.0.1:1234/v1/embeddings"
     embedding_model: str = "text-embedding-jina-embeddings-v5-text-small-retrieval@q8_0"
     litellm_base_url: str = "http://127.0.0.1:4000"
@@ -39,22 +40,28 @@ class RouterSettings(BaseModel):
 
     @model_validator(mode="after")
     def validate_route_contract(self) -> "RouterSettings":
-        if self.default_route == self.route_model:
-            raise ValueError("default_route must not point back to route_model")
+        if self.fallback_route_id == self.route_model:
+            raise ValueError("fallback_route_id must not point back to route_model")
         if self.route_model in self.routes:
-            raise ValueError("recursive route config: route_model must not be a target")
+            raise ValueError("recursive route config: route_model must not be a route_id")
 
-        route_names = set(self.routes)
-        invalid_routes = route_names - self.allowed_target_routes
-        if invalid_routes:
-            allowed = ", ".join(sorted(self.allowed_target_routes))
-            invalid = ", ".join(sorted(invalid_routes))
-            raise ValueError(
-                f"target routes must be limited to {allowed}; invalid: {invalid}"
-            )
-        if self.default_route not in route_names:
-            raise ValueError("default_route must be present in routes")
+        for route_id, route_spec in self.routes.items():
+            if route_spec.target_model is None:
+                route_spec.target_model = route_id
+            if route_spec.target_model == self.route_model:
+                raise ValueError("recursive route config: target_model must not be route_model")
+
+        if self.fallback_route_id not in self.routes:
+            raise ValueError("fallback_route_id must be present in routes")
+
+        for hard_rule in self.hard_rules:
+            if hard_rule.route_id not in self.routes:
+                raise ValueError("hard_rules route_id must be present in routes")
         return self
+
+    @property
+    def default_route(self) -> str:
+        return self.fallback_route_id
 
 
 def load_settings(path: str | Path = "config/routes.yaml") -> RouterSettings:
@@ -99,13 +106,9 @@ def merge_route_bank(raw: dict, base_dir: Path) -> dict:
     bank = yaml.safe_load(bank_path.read_text(encoding="utf-8"))
     raw_routes = raw.setdefault("routes", {})
     for route_name, route_bank in bank.get("routes", {}).items():
-        route_config = raw_routes.setdefault(
-            route_name,
-            {
-                "description": f"generated route bank for {route_name}",
-                "utterances": [],
-            },
-        )
+        if route_name not in raw_routes:
+            continue
+        route_config = raw_routes[route_name]
         existing = list(route_config.get("utterances", []))
         seen = set(existing)
         for item in route_bank.get("utterances", []):
