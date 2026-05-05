@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from pathlib import Path
 
 from scripts.check_route_error_budget import BudgetConfig, check_budget, format_budget_result, main
 from scripts.router_log_summary import ParseDiagnostics, parse_route_records
@@ -635,3 +636,25 @@ def test_script_file_execution_returns_nonzero_for_failing_budget():
     assert completed.returncode != 0
     assert completed.stdout.startswith("FAIL route_error_budget\n")
     assert "error_rate 1.0000 exceeds max_error_rate 0.0000" in completed.stdout
+
+def test_contract_fixture_budget_includes_route_and_target_buckets():
+    fixture = Path("tests/samples/router_logs_contract.ndjson")
+    diagnostics = ParseDiagnostics()
+    records = list(parse_route_records(fixture.read_text().splitlines(), diagnostics=diagnostics))
+
+    result = check_budget(
+        records,
+        BudgetConfig(min_total=1, max_error_rate=1.0, max_target_error_rate=1.0),
+        parse_diagnostics=diagnostics,
+    )
+
+    assert result.passed is True
+    assert result.target_error_rates == {
+        "base-router": 0.0,
+        "legacy-router": 1.0,
+        "pro-router": 0.5,
+    }
+    assert result.route_error_rates == {"chat.strong": 0.5, "unknown": 0.5}
+    assert result.error_types == {"RemoteProtocolError": 1, "UpstreamStatusError": 1}
+    assert result.parse_diagnostics.malformed_json_lines == 1
+    assert result.parse_diagnostics.unknown_event_records == 1
