@@ -113,7 +113,14 @@ class Router:
         metadata = request_json.get("metadata")
         if not isinstance(metadata, dict):
             return None
-        route = metadata.get("route") or metadata.get("target_route")
+        # route_id is the product-level explicit route override.
+        # route and target_route are retained for backward compatibility, with
+        # target_route treated as deprecated legacy metadata.
+        route = (
+            metadata.get("route_id")
+            or metadata.get("route")
+            or metadata.get("target_route")
+        )
         if route in self.settings.routes:
             return route
         return None
