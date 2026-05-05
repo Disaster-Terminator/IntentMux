@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from pathlib import Path
 
 from scripts.check_route_error_budget import BudgetConfig, check_budget, format_budget_result, main
 from scripts.router_log_summary import ParseDiagnostics, parse_route_records
@@ -82,6 +83,25 @@ def test_check_budget_fails_when_target_error_rate_exceeds_budget():
     ]
 
 
+def test_check_budget_includes_route_error_rates_and_handles_missing_route_id():
+    records = records_from_text(
+        "\n".join(
+            [
+                '{"event":"route_complete","route_id":"chat.default","target_model":"pro-router"}',
+                '{"event":"route_error","route_id":"chat.default","target_model":"cheap-router","error_type":"TimeoutError"}',
+                '{"event":"route_error","target_model":"cheap-router","error_type":"TimeoutError"}',
+            ]
+        )
+    )
+
+    result = check_budget(
+        records,
+        BudgetConfig(min_total=1, max_error_rate=1.0, max_target_error_rate=1.0),
+    )
+
+    assert result.route_error_rates == {"chat.default": 0.5, "unknown": 1.0}
+
+
 def test_check_budget_fails_when_sample_size_is_too_small():
     result = check_budget([], BudgetConfig(min_total=1, max_error_rate=0.0))
 
@@ -128,7 +148,7 @@ def test_format_budget_result_is_stable_for_runbooks():
         "\n".join(
             [
                 '{"event":"route_complete","target_model":"pro-router","stream":true}',
-                '{"event":"route_error","target_model":"cheap-router","stream":true,"error_type":"TimeoutError"}',
+                '{"event":"route_error","route_id":"chat.default","target_model":"cheap-router","stream":true,"error_type":"TimeoutError"}',
             ]
         )
     )
@@ -142,6 +162,7 @@ def test_format_budget_result_is_stable_for_runbooks():
             "PASS route_error_budget",
             "total=2 completed=1 errors=1 error_rate=0.5000",
             "target_error_rates: cheap-router=1.0000, pro-router=0.0000",
+            "route_error_rates: chat.default=1.0000, unknown=0.0000",
             "reason_rates: none",
             "upstream_status_rates: none",
             "error_types: TimeoutError=1",
@@ -357,7 +378,7 @@ def test_cli_json_output_on_passing_budget(monkeypatch, capsys):
     monkeypatch.setattr(
         sys,
         "stdin",
-        ['{"event":"route_complete","target_model":"pro-router","reason":"hard_rule:x"}\n'],
+        ['{"event":"route_complete","route_id":"chat.default","target_model":"pro-router","reason":"hard_rule:x"}\n'],
     )
 
     exit_code = main(["--min-total", "1", "--output", "json"])
@@ -371,6 +392,7 @@ def test_cli_json_output_on_passing_budget(monkeypatch, capsys):
     assert payload["errors"] == 0
     assert payload["error_rate"] == 0.0
     assert payload["target_error_rates"] == {"pro-router": 0.0}
+    assert payload["route_error_rates"] == {"chat.default": 0.0}
     assert payload["reason_rates"] == {"hard_rule:x": 1.0}
     assert payload["error_types"] == {}
     assert payload["reasons"] == []
@@ -520,6 +542,56 @@ def test_check_budget_fails_when_upstream_status_rate_exceeds_budget():
     ]
 
 
+def test_check_budget_fails_when_route_error_rate_exceeds_global_budget():
+    records = records_from_text(
+        "\n".join(
+            [
+                '{"event":"route_complete","route_id":"chat.default","target_model":"pro-router"}',
+                '{"event":"route_error","route_id":"chat.default","target_model":"pro-router","error_type":"RemoteProtocolError"}',
+            ]
+        )
+    )
+    result = check_budget(
+        records,
+        BudgetConfig(
+            min_total=1,
+            max_error_rate=1.0,
+            max_target_error_rate=1.0,
+            max_route_error_rate=0.0,
+        ),
+    )
+    assert result.passed is False
+    assert result.reasons == [
+        "route chat.default error_rate 0.5000 exceeds max_route_error_rate 0.0000"
+    ]
+
+
+def test_cli_supports_route_specific_error_rate_budget(monkeypatch, capsys):
+    monkeypatch.setattr(
+        sys,
+        "stdin",
+        [
+            '{"event":"route_complete","route_id":"chat.default","target_model":"pro-router"}\n',
+            '{"event":"route_error","route_id":"chat.default","target_model":"pro-router","error_type":"RemoteProtocolError"}\n',
+        ],
+    )
+    exit_code = main(
+        [
+            "--min-total",
+            "1",
+            "--max-error-rate",
+            "1",
+            "--max-target-error-rate",
+            "1",
+            "--max-route-error-rate",
+            "chat.default=0",
+        ]
+    )
+    output = capsys.readouterr().out
+    assert exit_code == 1
+    assert "route_error_rates: chat.default=0.5000" in output
+
+
 def test_cli_accepts_repeatable_upstream_status_rate_budgets(monkeypatch, capsys):
     monkeypatch.setattr(
         sys,
@@ -564,3 +636,25 @@ def test_script_file_execution_returns_nonzero_for_failing_budget():
     assert completed.returncode != 0
     assert completed.stdout.startswith("FAIL route_error_budget\n")
     assert "error_rate 1.0000 exceeds max_error_rate 0.0000" in completed.stdout
+
+def test_contract_fixture_budget_includes_route_and_target_buckets():
+    fixture = Path("tests/samples/router_logs_contract.ndjson")
+    diagnostics = ParseDiagnostics()
+    records = list(parse_route_records(fixture.read_text().splitlines(), diagnostics=diagnostics))
+
+    result = check_budget(
+        records,
+        BudgetConfig(min_total=1, max_error_rate=1.0, max_target_error_rate=1.0),
+        parse_diagnostics=diagnostics,
+    )
+
+    assert result.passed is True
+    assert result.target_error_rates == {
+        "base-router": 0.0,
+        "legacy-router": 1.0,
+        "pro-router": 0.5,
+    }
+    assert result.route_error_rates == {"chat.strong": 0.5, "unknown": 0.5}
+    assert result.error_types == {"RemoteProtocolError": 1, "UpstreamStatusError": 1}
+    assert result.parse_diagnostics.malformed_json_lines == 1
+    assert result.parse_diagnostics.unknown_event_records == 1

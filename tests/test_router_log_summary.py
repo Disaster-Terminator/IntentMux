@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from pathlib import Path
 
 from scripts.router_log_summary import (
     ParseDiagnostics,
@@ -311,3 +312,35 @@ INFO:     127.0.0.1:53000 - \"POST /v1/chat/completions HTTP/1.1\" 200 OK
         },
         "upstream_statuses": {"200": 1, "503": 1},
     }
+
+def test_contract_fixture_summary_separates_routes_and_targets():
+    fixture = Path("tests/samples/router_logs_contract.ndjson")
+    diagnostics = ParseDiagnostics()
+    records = list(parse_route_records(fixture.read_text().splitlines(), diagnostics=diagnostics))
+
+    summary = summarize_records(records, parse_diagnostics=diagnostics)
+
+    assert summary.total == 4
+    assert summary.completed == 2
+    assert summary.errors == 2
+    assert summary.routes == {"chat.strong": 2}
+    assert summary.targets == {"base-router": 1, "legacy-router": 1, "pro-router": 2}
+    assert summary.error_types == {"RemoteProtocolError": 1, "UpstreamStatusError": 1}
+    assert summary.parse_diagnostics.malformed_json_lines == 1
+    assert summary.parse_diagnostics.unknown_event_records == 1
+
+
+def test_contract_fixture_has_no_sensitive_payload_fields():
+    fixture_text = Path("tests/samples/router_logs_contract.ndjson").read_text()
+
+    forbidden_patterns = [
+        "prompt",
+        "authorization",
+        "bearer ",
+        "request_body",
+        "raw_body",
+    ]
+    lower_fixture = fixture_text.lower()
+
+    for pattern in forbidden_patterns:
+        assert pattern not in lower_fixture

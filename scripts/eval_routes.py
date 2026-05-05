@@ -47,6 +47,14 @@ def load_cases(path: Path) -> list[EvalCase]:
     return [EvalCase(**item) for item in raw["cases"]]
 
 
+def validate_case_route_ids(cases: list[EvalCase], route_ids: set[str]) -> None:
+    for index, case in enumerate(cases, start=1):
+        if case.expect not in route_ids:
+            raise ValueError(
+                f"{index}: expected route_id '{case.expect}' is not configured in routes"
+            )
+
+
 async def run_eval(
     cases_path: Path,
     routes_path: Path,
@@ -61,7 +69,10 @@ async def run_eval(
     router = Router(settings, embedding_client)
     failures: list[str] = []
 
-    for case in load_cases(cases_path):
+    cases = load_cases(cases_path)
+    validate_case_route_ids(cases, set(settings.routes))
+
+    for case in cases:
         decision = await router.decide(
             {
                 "model": settings.route_model,
@@ -80,7 +91,7 @@ async def run_eval(
     if failures:
         print(f"\n{len(failures)} eval case(s) failed.")
         return 1
-    print(f"\n{len(load_cases(cases_path))} eval case(s) passed.")
+    print(f"\n{len(cases)} eval case(s) passed.")
     return 0
 
 

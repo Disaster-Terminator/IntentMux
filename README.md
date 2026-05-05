@@ -1,7 +1,12 @@
-# Gateway Semantic Router
+# Cynosure Router
 
-Lightweight, local-first OpenAI/LiteLLM-compatible routing sidecar for
+Lightweight, local-first intent router for OpenAI/LiteLLM-compatible
 `/v1/chat/completions`.
+
+Cynosure Router is the intent-aware control plane that decides where model
+traffic should go before LiteLLM executes it. The current repository path and
+some service names may still use `gateway-semantic-router`; the product identity
+proposal is tracked in `docs/PROJECT_IDENTITY.md`.
 
 It rewrites the configured semantic entry model, currently
 `model=semantic-router`, by selecting a configured `route_id` and resolving that

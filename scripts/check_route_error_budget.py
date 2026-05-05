@@ -18,6 +18,7 @@ class BudgetConfig:
     min_total: int = 1
     max_error_rate: float = 0.0
     max_target_error_rate: float = 0.0
+    max_route_error_rate: float | dict[str, float] | None = None
     max_reason_rates: dict[str, float] | None = None
     max_upstream_status_rates: dict[str, float] | None = None
     max_malformed_json: int | None = None
@@ -34,6 +35,7 @@ class BudgetResult:
     errors: int
     error_rate: float
     target_error_rates: dict[str, float]
+    route_error_rates: dict[str, float]
     reason_rates: dict[str, float]
     upstream_status_rates: dict[str, float]
     error_types: dict[str, int]
@@ -52,6 +54,8 @@ def check_budget(
     errors = 0
     target_totals: Counter[str] = Counter()
     target_errors: Counter[str] = Counter()
+    route_totals: Counter[str] = Counter()
+    route_errors: Counter[str] = Counter()
     reason_totals: Counter[str] = Counter()
     upstream_status_totals: Counter[str] = Counter()
     error_types: Counter[str] = Counter()
@@ -59,8 +63,11 @@ def check_budget(
     for record in records:
         total += 1
         target_model = record.get("target_model")
+        route_id = record.get("route_id")
         if isinstance(target_model, str):
             target_totals[target_model] += 1
+        route_key = route_id if isinstance(route_id, str) and route_id else "unknown"
+        route_totals[route_key] += 1
         reason = record.get("reason")
         if isinstance(reason, str):
             reason_totals[reason] += 1
@@ -75,6 +82,7 @@ def check_budget(
             errors += 1
             if isinstance(target_model, str):
                 target_errors[target_model] += 1
+            route_errors[route_key] += 1
             error_type = record.get("error_type")
             if isinstance(error_type, str):
                 error_types[error_type] += 1
@@ -83,6 +91,10 @@ def check_budget(
     target_error_rates = {
         target: target_errors[target] / target_total
         for target, target_total in target_totals.items()
+    }
+    route_error_rates = {
+        route: route_errors[route] / route_total
+        for route, route_total in route_totals.items()
     }
     reason_rates = {
         reason: reason_total / total for reason, reason_total in reason_totals.items()
@@ -105,6 +117,32 @@ def check_budget(
                 f"target {target} error_rate {target_error_rate:.4f} "
                 f"exceeds max_target_error_rate {config.max_target_error_rate:.4f}"
             )
+    route_budget = config.max_route_error_rate
+    if isinstance(route_budget, dict):
+        default_route_budget = route_budget.get("*")
+        if isinstance(default_route_budget, float):
+            for route, route_error_rate in sorted(route_error_rates.items()):
+                if route_error_rate > default_route_budget:
+                    reasons.append(
+                        f"route {route} error_rate {route_error_rate:.4f} "
+                        f"exceeds max_route_error_rate {default_route_budget:.4f}"
+                    )
+        for route, max_route_rate in sorted(route_budget.items()):
+            if route == "*":
+                continue
+            route_error_rate = route_error_rates.get(route, 0.0)
+            if route_error_rate > max_route_rate:
+                reasons.append(
+                    f"route {route} error_rate {route_error_rate:.4f} "
+                    f"exceeds max_route_error_rate {max_route_rate:.4f}"
+                )
+    elif route_budget is not None:
+        for route, route_error_rate in sorted(route_error_rates.items()):
+            if route_error_rate > route_budget:
+                reasons.append(
+                    f"route {route} error_rate {route_error_rate:.4f} "
+                    f"exceeds max_route_error_rate {route_budget:.4f}"
+                )
     for reason, max_reason_rate in sorted((config.max_reason_rates or {}).items()):
         reason_rate = reason_rates.get(reason, 0.0)
         if reason_rate > max_reason_rate:
@@ -152,6 +190,7 @@ def check_budget(
         errors=errors,
         error_rate=error_rate,
         target_error_rates=target_error_rates,
+        route_error_rates=route_error_rates,
         reason_rates=reason_rates,
         upstream_status_rates=upstream_status_rates,
         error_types=dict(error_types),
@@ -170,6 +209,7 @@ def format_budget_result(result: BudgetResult) -> str:
             f"errors={result.errors} error_rate={result.error_rate:.4f}"
         ),
         f"target_error_rates: {format_rates(result.target_error_rates)}",
+        f"route_error_rates: {format_rates(result.route_error_rates)}",
         f"reason_rates: {format_rates(result.reason_rates)}",
         f"upstream_status_rates: {format_rates(result.upstream_status_rates)}",
         f"error_types: {format_counts(result.error_types)}",
@@ -201,6 +241,7 @@ def budget_result_to_dict(result: BudgetResult) -> dict[str, Any]:
         "errors": result.errors,
         "error_rate": result.error_rate,
         "target_error_rates": result.target_error_rates,
+        "route_error_rates": result.route_error_rates,
         "reason_rates": result.reason_rates,
         "upstream_status_rates": result.upstream_status_rates,
         "error_types": result.error_types,
@@ -264,6 +305,24 @@ def parse_upstream_status_rate_budget(raw_budget: str) -> tuple[str, float]:
     return status, rate
 
 
+def parse_route_error_rate_budget(raw_budget: str) -> tuple[str | None, float]:
+    if "=" in raw_budget:
+        route, raw_rate = raw_budget.split("=", 1)
+        if not route:
+            raise argparse.ArgumentTypeError("route_id must not be empty")
+        key: str | None = route
+    else:
+        raw_rate = raw_budget
+        key = None
+    try:
+        rate = float(raw_rate)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("rate must be a float") from exc
+    if rate < 0:
+        raise argparse.ArgumentTypeError("rate must be non-negative")
+    return key, rate
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Fail when structured semantic-router logs exceed route_error budgets.",
@@ -271,6 +330,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--min-total", type=int, default=1)
     parser.add_argument("--max-error-rate", type=float, default=0.0)
     parser.add_argument("--max-target-error-rate", type=float, default=0.0)
+    parser.add_argument(
+        "--max-route-error-rate",
+        action="append",
+        default=[],
+        type=parse_route_error_rate_budget,
+        metavar="RATE or ROUTE=RATE",
+        help=(
+            "Fail when route_id error_rate exceeds a budget. "
+            "Provide RATE for a global route budget or ROUTE=RATE for specific route_id budgets. "
+            "Repeat to set multiple route-specific budgets."
+        ),
+    )
     parser.add_argument("--max-malformed-json", type=int, default=None)
     parser.add_argument("--max-missing-event", type=int, default=None)
     parser.add_argument("--max-unknown-event", type=int, default=None)
@@ -306,12 +377,27 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     diagnostics = ParseDiagnostics()
     records = list(parse_route_records(sys.stdin, diagnostics=diagnostics))
+    max_route_error_rate: float | dict[str, float] | None = None
+    if args.max_route_error_rate:
+        default_route_budget = [rate for route, rate in args.max_route_error_rate if route is None]
+        specific_route_budgets = {
+            route: rate for route, rate in args.max_route_error_rate if route is not None
+        }
+        if specific_route_budgets:
+            max_route_error_rate = specific_route_budgets
+        if default_route_budget:
+            if isinstance(max_route_error_rate, dict):
+                max_route_error_rate["*"] = default_route_budget[-1]
+            else:
+                max_route_error_rate = default_route_budget[-1]
+
     result = check_budget(
         records,
         BudgetConfig(
             min_total=args.min_total,
             max_error_rate=args.max_error_rate,
             max_target_error_rate=args.max_target_error_rate,
+            max_route_error_rate=max_route_error_rate,
             max_reason_rates=dict(args.max_reason_rate),
             max_upstream_status_rates=dict(args.max_upstream_status_rate),
             max_malformed_json=args.max_malformed_json,

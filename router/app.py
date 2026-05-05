@@ -101,7 +101,13 @@ def create_app(
         decision = await router.decide(payload)
         forwarded_payload = dict(payload)
         forwarded_payload["model"] = decision.target_model
-        router_headers = route_headers(decision.target_model, decision.reason, request_id)
+        router_headers = route_headers(
+            decision.target_model,
+            decision.reason,
+            request_id,
+            route_id=decision.route_id,
+            policy_id=decision.policy_id,
+        )
         if forwarded_payload.get("stream") is True:
             stream_context = proxy.stream_chat(forwarded_payload, request_headers)
             try:
@@ -270,7 +276,13 @@ def upstream_error_response(
             }
         },
         status_code=502,
-        headers=route_headers(decision.target_model, decision.reason, request_id),
+        headers=route_headers(
+            decision.target_model,
+            decision.reason,
+            request_id,
+            route_id=decision.route_id,
+            policy_id=decision.policy_id,
+        ),
     )
 
 
