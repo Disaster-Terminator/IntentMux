@@ -1,0 +1,4 @@
+{"event":"route_complete","route_id":"chat.strong","target_model":"gpt-4.1","policy_id":"hard_rule","reason":"hard_rule:vip","request_id":"req_001","stream":true,"duration_ms":145.2,"upstream_status":200}
+{"event":"route_error","route_id":"chat.strong","target_model":"gpt-4.1","policy_id":"hard_rule","reason":"upstream_unavailable","request_id":"req_002","stream":true,"error_type":"UpstreamStatusError","upstream_status":503,"upstream_error":"bad_gateway","duration_ms":392.4}
+{"event":"route_complete","route_id":null,"target_model":"gpt-4.1-mini","policy_id":"passthrough","reason":"passthrough","request_id":"req_003","stream":false,"duration_ms":18.0,"upstream_status":200}
+{"event":"route_complete","target_model":"gpt-4.1-mini","policy_id":"legacy","reason":"legacy_record","request_id":"req_004","stream":false,"duration_ms":20.0,"upstream_status":200}

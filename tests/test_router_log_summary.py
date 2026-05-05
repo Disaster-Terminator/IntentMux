@@ -311,3 +311,37 @@ INFO:     127.0.0.1:53000 - \"POST /v1/chat/completions HTTP/1.1\" 200 OK
         },
         "upstream_statuses": {"200": 1, "503": 1},
     }
+
+
+def test_contract_fixture_summary_separates_routes_and_targets_and_handles_legacy_records():
+    fixture = "tests/samples/route_log_contract.ndjson"
+    completed = subprocess.run(
+        [sys.executable, "scripts/router_log_summary.py", "--json"],
+        text=True,
+        input=open(fixture, encoding="utf-8").read(),
+        capture_output=True,
+        check=True,
+    )
+
+    payload = json.loads(completed.stdout)
+    assert payload["total"] == 4
+    assert payload["route_complete"] == 3
+    assert payload["route_error"] == 1
+    assert payload["routes"] == {"chat.strong": 2}
+    assert payload["targets"] == {"gpt-4.1": 2, "gpt-4.1-mini": 2}
+    assert payload["error_types"] == {"UpstreamStatusError": 1}
+
+
+def test_contract_fixture_does_not_contain_prompts_tokens_or_raw_bodies():
+    fixture_text = open("tests/samples/route_log_contract.ndjson", encoding="utf-8").read().lower()
+
+    forbidden_markers = [
+        "prompt",
+        "authorization",
+        "bearer",
+        "request_body",
+        "raw_body",
+    ]
+
+    for marker in forbidden_markers:
+        assert marker not in fixture_text

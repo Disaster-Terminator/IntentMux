@@ -635,3 +635,42 @@ def test_script_file_execution_returns_nonzero_for_failing_budget():
     assert completed.returncode != 0
     assert completed.stdout.startswith("FAIL route_error_budget\n")
     assert "error_rate 1.0000 exceeds max_error_rate 0.0000" in completed.stdout
+
+
+def test_contract_fixture_budget_includes_route_and_target_rates():
+    fixture_text = open("tests/samples/route_log_contract.ndjson", encoding="utf-8").read()
+
+    records = records_from_text(fixture_text)
+    result = check_budget(
+        records,
+        BudgetConfig(min_total=1, max_error_rate=1.0, max_target_error_rate=1.0),
+    )
+
+    assert result.total == 4
+    assert result.errors == 1
+    assert result.target_error_rates == {"gpt-4.1": 0.5, "gpt-4.1-mini": 0.0}
+    assert result.route_error_rates == {"chat.strong": 0.5, "unknown": 0.0}
+
+
+def test_contract_fixture_budget_cli_works_from_sample_file():
+    fixture_text = open("tests/samples/route_log_contract.ndjson", encoding="utf-8").read()
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "scripts/check_route_error_budget.py",
+            "--min-total",
+            "1",
+            "--max-error-rate",
+            "1",
+            "--max-target-error-rate",
+            "1",
+        ],
+        input=fixture_text,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0
+    assert "PASS route_error_budget" in completed.stdout
+    assert "route_error_rates: chat.strong=0.5000, unknown=0.0000" in completed.stdout
