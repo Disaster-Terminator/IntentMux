@@ -29,6 +29,14 @@ class FailingEmbeddingClient:
         raise RuntimeError("embedding unavailable")
 
 
+class FakeEmbeddingClient:
+    def __init__(self, vectors: dict[str, list[float]]):
+        self.vectors = vectors
+
+    async def embed(self, texts: list[str]) -> list[list[float]]:
+        return [self.vectors[text] for text in texts]
+
+
 @dataclass
 class FakeReadinessChecker:
     report: ReadinessReport
@@ -99,6 +107,28 @@ class NoUpstreamProxy:
         self.stream_called = True
         raise AssertionError("/v1/semantic-router/decision must not call stream_chat")
         yield
+
+
+def routing_settings_for_decision_contract() -> RouterSettings:
+    return RouterSettings(
+        route_model="semantic-router",
+        fallback_route_id="fast",
+        threshold=0.5,
+        margin=0.05,
+        routes={
+            "fast": RouteSpec(
+                target_model="cheap-router",
+                description="low risk",
+                utterances=["翻译成中文", "总结这篇文章"],
+            ),
+            "strong": RouteSpec(
+                target_model="pro-router",
+                description="high risk",
+                utterances=["分析这个线上 bug", "代码审查"],
+            ),
+        },
+        hard_rules=[{"route_id": "strong", "keywords": ["线上", "PR"]}],
+    )
 
 class FailingProxy(FakeProxy):
     async def forward_chat(self, payload: dict[str, Any], headers: dict[str, str]):
@@ -369,6 +399,100 @@ def test_decision_endpoint_missing_model_and_messages_preserves_router_semantics
         "score": None,
         "second_score": None,
     }
+    assert proxy.forward_called is False
+    assert proxy.stream_called is False
+
+
+def test_decision_endpoint_route_contract_matrix_no_upstream_calls():
+    vectors = {
+        "翻译成中文": [1.0, 0.0],
+        "总结这篇文章": [1.0, 0.0],
+        "分析这个线上 bug": [0.0, 1.0],
+        "代码审查": [0.0, 1.0],
+        "天气怎么样": [0.1, 0.1],
+    }
+    proxy = NoUpstreamProxy()
+    app = create_app(
+        router=Router(routing_settings_for_decision_contract(), FakeEmbeddingClient(vectors)),
+        proxy=proxy,
+    )
+    client = TestClient(app)
+
+    hard_rule = client.post(
+        "/v1/semantic-router/decision",
+        json={
+            "model": "semantic-router",
+            "messages": [{"role": "user", "content": "这个线上 bug 为什么偶发"}],
+        },
+    )
+    assert hard_rule.status_code == 200
+    assert hard_rule.json()["route_id"] == "strong"
+    assert hard_rule.json()["target_model"] == "pro-router"
+    assert hard_rule.json()["policy_id"] == "hard_rule"
+
+    explicit_override = client.post(
+        "/v1/semantic-router/decision",
+        json={
+            "model": "semantic-router",
+            "messages": [{"role": "user", "content": "翻译这段话"}],
+            "metadata": {"route_id": "strong"},
+        },
+    )
+    assert explicit_override.status_code == 200
+    assert explicit_override.json()["route_id"] == "strong"
+    assert explicit_override.json()["target_model"] == "pro-router"
+    assert explicit_override.json()["policy_id"] == "explicit"
+
+    low_confidence = client.post(
+        "/v1/semantic-router/decision",
+        json={
+            "model": "semantic-router",
+            "messages": [{"role": "user", "content": "天气怎么样"}],
+        },
+    )
+    assert low_confidence.status_code == 200
+    assert low_confidence.json()["route_id"] == "fast"
+    assert low_confidence.json()["policy_id"] == "low_confidence"
+
+    embedding_error = create_app(
+        router=Router(routing_settings_for_decision_contract(), FailingEmbeddingClient()),
+        proxy=proxy,
+    )
+    embedding_error_response = TestClient(embedding_error).post(
+        "/v1/semantic-router/decision",
+        json={
+            "model": "semantic-router",
+            "messages": [{"role": "user", "content": "解释一下这个概念"}],
+        },
+    )
+    assert embedding_error_response.status_code == 200
+    assert embedding_error_response.json()["route_id"] == "fast"
+    assert embedding_error_response.json()["policy_id"] == "embedding_error"
+
+    passthrough = client.post(
+        "/v1/semantic-router/decision",
+        json={
+            "model": "deepseek-v4-pro",
+            "messages": [{"role": "user", "content": "你好"}],
+        },
+    )
+    assert passthrough.status_code == 200
+    assert passthrough.json()["rewrite"] is False
+    assert passthrough.json()["route_id"] is None
+
+    expected_keys = {
+        "source_model",
+        "route_id",
+        "target_model",
+        "policy_id",
+        "reason",
+        "rewrite",
+        "score",
+        "second_score",
+    }
+    assert set(hard_rule.json().keys()) == expected_keys
+    assert "messages" not in hard_rule.json()
+    assert "prompt" not in hard_rule.json()
     assert proxy.forward_called is False
     assert proxy.stream_called is False
 
