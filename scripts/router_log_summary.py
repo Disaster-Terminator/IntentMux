@@ -29,6 +29,7 @@ class RouteLogSummary:
     reasons: dict[str, int]
     error_types: dict[str, int]
     upstream_statuses: dict[str, int]
+    upstream_non_200: dict[str, int]
     max_duration_ms: float
     parse_diagnostics: ParseDiagnostics
 
@@ -75,6 +76,7 @@ def summarize_records(
     reasons: Counter[str] = Counter()
     error_types: Counter[str] = Counter()
     upstream_statuses: Counter[str] = Counter()
+    upstream_non_200: Counter[str] = Counter()
     max_duration_ms = 0.0
 
     for record in records:
@@ -108,6 +110,8 @@ def summarize_records(
         upstream_status = record.get("upstream_status")
         if isinstance(upstream_status, int):
             upstream_statuses[str(upstream_status)] += 1
+            if upstream_status != 200:
+                upstream_non_200[upstream_status_key(record, upstream_status)] += 1
 
     return RouteLogSummary(
         total=total,
@@ -119,8 +123,23 @@ def summarize_records(
         reasons=dict(reasons),
         error_types=dict(error_types),
         upstream_statuses=dict(upstream_statuses),
+        upstream_non_200=dict(upstream_non_200),
         max_duration_ms=max_duration_ms,
         parse_diagnostics=parse_diagnostics or ParseDiagnostics(),
+    )
+
+
+def upstream_status_key(record: dict[str, Any], upstream_status: int) -> str:
+    target_model = record.get("target_model")
+    if not isinstance(target_model, str):
+        target_model = "unknown"
+    reason = record.get("reason")
+    if not isinstance(reason, str):
+        reason = "unknown"
+    stream = "true" if record.get("stream") is True else "false"
+    return (
+        f"status={upstream_status} target={target_model} "
+        f"reason={reason} stream={stream}"
     )
 
 
@@ -135,6 +154,7 @@ def format_summary(summary: RouteLogSummary) -> str:
         f"reasons: {format_counts(summary.reasons)}",
         f"error_types: {format_counts(summary.error_types)}",
         f"upstream_statuses: {format_counts(summary.upstream_statuses)}",
+        f"upstream_non_200: {format_counts(summary.upstream_non_200)}",
         f"max_duration_ms={summary.max_duration_ms:.2f}",
     ]
     diag = summary.parse_diagnostics
@@ -166,6 +186,7 @@ def format_summary_json(summary: RouteLogSummary) -> str:
         "reasons": summary.reasons,
         "error_types": summary.error_types,
         "upstream_statuses": summary.upstream_statuses,
+        "upstream_non_200": summary.upstream_non_200,
         "max_duration_ms": summary.max_duration_ms,
         "ignored_records": {
             "malformed_json": diag.malformed_json_lines,

@@ -168,7 +168,9 @@ When malformed JSON, missing-event JSON records, or unknown-event JSON records
 are present after the first `{` in a log line, the summary adds an
 `ignored_records` line so operators can distinguish parser/log-shape drift from
 real routed traffic. Plain access-log lines without JSON objects are still
-ignored silently.
+ignored silently. Non-200 upstream statuses are also grouped by status, target,
+reason, and stream mode under `upstream_non_200` so an operator can quickly see
+patterns such as `status=400 target=cheap-router reason=low_confidence`.
 
 Production route-error budget gate:
 

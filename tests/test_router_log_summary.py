@@ -136,6 +136,9 @@ def test_summarize_records_counts_routes_errors_and_latency():
     }
     assert summary.error_types == {"RemoteProtocolError": 1}
     assert summary.upstream_statuses == {"503": 1}
+    assert summary.upstream_non_200 == {
+        "status=503 target=pro-router reason=embedding stream=true": 1
+    }
     assert summary.max_duration_ms == 1400
 
 
@@ -161,6 +164,7 @@ def test_format_summary_is_stable_for_runbooks():
             "reasons: embedding_error=1",
             "error_types: RemoteProtocolError=1",
             "upstream_statuses: 503=1",
+            "upstream_non_200: status=503 target=pro-router reason=embedding_error stream=true=1",
             "max_duration_ms=1400.00",
         ]
     )
@@ -220,6 +224,9 @@ def test_format_summary_json_is_deterministic_and_includes_diagnostics():
         "streams": 1,
         "targets": {"cheap-router": 1, "pro-router": 1},
         "total": 2,
+        "upstream_non_200": {
+            "status=503 target=pro-router reason=hard_rule stream=true": 1
+        },
         "upstream_statuses": {"503": 1},
     }
 
@@ -250,6 +257,9 @@ def test_main_json_output_parses_mixed_stream_and_ignores_access_logs():
     assert payload["targets"] == {"cheap-router": 1, "pro-router": 1}
     assert payload["reasons"] == {"embedding": 1, "hard_rule": 1}
     assert payload["upstream_statuses"] == {"503": 1}
+    assert payload["upstream_non_200"] == {
+        "status=503 target=pro-router reason=hard_rule stream=true": 1
+    }
     assert payload["ignored_records"] == {
         "malformed_json": 1,
         "missing_event": 0,
@@ -287,5 +297,8 @@ INFO:     127.0.0.1:53000 - \"POST /v1/chat/completions HTTP/1.1\" 200 OK
         "streams": 1,
         "targets": {"fallback-model": 1, "safe-model": 1},
         "total": 2,
+        "upstream_non_200": {
+            "status=503 target=fallback-model reason=embedding_error stream=true": 1
+        },
         "upstream_statuses": {"200": 1, "503": 1},
     }
