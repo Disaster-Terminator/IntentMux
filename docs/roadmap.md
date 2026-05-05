@@ -13,9 +13,10 @@ Current operating target:
 - upstream disconnects and HTTP `5xx` statuses return a controlled `502` and
   are visible in route-log summaries
 - runtime config validation prevents recursive `semantic-router` targets while
-  allowing user-defined route ids mapped to deployment-specific target models
+  allowing user-defined `route_id` values mapped to deployment-specific
+  `target_model` values
 - degraded embedding availability is explicit: `/ready` returns `503`, routed
-  chat requests fall back to `fallback_route_id` with
+  chat requests fall back to `fallback_route_id` (a configured `route_id`) with
   `reason=embedding_error`, and route summaries count route ids, targets, and
   reasons for review
 - health-check noise stays out of default logs
@@ -37,8 +38,9 @@ Next hardening targets:
 - route quality review through `/v1/semantic-router/decision`, which returns
   the would-route decision without forwarding to LiteLLM or a model backend
 - public-readiness work after the configurable route abstraction and
-  observability contract have both been audited; the current repository should
-  not be treated as public-release frozen
+  observability contract have both been audited; redacted eval workflow audit is
+  also required before public-readiness work resumes, and the current
+  repository should not be treated as public-release frozen
 
 ## Lifecycle Management
 
