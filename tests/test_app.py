@@ -29,6 +29,31 @@ class FailingEmbeddingClient:
         raise RuntimeError("embedding unavailable")
 
 
+class FakeDecisionEmbeddingClient:
+    def __init__(self, vectors: dict[str, list[float]], fail: bool = False):
+        self.vectors = vectors
+        self.fail = fail
+
+    async def embed(self, texts: list[str]) -> list[list[float]]:
+        if self.fail:
+            raise RuntimeError("embedding unavailable")
+        return [self.vectors[text] for text in texts]
+
+
+def decision_router_settings() -> RouterSettings:
+    return RouterSettings(
+        route_model="semantic-router",
+        fallback_route_id="fast",
+        threshold=0.5,
+        margin=0.05,
+        routes={
+            "fast": RouteSpec(target_model="cheap-router", description="fast", utterances=["翻译", "总结"]),
+            "strong": RouteSpec(target_model="pro-router", description="strong", utterances=["线上", "PR审查"]),
+        },
+        hard_rules=[{"route_id": "strong", "keywords": ["线上", "PR"]}],
+    )
+
+
 @dataclass
 class FakeReadinessChecker:
     report: ReadinessReport
@@ -219,6 +244,8 @@ def test_chat_completion_rewrites_smart_router_before_forwarding():
     assert proxy.headers[0]["authorization"] == "Bearer litellm-test"
     assert response.headers["x-router-target-model"] == "pro-router"
     assert response.headers["x-router-reason"] == "hard_rule:%E7%BA%BF%E4%B8%8A"
+    assert "x-router-route-id" not in response.headers
+    assert "x-router-policy-id" not in response.headers
 
 
 def test_chat_completion_keeps_passthrough_model():
@@ -230,6 +257,7 @@ def test_chat_completion_keeps_passthrough_model():
                 "passthrough",
                 rewrite=False,
                 source_model="deepseek-v4-pro",
+                policy_id="passthrough",
             )
         ),
         proxy=proxy,
@@ -247,25 +275,17 @@ def test_chat_completion_keeps_passthrough_model():
     assert proxy.payloads[0]["model"] == "deepseek-v4-pro"
     assert response.headers["x-router-target-model"] == "deepseek-v4-pro"
     assert response.headers["x-router-reason"] == "passthrough"
+    assert "x-router-route-id" not in response.headers
+    assert response.headers["x-router-policy-id"] == "passthrough"
 
 
-def test_decision_endpoint_returns_route_decision_without_forwarding():
+def test_decision_endpoint_hard_rule_returns_contract_without_forwarding():
     proxy = NoUpstreamProxy()
-    app = create_app(
-        router=FakeRouter(
-            RoutingDecision(
-                "pro-router",
-                "hard_rule:线上",
-                rewrite=True,
-                route_id="strong",
-                policy_id="hard_rule",
-                source_model="semantic-router",
-                score=0.91,
-                second_score=0.12,
-            )
-        ),
-        proxy=proxy,
+    router = Router(
+        decision_router_settings(),
+        FakeDecisionEmbeddingClient({}),
     )
+    app = create_app(router=router, proxy=proxy)
 
     response = TestClient(app).post(
         "/v1/semantic-router/decision",
@@ -283,9 +303,104 @@ def test_decision_endpoint_returns_route_decision_without_forwarding():
         "policy_id": "hard_rule",
         "reason": "hard_rule:线上",
         "rewrite": True,
-        "score": 0.91,
-        "second_score": 0.12,
+        "score": None,
+        "second_score": None,
     }
+    assert proxy.forward_called is False
+    assert proxy.stream_called is False
+
+
+def test_decision_endpoint_explicit_route_override_returns_explicit_policy():
+    proxy = NoUpstreamProxy()
+    app = create_app(router=Router(decision_router_settings(), FakeDecisionEmbeddingClient({})), proxy=proxy)
+
+    response = TestClient(app).post(
+        "/v1/semantic-router/decision",
+        json={
+            "model": "semantic-router",
+            "messages": [{"role": "user", "content": "无关文本"}],
+            "metadata": {"route_id": "strong"},
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["route_id"] == "strong"
+    assert response.json()["target_model"] == "pro-router"
+    assert response.json()["policy_id"] == "explicit"
+    assert proxy.forward_called is False
+    assert proxy.stream_called is False
+
+
+def test_decision_endpoint_low_confidence_uses_fallback_route_id():
+    proxy = NoUpstreamProxy()
+    vectors = {"翻译": [1.0, 0.0], "总结": [1.0, 0.0], "线上": [0.0, 1.0], "PR审查": [0.0, 1.0], "天气怎么样": [0.3, 0.3]}
+    app = create_app(router=Router(decision_router_settings(), FakeDecisionEmbeddingClient(vectors)), proxy=proxy)
+
+    response = TestClient(app).post(
+        "/v1/semantic-router/decision",
+        json={"model": "semantic-router", "messages": [{"role": "user", "content": "天气怎么样"}]},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["route_id"] == "fast"
+    assert response.json()["target_model"] == "cheap-router"
+    assert response.json()["policy_id"] == "low_confidence"
+    assert proxy.forward_called is False
+    assert proxy.stream_called is False
+
+
+def test_decision_endpoint_embedding_error_uses_fallback_route_id_and_policy():
+    proxy = NoUpstreamProxy()
+    app = create_app(router=Router(decision_router_settings(), FakeDecisionEmbeddingClient({}, fail=True)), proxy=proxy)
+
+    response = TestClient(app).post(
+        "/v1/semantic-router/decision",
+        json={"model": "semantic-router", "messages": [{"role": "user", "content": "解释一下这个概念"}]},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["route_id"] == "fast"
+    assert response.json()["target_model"] == "cheap-router"
+    assert response.json()["policy_id"] == "embedding_error"
+    assert proxy.forward_called is False
+    assert proxy.stream_called is False
+
+
+def test_decision_endpoint_passthrough_keeps_model_without_inventing_route_id_and_stable_shape():
+    proxy = NoUpstreamProxy()
+    app = create_app(router=Router(decision_router_settings(), FakeDecisionEmbeddingClient({})), proxy=proxy)
+
+    response = TestClient(app).post(
+        "/v1/semantic-router/decision",
+        json={
+            "model": "deepseek-v4-pro",
+            "messages": [{"role": "user", "content": "just answer directly"}],
+            "prompt": "sensitive prompt should never be mirrored",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "source_model": "deepseek-v4-pro",
+        "route_id": None,
+        "target_model": "deepseek-v4-pro",
+        "policy_id": "passthrough",
+        "reason": "passthrough",
+        "rewrite": False,
+        "score": None,
+        "second_score": None,
+    }
+    assert set(response.json()) == {
+        "source_model",
+        "route_id",
+        "target_model",
+        "policy_id",
+        "reason",
+        "rewrite",
+        "score",
+        "second_score",
+    }
+    assert "prompt" not in response.text
     assert proxy.forward_called is False
     assert proxy.stream_called is False
 
@@ -400,6 +515,8 @@ def test_streaming_chat_completion_uses_stream_proxy():
     assert proxy.payloads[0]["stream"] is True
     assert response.headers["content-type"].startswith("text/event-stream")
     assert response.headers["x-router-target-model"] == "pro-router"
+    assert response.headers["x-router-route-id"] == "strong"
+    assert response.headers["x-router-policy-id"] == "hard_rule"
     assert body == b"data: first\n\ndata: [DONE]\n\n"
 
 
@@ -754,6 +871,9 @@ def test_streaming_chat_completion_returns_gateway_error_when_upstream_disconnec
     assert response.status_code == 502
     assert response.headers["x-router-request-id"] == "stream-error-request-1"
     assert response.headers["x-router-target-model"] == "pro-router"
+    assert response.headers["x-router-reason"] == "hard_rule:PR"
+    assert "x-router-route-id" not in response.headers
+    assert "x-router-policy-id" not in response.headers
     assert response.json()["error"]["type"] == "TimeoutError"
     records = [json.loads(record.message) for record in caplog.records]
     route_errors = [record for record in records if record["event"] == "route_error"]
@@ -794,6 +914,9 @@ def test_streaming_chat_completion_maps_upstream_5xx_to_redacted_route_error(cap
     assert response.status_code == 502
     assert response.headers["x-router-request-id"] == "stream-status-error-request-1"
     assert response.headers["x-router-target-model"] == "pro-router"
+    assert response.headers["x-router-reason"] == "hard_rule:PR"
+    assert "x-router-route-id" not in response.headers
+    assert "x-router-policy-id" not in response.headers
     assert response.json()["error"]["type"] == "UpstreamStatusError"
     assert proxy.stream_context_closed is True
     records = [json.loads(record.message) for record in caplog.records]

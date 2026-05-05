@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from router.config import RouterSettings, RouteSpec
+from router.config import HardRuleSpec, RouterSettings, RouteSpec
 from router.routing import Router, latest_user_text
 
 
@@ -227,6 +227,68 @@ async def test_decide_with_empty_extracted_text_returns_low_confidence_not_crash
         assert decision.reason == "low_confidence"
 
 
+
+
+@pytest.mark.asyncio
+async def test_empty_utterance_route_is_skipped_for_embedding_and_hard_rule_can_still_match():
+    route_settings = settings().model_copy(deep=True)
+    route_settings.routes["rules-only"] = RouteSpec(
+        target_model="rules-router",
+        description="only hard-rule",
+        utterances=[],
+    )
+    route_settings.hard_rules.append(HardRuleSpec(route_id="rules-only", keywords=["紧急"]))
+
+    vectors = {
+        "翻译成中文": [1.0, 0.0, 0.0],
+        "总结这篇文章": [1.0, 0.0, 0.0],
+        "分析这个线上 bug": [0.0, 1.0, 0.0],
+        "代码审查": [0.0, 1.0, 0.0],
+        "测试免费模型": [0.0, 0.0, 1.0],
+        "批量探活": [0.0, 0.0, 1.0],
+        "这是紧急事件": [0.1, 0.1, 0.1],
+    }
+    router = Router(route_settings, FakeEmbeddingClient(vectors))
+
+    hard_rule_decision = await router.decide(
+        {
+            "model": "smart-router",
+            "messages": [{"role": "user", "content": "这是紧急事件"}],
+        }
+    )
+
+    assert hard_rule_decision.route_id == "rules-only"
+    assert hard_rule_decision.policy_id == "hard_rule"
+    assert hard_rule_decision.target_model == "rules-router"
+
+
+@pytest.mark.asyncio
+async def test_all_empty_utterance_routes_fall_back_deterministically_without_embedding_failure():
+    route_settings = RouterSettings(
+        route_model="smart-router",
+        fallback_route_id="fallback",
+        threshold=0.5,
+        margin=0.05,
+        routes={
+            "fallback": RouteSpec(target_model="cheap-router", description="fallback", utterances=[]),
+            "rules-only": RouteSpec(target_model="rules-router", description="rules", utterances=[]),
+        },
+    )
+    router = Router(route_settings, FakeEmbeddingClient({"anything": [0.1, 0.1, 0.1]}))
+
+    decision = await router.decide(
+        {
+            "model": "smart-router",
+            "messages": [{"role": "user", "content": "anything"}],
+        }
+    )
+
+    assert decision.route_id == "fallback"
+    assert decision.target_model == "cheap-router"
+    assert decision.policy_id == "low_confidence"
+    assert decision.reason == "low_confidence"
+    assert decision.score == 0.0
+    assert decision.second_score == 0.0
 @pytest.mark.asyncio
 async def test_decide_with_empty_messages_and_embedding_failure_returns_embedding_error():
     router = Router(settings(), FakeEmbeddingClient({}, fail=True))
@@ -240,3 +302,50 @@ async def test_decide_with_empty_messages_and_embedding_failure_returns_embeddin
 
     assert decision.target_model == "cheap-router"
     assert decision.reason == "embedding_error"
+
+
+@pytest.mark.asyncio
+async def test_explicit_route_id_precedence_over_legacy_metadata_keys():
+    router = Router(settings(), FakeEmbeddingClient({}))
+
+    decision = await router.decide(
+        {
+            "model": "smart-router",
+            "metadata": {
+                "route_id": "strong",
+                "route": "fast",
+                "target_route": "experimental",
+            },
+            "messages": [{"role": "user", "content": "anything"}],
+        }
+    )
+
+    assert decision.route_id == "strong"
+    assert decision.target_model == "pro-router"
+    assert decision.policy_id == "explicit"
+
+
+@pytest.mark.asyncio
+async def test_unknown_explicit_route_id_is_ignored_and_normal_routing_continues():
+    vectors = {
+        "翻译成中文": [1.0, 0.0, 0.0],
+        "总结这篇文章": [1.0, 0.0, 0.0],
+        "分析这个线上 bug": [0.0, 1.0, 0.0],
+        "代码审查": [0.0, 1.0, 0.0],
+        "测试免费模型": [0.0, 0.0, 1.0],
+        "批量探活": [0.0, 0.0, 1.0],
+        "批量测试这些免费模型哪个还活着": [0.0, 0.0, 1.0],
+    }
+    router = Router(settings(), FakeEmbeddingClient(vectors))
+
+    decision = await router.decide(
+        {
+            "model": "smart-router",
+            "metadata": {"route_id": "does-not-exist"},
+            "messages": [{"role": "user", "content": "批量测试这些免费模型哪个还活着"}],
+        }
+    )
+
+    assert decision.route_id == "experimental"
+    assert decision.target_model == "free-probe-router"
+    assert decision.policy_id == "embedding"

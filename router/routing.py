@@ -69,6 +69,7 @@ class Router:
             route_scores = {
                 route: max(cosine_similarity(query_vector, vector) for vector in vectors)
                 for route, vectors in self._route_vectors.items()
+                if vectors
             }
         except Exception:
             return RoutingDecision(
@@ -78,6 +79,18 @@ class Router:
                 reason="embedding_error",
                 policy_id="embedding_error",
                 rewrite=True,
+            )
+
+        if not route_scores:
+            return RoutingDecision(
+                route_id=self.settings.fallback_route_id,
+                target_model=self._target_model_for_route(self.settings.fallback_route_id),
+                source_model=source_model,
+                reason="low_confidence",
+                policy_id="low_confidence",
+                rewrite=True,
+                score=0.0,
+                second_score=0.0,
             )
 
         ranked = sorted(route_scores.items(), key=lambda item: item[1], reverse=True)
@@ -113,7 +126,14 @@ class Router:
         metadata = request_json.get("metadata")
         if not isinstance(metadata, dict):
             return None
-        route = metadata.get("route") or metadata.get("target_route")
+        # route_id is the product-level explicit route override.
+        # route and target_route are retained for backward compatibility, with
+        # target_route treated as deprecated legacy metadata.
+        route = (
+            metadata.get("route_id")
+            or metadata.get("route")
+            or metadata.get("target_route")
+        )
         if route in self.settings.routes:
             return route
         return None
@@ -144,7 +164,7 @@ class Router:
             cursor += len(spec.utterances)
             offsets.append((route, start, cursor))
 
-        vectors = await self.embedding_client.embed(texts)
+        vectors = await self.embedding_client.embed(texts) if texts else []
         self._route_vectors = {
             route: vectors[start:end] for route, start, end in offsets
         }
