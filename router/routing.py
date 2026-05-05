@@ -113,7 +113,9 @@ class Router:
         metadata = request_json.get("metadata")
         if not isinstance(metadata, dict):
             return None
-        route = metadata.get("route") or metadata.get("target_route")
+        # Preferred explicit override key uses product terminology.
+        route = metadata.get("route_id") or metadata.get("route") or metadata.get("target_route")
+        # `target_route` remains as a legacy/deprecated compatibility key.
         if route in self.settings.routes:
             return route
         return None

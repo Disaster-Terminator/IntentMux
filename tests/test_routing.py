@@ -240,3 +240,46 @@ async def test_decide_with_empty_messages_and_embedding_failure_returns_embeddin
 
     assert decision.target_model == "cheap-router"
     assert decision.reason == "embedding_error"
+
+
+@pytest.mark.asyncio
+async def test_explicit_route_id_overrides_legacy_metadata_keys():
+    router = Router(settings(), FakeEmbeddingClient({}))
+
+    decision = await router.decide(
+        {
+            "model": "smart-router",
+            "metadata": {"route_id": "strong", "route": "fast", "target_route": "experimental"},
+            "messages": [{"role": "user", "content": "ignore normal routing"}],
+        }
+    )
+
+    assert decision.route_id == "strong"
+    assert decision.target_model == "pro-router"
+    assert decision.policy_id == "explicit"
+
+
+@pytest.mark.asyncio
+async def test_unknown_explicit_route_id_is_ignored_and_normal_routing_continues():
+    vectors = {
+        "翻译成中文": [1.0, 0.0, 0.0],
+        "总结这篇文章": [1.0, 0.0, 0.0],
+        "分析这个线上 bug": [0.0, 1.0, 0.0],
+        "代码审查": [0.0, 1.0, 0.0],
+        "测试免费模型": [0.0, 0.0, 1.0],
+        "批量探活": [0.0, 0.0, 1.0],
+        "请帮我总结这篇文章": [1.0, 0.0, 0.0],
+    }
+    router = Router(settings(), FakeEmbeddingClient(vectors))
+
+    decision = await router.decide(
+        {
+            "model": "smart-router",
+            "metadata": {"route_id": "does-not-exist", "route": "also-missing"},
+            "messages": [{"role": "user", "content": "请帮我总结这篇文章"}],
+        }
+    )
+
+    assert decision.route_id == "fast"
+    assert decision.target_model == "cheap-router"
+    assert decision.policy_id == "embedding"

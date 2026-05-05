@@ -8,6 +8,44 @@ from pydantic import ValidationError
 from router.config import RouteSpec, RouterSettings, load_settings
 
 
+
+def test_router_settings_default_entry_model_is_semantic_router():
+    settings = RouterSettings(
+        routes={
+            "fast": RouteSpec(description="low risk", utterances=["a"]),
+            "strong": RouteSpec(description="high risk", utterances=["b"]),
+        }
+    )
+
+    assert settings.route_model == "semantic-router"
+
+
+def test_load_settings_with_route_model_remains_compatible(tmp_path: Path):
+    routes_path = tmp_path / "routes.yaml"
+    routes_path.write_text(
+        """
+route_model: smart-router
+fallback_route_id: fast
+routes:
+  fast:
+    target_model: cheap-router
+    description: low risk
+    utterances:
+      - seed fast utterance
+  strong:
+    target_model: pro-router
+    description: high risk
+    utterances:
+      - seed strong utterance
+""",
+        encoding="utf-8",
+    )
+
+    settings = load_settings(routes_path)
+
+    assert settings.route_model == "smart-router"
+    assert settings.fallback_route_id == "fast"
+
 def test_load_settings_supports_route_ids_mapped_to_target_models(tmp_path: Path):
     routes_path = tmp_path / "routes.yaml"
     routes_path.write_text(

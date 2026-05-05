@@ -19,7 +19,8 @@ class HardRuleSpec(BaseModel):
 
 
 class RouterSettings(BaseModel):
-    route_model: str = "smart-router"
+    # Entry model for product-facing requests. Keep `route_model` name for config compatibility.
+    route_model: str = "semantic-router"
     fallback_route_id: str = Field(
         default="fast",
         validation_alias=AliasChoices("fallback_route_id", "default_route"),
