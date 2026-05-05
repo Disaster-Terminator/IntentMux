@@ -64,6 +64,22 @@ def load_cases(path: Path) -> list[ReviewCase]:
     raise ValueError("unsupported case format; use .jsonl, .yaml, or .yml")
 
 
+def load_route_ids(path: Path) -> set[str]:
+    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    routes = raw.get("routes") if isinstance(raw, dict) else None
+    if not isinstance(routes, dict):
+        raise ValueError("routes config must define a routes mapping")
+    return set(routes)
+
+
+def validate_expected_routes(cases: list[ReviewCase], route_ids: set[str]) -> None:
+    for case in cases:
+        if case.expected_route is not None and case.expected_route not in route_ids:
+            raise ValueError(
+                f"{case.name}: expected_route '{case.expected_route}' is not configured as a route_id"
+            )
+
+
 def format_result_row(
     *,
     case_name: str,
@@ -150,13 +166,23 @@ def call_decision_endpoint(endpoint: str, payload: dict[str, Any], timeout_s: fl
         return json.loads(resp.read().decode("utf-8"))
 
 
-def run_review(endpoint: str, cases_path: Path, timeout_s: float, output: str = "table") -> int:
+def run_review(
+    endpoint: str,
+    cases_path: Path,
+    timeout_s: float,
+    output: str = "table",
+    routes_path: Path | None = None,
+) -> int:
     rows: list[list[str]] = []
     json_rows: list[dict[str, Any]] = []
     mismatch_count = 0
     endpoint_error_count = 0
 
-    for case in load_cases(cases_path):
+    cases = load_cases(cases_path)
+    if routes_path is not None:
+        validate_expected_routes(cases, load_route_ids(routes_path))
+
+    for case in cases:
         try:
             result = call_decision_endpoint(endpoint, case.payload, timeout_s)
         except Exception as exc:
@@ -193,9 +219,18 @@ def main() -> None:
     parser.add_argument("--cases", default="tests/samples/review_decisions.yaml")
     parser.add_argument("--timeout", type=float, default=10.0)
     parser.add_argument("--output", choices=["table", "json"], default="table")
+    parser.add_argument("--routes")
     args = parser.parse_args()
 
-    raise SystemExit(run_review(args.endpoint, Path(args.cases), args.timeout, output=args.output))
+    raise SystemExit(
+        run_review(
+            args.endpoint,
+            Path(args.cases),
+            args.timeout,
+            output=args.output,
+            routes_path=Path(args.routes) if args.routes else None,
+        )
+    )
 
 
 if __name__ == "__main__":
