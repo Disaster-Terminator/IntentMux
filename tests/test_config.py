@@ -343,3 +343,91 @@ def test_router_settings_rejects_recursive_target_model():
                 ),
             },
         )
+
+
+def test_router_settings_accepts_entry_model_alias():
+    settings = RouterSettings.model_validate(
+        {
+            "entry_model": "smart-router",
+            "routes": {"fast": {"description": "low risk", "utterances": ["x"]}},
+        }
+    )
+
+    assert settings.route_model == "smart-router"
+    assert settings.entry_model == "smart-router"
+
+
+def test_router_settings_prefers_route_model_when_both_route_model_and_entry_model_are_set():
+    settings = RouterSettings.model_validate(
+        {
+            # Deterministic compatibility rule: keep legacy route_model precedence when both are present.
+            "route_model": "legacy-router",
+            "entry_model": "new-entry-router",
+            "routes": {"fast": {"description": "low risk", "utterances": ["x"]}},
+        }
+    )
+
+    assert settings.route_model == "legacy-router"
+
+
+def test_router_settings_accepts_fallback_route_id_key():
+    settings = RouterSettings.model_validate(
+        {
+            "route_model": "smart-router",
+            "fallback_route_id": "fast",
+            "routes": {"fast": {"description": "low risk", "utterances": ["x"]}},
+        }
+    )
+
+    assert settings.fallback_route_id == "fast"
+
+
+def test_router_settings_accepts_default_route_legacy_alias():
+    settings = RouterSettings.model_validate(
+        {
+            "route_model": "smart-router",
+            "default_route": "fast",
+            "routes": {"fast": {"description": "low risk", "utterances": ["x"]}},
+        }
+    )
+
+    assert settings.fallback_route_id == "fast"
+
+
+def test_router_settings_sets_missing_target_model_to_route_id():
+    settings = RouterSettings.model_validate(
+        {
+            "route_model": "smart-router",
+            "fallback_route_id": "fast",
+            "routes": {
+                "fast": {"description": "low risk", "utterances": ["x"]},
+                "strong": {"description": "high risk", "utterances": ["y"]},
+            },
+        }
+    )
+
+    assert settings.routes["fast"].target_model == "fast"
+    assert settings.routes["strong"].target_model == "strong"
+
+
+def test_router_settings_rejects_entry_model_equal_to_route_id():
+    with pytest.raises(ValidationError, match="route_id"):
+        RouterSettings(
+            entry_model="fast",
+            fallback_route_id="strong",
+            routes={
+                "fast": RouteSpec(description="would recurse", utterances=["x"]),
+                "strong": RouteSpec(description="fallback", utterances=["y"]),
+            },
+        )
+
+
+def test_router_settings_rejects_missing_fallback_route_id_reference():
+    with pytest.raises(ValidationError, match="fallback_route_id must be present"):
+        RouterSettings(
+            route_model="semantic-router",
+            fallback_route_id="missing",
+            routes={
+                "fast": RouteSpec(description="low risk", utterances=["x"]),
+            },
+        )
