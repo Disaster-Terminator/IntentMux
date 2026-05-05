@@ -3,25 +3,41 @@
 > Lightweight, auditable intent-routing sidecar for LiteLLM.<br>
 > Select a `route_id` from request intent, then resolve it to your local LiteLLM model group.
 
+<p align="center">
+  <img alt="status: local validation" src="https://img.shields.io/badge/status-local_validation-f59e0b?style=for-the-badge">
+  <img alt="entry: semantic-router" src="https://img.shields.io/badge/entry-semantic--router-2563eb?style=for-the-badge">
+  <img alt="gateway: LiteLLM compatible" src="https://img.shields.io/badge/gateway-LiteLLM_compatible-16a34a?style=for-the-badge">
+  <img alt="logs: no prompts" src="https://img.shields.io/badge/logs-no_prompts_or_tokens-7c3aed?style=for-the-badge">
+</p>
+
 [中文](README.md)
 
-| Area | Value |
-| --- | --- |
-| Purpose | Lightweight intent routing in front of LiteLLM / OpenAI-compatible gateways |
-| Integration | Keep clients on LiteLLM; opt in with `model=semantic-router` |
-| Entry model | `semantic-router` is the compatibility entry name; IntentMux is the product name |
-| Decision shape | `route_id -> target_model`, for example `strong -> pro-router` |
-| Auditability | Structured `route_complete` / `route_error` logs without prompts or bearer tokens |
-| Status | Local production validation; not packaged as a public release yet |
+## One Line
 
-IntentMux is not a model provider and does not replace LiteLLM. It is a
-local-first routing sidecar that rewrites only selected request `model` fields:
-`model=semantic-router` becomes a configured `route_id`, then resolves to a
-deployment-specific `target_model`. All other model names pass through.
+IntentMux is a local-first OpenAI/LiteLLM-compatible routing sidecar. Clients keep using the existing LiteLLM endpoint and opt in with `model=semantic-router`; IntentMux selects a `route_id` from request intent, then resolves that route to the deployment-specific `target_model`.
 
-The default sample config uses product-level route ids such as `fast`, `strong`,
-and `experimental`, mapped to local LiteLLM model groups such as `cheap-router`,
-`pro-router`, and `free-probe-router`.
+<table>
+  <tr>
+    <td><strong>Intent routing</strong><br>Select product-level routes such as `fast`, `strong`, and `experimental` from request content.</td>
+    <td><strong>Low-intrusion integration</strong><br>Keep LiteLLM responsible for providers, fallback, rate limits, and authentication.</td>
+  </tr>
+  <tr>
+    <td><strong>Auditable logs</strong><br>Record structured `route_complete` / `route_error` events without prompts, tokens, or bearer tokens.</td>
+    <td><strong>Operational gates</strong><br>Ship with preflight, LiteLLM-entry E2E, log summaries, and route-error budget checks.</td>
+  </tr>
+</table>
+
+## Project Boundary
+
+IntentMux is not a model provider and does not replace LiteLLM. It only handles the configured compatibility entry model:
+
+```text
+model=semantic-router -> route_id -> target_model -> LiteLLM model group
+```
+
+All other model names pass through.
+
+The default sample config uses product-level route ids such as `fast`, `strong`, and `experimental`, mapped to local LiteLLM model groups such as `cheap-router`, `pro-router`, and `free-probe-router`. These `target_model` values are deployment names, not product API names.
 
 ## Quick Start
 
@@ -31,14 +47,15 @@ uv run python -m router.app
 
 Default endpoints:
 
-- IntentMux sidecar: `http://127.0.0.1:4001`
-- LiteLLM upstream: `http://127.0.0.1:4000`
-- Embedding upstream: `http://127.0.0.1:1234/v1/embeddings`
+| Service | URL |
+| --- | --- |
+| IntentMux sidecar | `http://127.0.0.1:4001` |
+| LiteLLM upstream | `http://127.0.0.1:4000` |
+| Embedding upstream | `http://127.0.0.1:1234/v1/embeddings` |
 
 ## LiteLLM Entry
 
-The low-intrusion path is to keep clients on LiteLLM `:4000` and change only the
-model name to `semantic-router`.
+The low-intrusion path is to keep clients on LiteLLM `:4000` and change only the model name to `semantic-router`.
 
 ```text
 client -> LiteLLM :4000, model=semantic-router
@@ -48,8 +65,7 @@ client -> LiteLLM :4000, model=semantic-router
        -> LiteLLM model group
 ```
 
-`semantic-router` is the compatibility entry name. It does not have to match the
-product name. LiteLLM's native `smart-router` should remain separate.
+`semantic-router` is the compatibility entry name. It does not have to match the product name. LiteLLM's native `smart-router` should remain separate.
 
 ## Verification
 
@@ -87,8 +103,7 @@ docker logs --since 12h gateway_semantic_router 2>&1 \
       --max-upstream-status-rate 400=0
 ```
 
-Structured logs count `route_id`, `target_model`, `policy_id`, `reason`,
-`stream`, and `upstream_status`, while avoiding prompt and bearer-token logging.
+Structured logs count `route_id`, `target_model`, `policy_id`, `reason`, `stream`, and `upstream_status`, while avoiding prompt and bearer-token logging.
 
 ## Decision Preview
 
@@ -98,13 +113,8 @@ curl http://127.0.0.1:4001/v1/semantic-router/decision \
   -d '{"model":"semantic-router","messages":[{"role":"user","content":"Why is this production bug intermittent?"}]}'
 ```
 
-This returns the selected `route_id`, resolved `target_model`, `policy_id`,
-reason, rewrite flag, and scores without forwarding to LiteLLM.
+This returns the selected `route_id`, resolved `target_model`, `policy_id`, reason, rewrite flag, and scores without forwarding to LiteLLM.
 
 ## Status
 
-IntentMux is built for a real local deployment and already includes routing,
-preflight, LiteLLM-entry E2E, structured logs, and route-error budget gates. It
-is still in production validation and documentation polish; public-release
-packaging, license polish, local-path cleanup, and release metadata should be
-handled after the operational baseline is stable.
+IntentMux is built for a real local deployment and already includes routing, preflight, LiteLLM-entry E2E, structured logs, and route-error budget gates. It is still in production validation and documentation polish; public-release packaging, license polish, local-path cleanup, and release metadata should be handled after the operational baseline is stable.
