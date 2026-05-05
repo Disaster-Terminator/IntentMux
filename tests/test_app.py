@@ -198,6 +198,8 @@ def test_chat_completion_rewrites_smart_router_before_forwarding():
                 "pro-router",
                 "hard_rule:线上",
                 rewrite=True,
+                route_id="strong route",
+                policy_id="hard_rule/strict",
                 source_model="smart-router",
                 score=None,
             )
@@ -219,6 +221,8 @@ def test_chat_completion_rewrites_smart_router_before_forwarding():
     assert proxy.headers[0]["authorization"] == "Bearer litellm-test"
     assert response.headers["x-router-target-model"] == "pro-router"
     assert response.headers["x-router-reason"] == "hard_rule:%E7%BA%BF%E4%B8%8A"
+    assert response.headers["x-router-route-id"] == "strong%20route"
+    assert response.headers["x-router-policy-id"] == "hard_rule%2Fstrict"
 
 
 def test_chat_completion_keeps_passthrough_model():
@@ -247,6 +251,8 @@ def test_chat_completion_keeps_passthrough_model():
     assert proxy.payloads[0]["model"] == "deepseek-v4-pro"
     assert response.headers["x-router-target-model"] == "deepseek-v4-pro"
     assert response.headers["x-router-reason"] == "passthrough"
+    assert "x-router-route-id" not in response.headers
+    assert "x-router-policy-id" not in response.headers
 
 
 def test_decision_endpoint_returns_route_decision_without_forwarding():
@@ -400,6 +406,8 @@ def test_streaming_chat_completion_uses_stream_proxy():
     assert proxy.payloads[0]["stream"] is True
     assert response.headers["content-type"].startswith("text/event-stream")
     assert response.headers["x-router-target-model"] == "pro-router"
+    assert response.headers["x-router-route-id"] == "strong"
+    assert response.headers["x-router-policy-id"] == "hard_rule"
     assert body == b"data: first\n\ndata: [DONE]\n\n"
 
 
@@ -754,6 +762,8 @@ def test_streaming_chat_completion_returns_gateway_error_when_upstream_disconnec
     assert response.status_code == 502
     assert response.headers["x-router-request-id"] == "stream-error-request-1"
     assert response.headers["x-router-target-model"] == "pro-router"
+    assert "x-router-route-id" not in response.headers
+    assert "x-router-policy-id" not in response.headers
     assert response.json()["error"]["type"] == "TimeoutError"
     records = [json.loads(record.message) for record in caplog.records]
     route_errors = [record for record in records if record["event"] == "route_error"]
@@ -794,6 +804,8 @@ def test_streaming_chat_completion_maps_upstream_5xx_to_redacted_route_error(cap
     assert response.status_code == 502
     assert response.headers["x-router-request-id"] == "stream-status-error-request-1"
     assert response.headers["x-router-target-model"] == "pro-router"
+    assert "x-router-route-id" not in response.headers
+    assert "x-router-policy-id" not in response.headers
     assert response.json()["error"]["type"] == "UpstreamStatusError"
     assert proxy.stream_context_closed is True
     records = [json.loads(record.message) for record in caplog.records]
