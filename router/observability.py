@@ -67,14 +67,26 @@ def now_ms() -> float:
     return time.perf_counter() * 1000
 
 
-def route_headers(target_model: str, reason: str, request_id: str) -> dict[str, str]:
+def route_headers(
+    target_model: str,
+    reason: str,
+    request_id: str,
+    *,
+    route_id: str | None = None,
+    policy_id: str | None = None,
+) -> dict[str, str]:
     from urllib.parse import quote
 
-    return {
-        "x-router-request-id": request_id,
-        "x-router-target-model": target_model,
+    headers = {
+        "x-router-request-id": quote(request_id, safe=":._-"),
+        "x-router-target-model": quote(target_model, safe=":._-"),
         "x-router-reason": quote(reason, safe=":._-"),
     }
+    if route_id is not None:
+        headers["x-router-route-id"] = quote(route_id, safe=":._-")
+    if policy_id is not None:
+        headers["x-router-policy-id"] = quote(policy_id, safe=":._-")
+    return headers
 
 
 def log_route_complete(
