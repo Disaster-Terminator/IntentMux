@@ -8,6 +8,8 @@ from scripts.preflight import (
     require_json_field,
     run_preflight,
     summarize_results,
+    validate_nonstream_chat_response,
+    validate_streaming_sse_response,
 )
 
 
@@ -219,3 +221,33 @@ def test_run_preflight_retries_transient_readiness_failure(monkeypatch):
     assert fake_client.ready_calls == 2
     assert CheckResult("ready_status", True, "status=200") in results
     assert CheckResult("ready_payload", True, "ready=True") in results
+
+
+def test_validate_nonstream_chat_response_fixture_pass_and_fail():
+    passed = FakeResponse(
+        status_code=200,
+        headers={"x-router-target-model": "pro-router"},
+    )
+    failed = FakeResponse(
+        status_code=200,
+        headers={},
+    )
+
+    pass_by_name = {r.name: r for r in validate_nonstream_chat_response(passed)}
+    fail_by_name = {r.name: r for r in validate_nonstream_chat_response(failed)}
+
+    assert pass_by_name["nonstream_status"].ok is True
+    assert pass_by_name["nonstream_route"].ok is True
+    assert fail_by_name["nonstream_route"].ok is False
+    assert "missing header x-router-target-model" == fail_by_name["nonstream_route"].detail
+
+
+def test_validate_streaming_sse_response_fixture_pass_and_fail():
+    response = FakeResponse(status_code=200, headers={"x-router-target-model": "pro-router"})
+
+    pass_by_name = {r.name: r for r in validate_streaming_sse_response(response, b"data: {\"x\":1}\n\n")}
+    fail_by_name = {r.name: r for r in validate_streaming_sse_response(response, b"{\"x\":1}")}
+
+    assert pass_by_name["stream_body"].ok is True
+    assert fail_by_name["stream_body"].ok is False
+    assert fail_by_name["stream_body"].detail == "starts_with_data=False"

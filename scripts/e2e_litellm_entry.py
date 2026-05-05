@@ -6,6 +6,7 @@ import json
 import os
 import subprocess
 import uuid
+from collections.abc import Callable
 from typing import Any
 
 import httpx
@@ -101,6 +102,52 @@ def summarize_results(results: list[CheckResult]) -> None:
         raise SystemExit(1)
 
 
+def print_progress(line: str) -> None:
+    print(line, flush=True)
+
+
+def format_route_failure_detail(record: dict[str, Any]) -> str:
+    return f"event={record.get('event')}, error_type={record.get('error_type')}"
+
+
+def validate_nonstream_probe_response(
+    *, probe: Probe, response: httpx.Response
+) -> list[CheckResult]:
+    model = None
+    if response.headers.get("content-type", "").startswith("application/json"):
+        model = response.json().get("model")
+    return [
+        CheckResult(
+            f"{probe.name}_status",
+            response.status_code == 200,
+            f"status={response.status_code}",
+        ),
+        CheckResult(
+            f"{probe.name}_outer_model",
+            model == "semantic-router",
+            f"model={model}",
+        ),
+    ]
+
+
+def validate_streaming_probe_response(
+    *, probe: Probe, response: httpx.Response, first_chunk: bytes
+) -> list[CheckResult]:
+    starts_with_data = first_chunk.startswith(b"data:")
+    return [
+        CheckResult(
+            f"{probe.name}_status",
+            response.status_code == 200,
+            f"status={response.status_code}",
+        ),
+        CheckResult(
+            f"{probe.name}_sse",
+            starts_with_data,
+            f"starts_with_data={starts_with_data}",
+        ),
+    ]
+
+
 def run_probe(
     *,
     client: httpx.Client,
@@ -130,18 +177,11 @@ def run_probe(
                 json=payload,
             ) as response:
                 first_chunk = next(response.iter_bytes(), b"")
-                return [
-                    CheckResult(
-                        f"{probe.name}_status",
-                        response.status_code == 200,
-                        f"status={response.status_code}",
-                    ),
-                    CheckResult(
-                        f"{probe.name}_sse",
-                        first_chunk.startswith(b"data:"),
-                        f"starts_with_data={first_chunk.startswith(b'data:')}",
-                    ),
-                ]
+                return validate_streaming_probe_response(
+                    probe=probe,
+                    response=response,
+                    first_chunk=first_chunk,
+                )
         except httpx.HTTPError as exc:
             return [
                 CheckResult(
@@ -165,21 +205,7 @@ def run_probe(
                 f"{type(exc).__name__}: {exc}",
             )
         ]
-    model = None
-    if response.headers.get("content-type", "").startswith("application/json"):
-        model = response.json().get("model")
-    return [
-        CheckResult(
-            f"{probe.name}_status",
-            response.status_code == 200,
-            f"status={response.status_code}",
-        ),
-        CheckResult(
-            f"{probe.name}_outer_model",
-            model == "semantic-router",
-            f"model={model}",
-        ),
-    ]
+    return validate_nonstream_probe_response(probe=probe, response=response)
 
 
 def docker_logs(container: str, tail: int) -> str:
@@ -194,14 +220,19 @@ def docker_logs(container: str, tail: int) -> str:
 
 
 def validate_route_logs(
-    *, raw_logs: str, probes: list[tuple[Probe, str]]
+    *,
+    raw_logs: str,
+    probes: list[tuple[Probe, str]],
+    require_request_id_log_match: bool = False,
 ) -> list[CheckResult]:
     route_logs = parse_route_logs(raw_logs)
     results: list[CheckResult] = []
     used_indexes: set[int] = set()
+    strict_request_id_matches = 0
+    correlation_statuses: list[str] = []
     for probe, request_id in probes:
         record = find_route_log(route_logs, request_id=request_id, stream=probe.stream)
-        matched_by_request_id = record is not None
+        matched_by = "request_id" if record is not None else "not_found"
         if record is None:
             matched = find_matching_route_log(
                 route_logs,
@@ -211,15 +242,15 @@ def validate_route_logs(
             if matched is not None:
                 index, record = matched
                 used_indexes.add(index)
+                matched_by = "route_shape"
+        if matched_by == "request_id":
+            strict_request_id_matches += 1
+        correlation_statuses.append(f"{probe.name}:{matched_by}")
         results.append(
             CheckResult(
                 f"{probe.name}_route_log_present",
                 record is not None,
-                (
-                    f"request_id={request_id}, matched_by=request_id"
-                    if matched_by_request_id
-                    else f"request_id={request_id}, matched_by=route_shape"
-                ),
+                f"request_id={request_id}, matched_by={matched_by}",
             )
         )
         if record is None:
@@ -229,7 +260,7 @@ def validate_route_logs(
                 CheckResult(
                     f"{probe.name}_route_completed",
                     False,
-                    f"event={record.get('event')}, error_type={record.get('error_type')}",
+                    format_route_failure_detail(record),
                 )
             )
             continue
@@ -255,6 +286,19 @@ def validate_route_logs(
     secret_or_prompt_leak = "Bearer " in raw_logs or any(
         probe.prompt in raw_logs for probe, _request_id in probes
     )
+    total_probes = len(probes)
+    all_strict = strict_request_id_matches == total_probes
+    results.append(
+        CheckResult(
+            "route_log_match_mode",
+            all_strict or not require_request_id_log_match,
+            (
+                f"strict_request_id_matches={strict_request_id_matches}/{total_probes}, "
+                f"require_request_id_log_match={require_request_id_log_match}, "
+                f"per_probe={','.join(correlation_statuses)}"
+            ),
+        )
+    )
     results.append(
         CheckResult(
             "log_redaction",
@@ -265,6 +309,10 @@ def validate_route_logs(
     return results
 
 
+def probe_request_succeeded(probe: Probe, results: list[CheckResult]) -> bool:
+    return any(result.name == f"{probe.name}_status" and result.ok for result in results)
+
+
 def run_e2e(
     *,
     litellm_base_url: str,
@@ -273,6 +321,8 @@ def run_e2e(
     log_container: str,
     log_tail: int,
     skip_log_check: bool,
+    require_request_id_log_match: bool,
+    progress: Callable[[str], None] | None = None,
 ) -> list[CheckResult]:
     base_url = litellm_base_url.rstrip("/")
     probes_with_ids = [
@@ -280,23 +330,39 @@ def run_e2e(
         for probe in DEFAULT_PROBES
     ]
     results: list[CheckResult] = []
+    successful_probes_with_ids: list[tuple[Probe, str]] = []
+    failed_probes_with_ids: list[tuple[Probe, str]] = []
     with httpx.Client(timeout=timeout) as client:
         for probe, request_id in probes_with_ids:
-            results.extend(
-                run_probe(
-                    client=client,
-                    base_url=base_url,
-                    api_key=api_key,
-                    probe=probe,
-                    request_id=request_id,
-                )
+            if progress is not None:
+                progress(f"RUN\t{probe.name}\trequest_id={request_id}")
+            probe_results = run_probe(
+                client=client,
+                base_url=base_url,
+                api_key=api_key,
+                probe=probe,
+                request_id=request_id,
             )
+            results.extend(probe_results)
+            if probe_request_succeeded(probe, probe_results):
+                successful_probes_with_ids.append((probe, request_id))
+            else:
+                failed_probes_with_ids.append((probe, request_id))
 
     if not skip_log_check:
+        for probe, request_id in failed_probes_with_ids:
+            results.append(
+                CheckResult(
+                    f"{probe.name}_route_log_present",
+                    False,
+                    f"request_id={request_id}, skipped_due_to_failed_probe",
+                )
+            )
         results.extend(
             validate_route_logs(
                 raw_logs=docker_logs(log_container, log_tail),
-                probes=probes_with_ids,
+                probes=successful_probes_with_ids,
+                require_request_id_log_match=require_request_id_log_match,
             )
         )
     return results
@@ -313,6 +379,8 @@ def main() -> None:
     parser.add_argument("--log-container", default="gateway_semantic_router")
     parser.add_argument("--log-tail", type=int, default=300)
     parser.add_argument("--skip-log-check", action="store_true")
+    parser.add_argument("--require-request-id-log-match", action="store_true")
+    parser.add_argument("--quiet-progress", action="store_true")
     args = parser.parse_args()
 
     if not args.api_key:
@@ -325,6 +393,8 @@ def main() -> None:
             log_container=args.log_container,
             log_tail=args.log_tail,
             skip_log_check=args.skip_log_check,
+            require_request_id_log_match=args.require_request_id_log_match,
+            progress=None if args.quiet_progress else print_progress,
         )
     )
 

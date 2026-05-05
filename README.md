@@ -87,6 +87,17 @@ uv run python -m pytest -q
 uv run python scripts/eval_routes.py --mock-embeddings
 ```
 
+## CI
+
+GitHub Actions PR CI runs only the baseline automated checks:
+
+- `uv run python -m pytest -q`
+- `uv run python scripts/eval_routes.py --mock-embeddings`
+
+This CI is intentionally minimal and does not claim full production validation.
+Live preflight, LiteLLM-entry E2E, Docker log summary/review, and route-error
+budget checks remain operator/local-production checks.
+
 Production preflight against a running router:
 
 ```bash
@@ -125,7 +136,12 @@ non-streaming and streaming responses, and confirms sidecar route logs for
 `pro-router`, `cheap-router`, and `free-probe-router`. LiteLLM's model-entry
 path does not currently preserve client-supplied correlation IDs to the sidecar,
 so the script first tries request-id matching and then falls back to recent route
-shape matching.
+shape matching. The script prints `RUN` lines before each probe so slow upstream
+requests can be localized; use `--timeout` to tune HTTP timeouts or
+`--quiet-progress` to suppress progress lines. Use
+`--require-request-id-log-match` when validating a deployment path that is
+expected to preserve request IDs end to end; failed probes are not allowed to
+pass route-log checks by matching old route-shape logs.
 
 Within the sidecar, route logs include both `request_id` and
 `request_id_source`. The sidecar accepts `x-request-id`, `x-correlation-id`,
@@ -148,6 +164,11 @@ are logged as `route_error`; HTTP status failures include `upstream_status` in
 the structured log and `upstream_statuses` in the summary. Route reasons are
 also counted, so degraded embedding fallback shows up as
 `reasons: embedding_error=N`. Prompts and bearer tokens are not logged.
+When malformed JSON, missing-event JSON records, or unknown-event JSON records
+are present after the first `{` in a log line, the summary adds an
+`ignored_records` line so operators can distinguish parser/log-shape drift from
+real routed traffic. Plain access-log lines without JSON objects are still
+ignored silently.
 
 Production route-error budget gate:
 
@@ -157,15 +178,18 @@ docker logs --since 12h gateway_semantic_router 2>&1 \
       --min-total 1 \
       --max-error-rate 0 \
       --max-target-error-rate 0 \
-      --max-reason-rate embedding_error=0
+      --max-reason-rate embedding_error=0 \
+      --max-upstream-status-rate 400=0
 ```
 
 The budget gate prints a stable PASS/FAIL report and exits non-zero when the
 selected log window has too few route events or exceeds the total/per-target
 `route_error` thresholds. Optional `--max-reason-rate REASON=RATE` checks
 bounded degradation such as `embedding_error` fallback even when requests still
-complete. Use this after preflight/E2E and before keeping a new router build in
-production traffic.
+complete. Optional `--max-upstream-status-rate STATUS=RATE` catches completed
+requests where the upstream still returned a specific status such as `400`. Use
+this after preflight/E2E and before keeping a new router build in production
+traffic.
 
 For a live sidecar request, pass the same LiteLLM `Authorization` header to
 `http://127.0.0.1:4001/v1/chat/completions`.

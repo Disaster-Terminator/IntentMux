@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from router.config import RouterSettings, RouteSpec
-from router.routing import Router
+from router.routing import Router, latest_user_text
 
 
 class FakeEmbeddingClient:
@@ -139,3 +139,91 @@ async def test_embedding_failure_falls_back_to_default_route():
     assert decision.target_model == "cheap-router"
     assert decision.reason == "embedding_error"
 
+
+def test_latest_user_text_uses_latest_user_message_not_older_ones():
+    messages = [
+        {"role": "user", "content": "older"},
+        {"role": "assistant", "content": "ignored"},
+        {"role": "user", "content": "latest"},
+    ]
+
+    assert latest_user_text(messages) == "latest"
+
+
+def test_latest_user_text_joins_multiple_text_parts_and_ignores_non_text_parts():
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "input_audio", "audio": "..."},
+                {"type": "text", "text": "line 1"},
+                {"type": "image_url", "image_url": {"url": "https://example.com/a.png"}},
+                {"type": "text", "text": "line 2"},
+            ],
+        }
+    ]
+
+    assert latest_user_text(messages) == "line 1\nline 2"
+
+
+def test_latest_user_text_returns_empty_string_for_missing_none_or_invalid_content():
+    assert latest_user_text(None) == ""
+    assert latest_user_text("not-a-message-list") == ""
+    assert latest_user_text([]) == ""
+    assert latest_user_text([{"role": "assistant", "content": "x"}]) == ""
+    assert latest_user_text([{"role": "user"}]) == ""
+    assert latest_user_text([{"role": "user", "content": None}]) == ""
+    assert latest_user_text([{"role": "user", "content": [None, "bad", {"type": "text"}]}]) == ""
+
+
+def test_latest_user_text_latest_invalid_user_message_wins_and_returns_empty():
+    messages = [
+        {"role": "user", "content": "older useful"},
+        {"role": "user", "content": None},
+    ]
+
+    assert latest_user_text(messages) == ""
+
+
+@pytest.mark.asyncio
+async def test_decide_with_empty_extracted_text_returns_low_confidence_not_crash():
+    vectors = {
+        "翻译成中文": [1.0, 0.0, 0.0],
+        "总结这篇文章": [1.0, 0.0, 0.0],
+        "分析这个线上 bug": [0.0, 1.0, 0.0],
+        "代码审查": [0.0, 1.0, 0.0],
+        "测试免费模型": [0.0, 0.0, 1.0],
+        "批量探活": [0.0, 0.0, 1.0],
+        "": [0.0, 0.0, 0.0],
+    }
+    router = Router(settings(), FakeEmbeddingClient(vectors))
+
+    for bad_messages in (
+        None,
+        "not-a-message-list",
+        [{"role": "user", "content": [None, {"type": "input_audio", "audio": "..."}]}],
+    ):
+        decision = await router.decide(
+            {
+                "model": "smart-router",
+                "messages": bad_messages,
+            }
+        )
+
+        assert decision.target_model == "cheap-router"
+        assert decision.reason == "low_confidence"
+
+
+@pytest.mark.asyncio
+async def test_decide_with_empty_messages_and_embedding_failure_returns_embedding_error():
+    router = Router(settings(), FakeEmbeddingClient({}, fail=True))
+
+    decision = await router.decide(
+        {
+            "model": "smart-router",
+            "messages": [],
+        }
+    )
+
+    assert decision.target_model == "cheap-router"
+    assert decision.reason == "embedding_error"
