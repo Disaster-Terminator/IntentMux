@@ -1,109 +1,119 @@
-# Project Identity Proposal
+# Project Identity
 
-本文档记录仓库名称、GitHub 标题和 About 描述建议。此文件只是项目内文档，不会修改 GitHub 仓库元数据。
+本文档记录当前项目名、仓库 metadata 建议，以及为什么产品名和默认 LiteLLM 入口名分开。
 
-## 推荐名称
+## 当前产品名
 
 ```text
-Cynosure Router
+IntentMux
 ```
 
-## 推荐仓库名
+中文定位：
 
 ```text
-cynosure-router
+轻量、可审计的 LiteLLM 意图分流 sidecar。
 ```
 
-保留 `router` 后缀是为了降低识别成本：项目本质仍然是 LLM gateway 前面的 routing sidecar。`Cynosure` 提供品牌识别，`Router` 提供功能锚点。
-
-不建议继续使用：
+英文定位：
 
 ```text
-gateway-semantic-router
+Lightweight, auditable intent router for LiteLLM and OpenAI-compatible model gateways.
+```
+
+## 为什么是 IntentMux
+
+项目的核心不是“又一个模型提供商”，也不是替代 LiteLLM 的完整调度层，而是在现有
+OpenAI/LiteLLM-compatible 入口前做轻量意图分流：
+
+```text
+request intent -> route_id -> target_model -> LiteLLM model group
+```
+
+`IntentMux` 的优势：
+
+- `Intent` 说明决策依据来自请求意图，而不是固定 provider 或静态 model alias。
+- `Mux` 暗示 multiplexing / demultiplexing，工程语义清楚，适合 gateway sidecar。
+- 名字短，读者能大致猜到用途，不需要像 `Cynosure` 一样额外解释。
+- 不被 `semantic` 这个单一实现方式绑定；未来 hard rules、metadata override、
+  embedding、eval、observability、error budget 都能放在同一控制面下。
+
+## 不采用的候选
+
+### Cynosure Router
+
+不采用。它有品牌感，但词义生僻，解释成本高，不符合本项目“轻量、本地、快速部署”的气质。
+
+### RouteLens
+
+不采用。它更像路由观测工具，不能准确表达“执行前分流”。同时已有相近命名和相近语境使用痕迹，
+撞名/混淆风险高。
+
+### SignalRoute
+
+可作为保守备选，但偏普通，记忆点不如 `IntentMux`。
+
+### gateway-semantic-router
+
+保留为当前仓库路径/历史名称，不作为产品名继续强化。它过于描述性，也容易和 LiteLLM 原生
+smart-router 或 generic semantic routing 概念混淆。
+
+## 产品名与入口名分离
+
+默认 LiteLLM 模型入口仍建议保留：
+
+```text
+semantic-router
 ```
 
 原因：
 
-- 名字过于描述性，缺少产品识别度；
-- `semantic-router` 容易和 LiteLLM / 其他项目里的 generic semantic routing 概念混淆；
-- 无法表达本项目真正的差异点：中文-heavy agent traffic、可审计结构化日志、decision preview、error budget gate、LiteLLM 控制面 sidecar；
-- 未来如果加入 response/chat-completion shim、route quality workflow、traffic audit 等能力，旧名会显得过窄。
+- 这是当前低侵入接入面的协议入口：客户端保持打 LiteLLM，只改模型名。
+- 已经有本机配置、E2E、日志和文档围绕 `model=semantic-router` 验证。
+- 改产品名不应该强迫用户同步修改运行时入口。
 
-## GitHub repository title 建议
-
-```text
-Cynosure Router
-```
-
-## GitHub About description 建议
+因此当前语义是：
 
 ```text
-Intent-aware model routing sidecar for LiteLLM/OpenAI-compatible gateways, built for Chinese-heavy agent traffic, auditable decisions, and safe fallback.
+Product name: IntentMux
+LiteLLM entry model: semantic-router
+Python package/module: router
+GitHub repository name: IntentMux
+Current local path: /home/raystorm/gateway/gateway-semantic-router
 ```
 
-备选短版：
+## GitHub metadata 建议
+
+Repository display/title:
 
 ```text
-Auditable intent router for LiteLLM and OpenAI-compatible model gateways.
+IntentMux
 ```
 
-## 一句话定位
+About description:
 
 ```text
-Cynosure Router is the intent-aware control plane that decides where model traffic should go before LiteLLM executes it.
+Lightweight, auditable intent router for LiteLLM and OpenAI-compatible model gateways.
 ```
 
-中文版本：
+Topics:
 
 ```text
-Cynosure Router 是 LiteLLM 执行模型前的一层意图分流控制面。
+llm-gateway
+litellm
+openai-compatible
+model-routing
+intent-routing
+semantic-routing
+agent-infra
+observability
 ```
 
-## 命名理由
-
-`Cynosure` 原意接近“指引方向的中心点”。这个词适合本项目，因为项目本身不执行模型、不管理 provider，也不替代 LiteLLM，而是在流量进入执行层前给出方向：
-
-```text
-intent → route_id → target_model → auditable rewrite
-```
-
-这个名字比 `gateway-semantic-router` 更适合长期演进：
-
-- 不被 `semantic` 这个单一实现方式绑定；
-- 不和 LiteLLM 原生 `smart-router` 或其他 semantic router 概念打架；
-- 能容纳 hard rules、metadata override、embedding、eval、observability、error budget 等多种控制面能力；
-- 有品牌感，但仍然通过 `Router` 保留功能可读性。
-
-## 建议的 README 标题结构
-
-```markdown
-# Cynosure Router
-
-> 面向 LLM Gateway 的意图分流控制面。  
-> Intent-aware routing sidecar for LiteLLM / OpenAI-compatible gateways.
-```
-
-## 建议的后续平台元数据修改
-
-当本 PR 合并并确认文档方向后，可手动修改 GitHub 平台元数据：
-
-- Repository name: `cynosure-router`
-- Repository title / display name: `Cynosure Router`
-- About description: 使用本文推荐长版或短版
-- Topics 可考虑：
-  - `llm-gateway`
-  - `litellm`
-  - `openai-compatible`
-  - `model-routing`
-  - `semantic-routing`
-  - `agent-infra`
-  - `observability`
-
-本 PR 不执行这些平台级修改。
+GitHub repository 已改名为 `IntentMux`。当前本地目录和 Docker compose build context 仍保留
+`gateway-semantic-router`，因为它们反映本机部署状态，改本地路径会影响 compose、agent 和历史文档上下文。
 
 ## 迁移注意事项
 
-如果后续真正重命名仓库，需要同步检查：
+如果未来继续统一本地路径或服务名，需要同步检查：
 
 - README 中的本地路径示例；
 - compose build context；
@@ -113,10 +123,10 @@ intent → route_id → target_model → auditable rewrite
 - 本地 clone 路径；
 - LiteLLM compose 中指向 sidecar 的路径或服务名。
 
-当前 README 仍保留部分本地路径示例，例如：
+当前 README 使用 `IntentMux` 作为产品名，同时保留部分本地路径示例，例如：
 
 ```text
 /home/raystorm/gateway/gateway-semantic-router
 ```
 
-这些路径反映当前部署状态。仓库真正重命名后，再统一改为新的本地目录名会更安全。
+这些路径反映当前部署状态。后续若统一本地目录名，应作为单独迁移处理。

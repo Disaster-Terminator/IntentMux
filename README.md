@@ -1,73 +1,54 @@
-# Cynosure Router
+# IntentMux
 
-Lightweight, local-first intent router for OpenAI/LiteLLM-compatible
-`/v1/chat/completions`.
+> 轻量、可审计的 LiteLLM 意图分流 sidecar。<br>
+> 按请求意图选择 `route_id`，再映射到你的本地 LiteLLM 模型组。
 
-Cynosure Router is the intent-aware control plane that decides where model
-traffic should go before LiteLLM executes it. The current repository path and
-some service names may still use `gateway-semantic-router`; the product identity
-proposal is tracked in `docs/PROJECT_IDENTITY.md`.
+[English](README.en.md)
 
-It rewrites the configured semantic entry model, currently
-`model=semantic-router`, by selecting a configured `route_id` and resolving that
-route to a deployment-specific `target_model`.
+| 项目 | 内容 |
+| --- | --- |
+| 用途 | 在 LiteLLM / OpenAI-compatible gateway 前做轻量意图分流 |
+| 接入面 | 客户端保持打 LiteLLM，只把模型名切到 `semantic-router` |
+| 路由模型 | `semantic-router` 是兼容入口名；产品名是 IntentMux |
+| 决策输出 | `route_id -> target_model`，例如 `strong -> pro-router` |
+| 可审计性 | 结构化 `route_complete` / `route_error` 日志，不记录 prompt 或 bearer token |
+| 运行状态 | 本地生产验证中；暂不按 public-release 项目发布 |
 
-The checked-in sample config uses route ids such as `fast`, `strong`, and
-`experimental`, mapped to local example LiteLLM targets such as `cheap-router`,
-`pro-router`, and `free-probe-router`. Those target names are examples from this
-machine's LiteLLM setup, not product-level route names.
+IntentMux 不是模型提供商，也不是 LiteLLM 的替代品。它是一个本地优先的
+routing sidecar：只改写进入 sidecar 的请求 `model` 字段，把
+`model=semantic-router` 路由到配置里的 `route_id`，再解析到实际部署中的
+`target_model`。其他模型名默认透传给 LiteLLM。
 
-Runtime config validation enforces that the semantic entry model itself cannot
-appear as a route target and that the fallback route exists, which prevents
-recursive forwarding back to `semantic-router`.
+当前示例配置使用 `fast`、`strong`、`experimental` 三个产品级 route id，并映射到本机
+LiteLLM 模型组 `cheap-router`、`pro-router`、`free-probe-router`。这些
+`target_model` 是部署名，不是产品接口。
 
-All other model names pass through unchanged. LiteLLM's native `smart-router`
-is intentionally kept as a separate upstream model group.
+本仓库和 `/home/raystorm/gateway/litellm` 保持边界清晰。不要把 LiteLLM
+挂载目录、token、`.env` 或 provider 凭据加入本仓库。
 
-Both non-streaming and `stream=true` SSE chat completions are proxied. The
-sidecar rewrites only the request model field, then preserves the upstream
-LiteLLM response body and routing headers.
+## 适合什么场景
 
-This repository is intentionally separate from `/home/raystorm/gateway/litellm`.
-Do not add LiteLLM mount files, tokens, or `.env` material here.
+- 你已经有 LiteLLM / OpenAI-compatible gateway。
+- 你想用很小的接入成本，把一部分请求按意图分到不同模型组。
+- 你希望路由决策可回放、可审计、可用日志继续改进。
+- 你不想引入一个大型调度平台，也不想让客户端大改端点。
 
-The project is not public-release ready yet. Public repository visibility,
-license polish, and release documentation are deferred until the configurable
-route abstraction, observability contract, and redacted eval workflow have been
-audited together.
+IntentMux 的差异化不是“再造一个复杂 router”，而是轻量、本地、快速部署、日志可读。
+成熟的 provider 路由、fallback、限流和鉴权仍交给 LiteLLM。
 
-## Local Run
+## 快速运行
 
 ```bash
 uv run python -m router.app
 ```
 
-## Container Lifecycle
+默认端点：
 
-The router is packaged with `Dockerfile` and is intended to run as a sibling
-service in the LiteLLM compose project, not as an ad-hoc local process.
-
-It remains a third-party sidecar. Future lifecycle coupling may bind it more
-closely to the LiteLLM service readiness/restart lifecycle, but that coupling is
-still a design item rather than current behavior. See `docs/roadmap.md`.
-
-The compose service should use:
-
-- build context: `/home/raystorm/gateway/gateway-semantic-router`
-- upstream LiteLLM URL: `http://litellm:4000`
-- embedding URL from container to host LM Studio:
-  `http://host.docker.internal:1234/v1/embeddings`
-- exposed router port: `4001`
-- optional generated semantic asset mount:
-  `/home/raystorm/gateway/gateway-semantic-router/data/semantic_sets:/app/data/semantic_sets:ro`
-
-Default endpoints:
-
-- Router: `http://127.0.0.1:4001`
+- IntentMux sidecar: `http://127.0.0.1:4001`
 - LiteLLM upstream: `http://127.0.0.1:4000`
 - Embedding upstream: `http://127.0.0.1:1234/v1/embeddings`
 
-Environment overrides:
+环境变量：
 
 - `ROUTER_HOST`
 - `ROUTER_PORT`
@@ -75,121 +56,105 @@ Environment overrides:
 - `ROUTER_LITELLM_TIMEOUT`
 - `ROUTER_EMBEDDING_URL`
 - `ROUTER_EMBEDDING_MODEL`
-- `ROUTER_ACCESS_LOG` (`false` by default; set `true` only when raw HTTP
-  access logs are needed)
+- `ROUTER_ACCESS_LOG`
 - `ROUTER_READINESS_TIMEOUT`
 
-## LiteLLM Entry Design
+## LiteLLM 接入方式
 
-The low-intrusion production direction is to keep upstream clients on the
-LiteLLM base URL and expose the sidecar as a LiteLLM model entry named
-`semantic-router`. In that shape, clients keep `http://127.0.0.1:4000` and opt
-in by changing only the model name.
+低侵入接入方式是：客户端继续请求 LiteLLM `:4000`，只把模型名切到
+`semantic-router`。
 
-LiteLLM's native `smart-router` should remain separate. It continues to mean
-LiteLLM's built-in complexity router, while `semantic-router` means this
-sidecar's semantic task router.
+```text
+client -> LiteLLM :4000, model=semantic-router
+       -> IntentMux :4001
+       -> route_id
+       -> target_model
+       -> LiteLLM model group
+```
 
-Current proof and acceptance criteria are documented in
-`docs/superpowers/specs/2026-05-03-litellm-semantic-router-entry-design.md`.
+`semantic-router` 是兼容入口名，不等于项目品牌名。项目叫 IntentMux；入口名保留
+`semantic-router`，是为了降低现有部署迁移成本。
 
-## Verification
+LiteLLM 原生 `smart-router` 应保持独立：它仍表示 LiteLLM 的 complexity router；
+IntentMux 的 `semantic-router` 表示本项目的意图分流入口。
+
+## 配置模型
+
+`config/routes.yaml` 的核心结构：
+
+```yaml
+route_model: semantic-router
+fallback_route_id: fast
+
+routes:
+  fast:
+    target_model: cheap-router
+    description: 低风险、普通问答、解释、翻译、格式转换、轻量总结
+    utterances:
+      - 帮我解释一下这段概念
+
+  strong:
+    target_model: pro-router
+    description: 代码、debug、架构、agent、多步推理、高风险判断
+    utterances:
+      - 这个线上 bug 为什么偶发
+```
+
+运行时校验会阻止递归配置：入口模型本身不能作为 route id 或 target model，
+`fallback_route_id` 必须存在。
+
+## 验证
+
+基础测试：
 
 ```bash
 uv run python -m pytest -q
 uv run python scripts/eval_routes.py --mock-embeddings
+uv run python scripts/verify_route_contract.py
 ```
 
-## CI
-
-GitHub Actions PR CI runs only the baseline automated checks:
-
-- `uv run python -m pytest -q`
-- `uv run python scripts/eval_routes.py --mock-embeddings`
-
-This CI is intentionally minimal and does not claim full production validation.
-Live preflight, LiteLLM-entry E2E, Docker log summary/review, and route-error
-budget checks remain operator/local-production checks.
-
-Production preflight against a running router:
+生产前 sidecar preflight：
 
 ```bash
 uv run python scripts/preflight.py --router-base-url http://127.0.0.1:4001
 ```
 
-The preflight requires `LITELLM_MASTER_KEY` in the environment or `--api-key`.
-It checks liveness, layered readiness, non-streaming route headers, streaming
-route headers, and SSE body shape without printing secrets or prompts. When
-readiness is degraded, it prints the degraded component detail, for example
-`ready=False degraded=embedding:ConnectError`. Readiness is retried briefly by
-default; use `--ready-attempts` and `--ready-interval` to tune that gate.
-
-Runtime probes:
-
-- `/health` is a local liveness check for container health.
-- `/ready` is a layered readiness check. It reports `router`, `litellm`, and
-  `embedding` components separately and returns `503` when any layer is
-  degraded. Docker health intentionally still uses `/health` so readiness can be
-  observed without causing restart loops.
-
-Embedding degraded mode is intentionally fail-open for routed chat requests:
-when the embedding component is unavailable, `/ready` returns `503`, but
-`model=semantic-router` requests fall back to `fallback_route_id` with
-`reason=embedding_error`. LiteLLM/upstream proxy failures are different: they
-fail closed as redacted `502` responses and are logged as `route_error`.
-
-Production E2E through the LiteLLM entrypoint:
+LiteLLM 入口 E2E：
 
 ```bash
 uv run python scripts/e2e_litellm_entry.py --litellm-base-url http://127.0.0.1:4000
 ```
 
-The E2E checks `model=semantic-router` through LiteLLM `:4000`, verifies
-non-streaming and streaming responses, and confirms sidecar route logs for the
-sample `fast`, `strong`, and `experimental` route ids plus their configured
-target models. LiteLLM's model-entry
-path does not currently preserve client-supplied correlation IDs to the sidecar,
-so the script first tries request-id matching and then falls back to recent route
-shape matching. The script prints `RUN` lines before each probe so slow upstream
-requests can be localized; use `--timeout` to tune HTTP timeouts or
-`--quiet-progress` to suppress progress lines. Use
-`--require-request-id-log-match` when validating a deployment path that is
-expected to preserve request IDs end to end; failed probes are not allowed to
-pass route-log checks by matching old route-shape logs.
+这两个脚本需要 `LITELLM_MASTER_KEY` 或 `--api-key`，不会打印密钥或 prompt。
 
-Within the sidecar, route logs include `route_id`, `target_model`, `policy_id`,
-`request_id`, and `request_id_source`. The sidecar accepts `x-request-id`,
-`x-correlation-id`, W3C `traceparent`, `metadata.semantic_router_request_id`,
-and `user` as request identity sources, then injects the final value into the
-upstream `x-request-id` header. This makes sidecar-to-upstream correlation
-stable even when LiteLLM's model-entry layer does not preserve the original
-client id.
+## 日志审计
 
-Production route-log summary from sidecar logs:
+IntentMux 只统计结构化 JSON 路由日志：
+
+- `route_complete`
+- `route_error`
+
+日志字段包括：
+
+- `route_id`
+- `target_model`
+- `policy_id`
+- `reason`
+- `request_id`
+- `request_id_source`
+- `stream`
+- `upstream_status`
+
+不会记录 prompt 或 bearer token。
+
+12 小时窗口 summary：
 
 ```bash
 docker logs --since 12h gateway_semantic_router 2>&1 \
   | uv run python scripts/router_log_summary.py
 ```
 
-The summary parser ignores uvicorn access lines and only counts structured
-`route_complete` / `route_error` JSON records. Upstream route exceptions and
-HTTP `5xx` statuses are returned as `502` with a redacted JSON error body and
-are logged as `route_error`; HTTP status failures include `upstream_status` in
-the structured log and `upstream_statuses` in the summary. Route ids, deployment
-targets, and route reasons are counted separately, so degraded embedding
-fallback shows up as
-`reasons: embedding_error=N`. Prompts and bearer tokens are not logged.
-When malformed JSON, missing-event JSON records, or unknown-event JSON records
-are present after the first `{` in a log line, the summary adds an
-`ignored_records` line so operators can distinguish parser/log-shape drift from
-real routed traffic. Plain access-log lines without JSON objects are still
-ignored silently. Non-200 upstream statuses are also grouped by status, target,
-reason, and stream mode under `upstream_non_200` so an operator can quickly see
-deployment patterns such as `status=400 target=cheap-router
-reason=low_confidence`.
-
-Production route-error budget gate:
+route-error budget gate：
 
 ```bash
 docker logs --since 12h gateway_semantic_router 2>&1 \
@@ -197,23 +162,22 @@ docker logs --since 12h gateway_semantic_router 2>&1 \
       --min-total 1 \
       --max-error-rate 0 \
       --max-target-error-rate 0 \
+      --max-route-error-rate 0 \
       --max-reason-rate embedding_error=0 \
       --max-upstream-status-rate 400=0
 ```
 
-The budget gate prints a stable PASS/FAIL report and exits non-zero when the
-selected log window has too few route events or exceeds the total/per-target
-`route_error` thresholds. Optional `--max-reason-rate REASON=RATE` checks
-bounded degradation such as `embedding_error` fallback even when requests still
-complete. Optional `--max-upstream-status-rate STATUS=RATE` catches completed
-requests where the upstream still returned a specific status such as `400`. Use
-this after preflight/E2E and before keeping a new router build in production
-traffic.
+配置 + 日志诊断摘要：
 
-For a live sidecar request, pass the same LiteLLM `Authorization` header to
-`http://127.0.0.1:4001/v1/chat/completions`.
+```bash
+uv run python scripts/diagnose_router_state.py \
+  --routes config/routes.yaml \
+  --logs /path/to/router-logs.ndjson
+```
 
-Routing decision preview without upstream forwarding:
+## 决策预览
+
+不转发到 LiteLLM，只看会怎么路由：
 
 ```bash
 curl http://127.0.0.1:4001/v1/semantic-router/decision \
@@ -221,36 +185,12 @@ curl http://127.0.0.1:4001/v1/semantic-router/decision \
   -d '{"model":"semantic-router","messages":[{"role":"user","content":"这个线上 bug 为什么偶发？"}]}'
 ```
 
-Use this endpoint for route quality review and gray-mode evaluation. It returns
-the selected `route_id`, resolved `target_model`, `policy_id`, reason, rewrite
-flag, and scores, but does not call LiteLLM or any model backend.
+返回内容包含 `route_id`、`target_model`、`policy_id`、`reason`、`rewrite` 和分数。
 
-Streaming smoke test:
+## 语义资产
 
-```bash
-curl -N http://127.0.0.1:4001/v1/chat/completions \
-  -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"model":"semantic-router","stream":true,"messages":[{"role":"user","content":"这个线上 bug 为什么偶发？只回答 OK"}],"max_tokens":8}'
-```
-
-## Semantic Assets
-
-Runtime routing stays dependency-light. Larger semantic assets are built offline
-from declared sources in `config/route_sources.yaml`.
-
-The initial source manifest references mature datasets rather than hand-written
-keyword expansion:
-
-- MASSIVE zh-CN / zh-TW official JSONL tarball for general assistant and
-  utility utterances. The current Hugging Face `datasets` loader cannot load
-  `AmazonScience/massive` directly because that dataset still uses a dataset
-  script, so the builder reads the official release archive instead.
-- SWE-bench issue statements for repository-level software engineering tasks.
-- MBPP and HumanEval for code-generation prompts.
-- Local JSONL samples for model-probe traffic.
-
-Build dependencies are isolated from runtime:
+运行时保持轻依赖。更大的 route bank 从 `config/route_sources.yaml` 声明的来源离线生成，
+不把 Hugging Face 等构建依赖带进运行时。
 
 ```bash
 uv sync --group assets
@@ -258,34 +198,36 @@ uv run python scripts/build_route_bank.py
 uv run python scripts/build_eval_bank.py --per-route-limit 100
 ```
 
-Generated route banks should retain each utterance's source name so eval
-failures remain auditable.
-
-Runtime loading is conservative: `config/routes.yaml` declares
-`route_bank_path: data/semantic_sets/route_bank.yaml`, and `load_settings()`
-merges that generated bank with the seed utterances only when the file exists.
-If the bank is absent, the router keeps using the checked-in seed routes.
-
-The generated eval bank is also kept out of git. A 200+ case regression run can
-be reproduced after building the route bank:
-
-```bash
-uv run python scripts/eval_routes.py --cases data/semantic_sets/eval_bank.yaml
-```
-
-Redacted production review samples can be promoted into eval cases without
-putting raw prompts in logs or git:
+生成文件默认不进 git。生产 review 样本必须先脱敏，再导入 eval：
 
 ```bash
 uv run python scripts/import_review_samples.py \
   --input data/source_samples/production_review.redacted.jsonl \
-  --output data/semantic_sets/production_review_eval_cases.yaml
-
-uv run python scripts/build_eval_bank.py \
-  --manual-cases data/semantic_sets/production_review_eval_cases.yaml \
-  --per-route-limit 100
+  --output data/semantic_sets/production_review_eval_cases.yaml \
+  --routes config/routes.yaml
 ```
 
-Each JSONL sample must set `redacted: true`, include `text`, and set `expect`
-to a configured route id such as `fast` or `strong`. The importer rejects
-unredacted samples by default.
+每条 JSONL 必须设置 `redacted: true`，并用 route id 作为 `expect`。
+
+## 生命周期
+
+推荐把 IntentMux 作为 LiteLLM compose project 里的并列 sidecar，而不是塞进
+LiteLLM 挂载目录或服务内部。
+
+当前行为：
+
+- Docker health 使用 `/health`，避免 readiness 抖动触发重启循环。
+- `/ready` 检查 router、LiteLLM、embedding 三层。
+- embedding 不可用时，聊天请求 fail-open 到 `fallback_route_id`，并记录
+  `reason=embedding_error`。
+- LiteLLM/upstream `5xx` 或连接异常 fail-closed 为脱敏 `502`，并记录
+  `route_error`。
+
+未来是否把 sidecar 生命周期更强地绑定到 LiteLLM 本体服务，是单独的设计项，不在当前
+运行时里隐式实现。
+
+## 项目状态
+
+IntentMux 当前服务真实本地需求，已具备基本路由、preflight、E2E、结构化日志和
+error-budget gate。仓库仍处于生产验证和文档打磨阶段，许可证、public-release 文档、
+本地路径统一和发布包装会在稳定后再处理。
