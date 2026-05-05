@@ -9,8 +9,8 @@ route to a deployment-specific `target_model`.
 
 The checked-in sample config uses route ids such as `fast`, `strong`, and
 `experimental`, mapped to local example LiteLLM targets such as `cheap-router`,
-`pro-router`, and `free-probe-router`. Those target names are examples from this
-machine's LiteLLM setup, not product-level route names.
+`pro-router`, and `free-probe-router`. Those names are sample
+`target_model` values from one LiteLLM deployment, not product-level routes.
 
 Runtime config validation enforces that the semantic entry model itself cannot
 appear as a route target and that the fallback route exists, which prevents
@@ -27,9 +27,32 @@ This repository is intentionally separate from `/home/raystorm/gateway/litellm`.
 Do not add LiteLLM mount files, tokens, or `.env` material here.
 
 The project is not public-release ready yet. Public repository visibility,
-license polish, and release documentation are deferred until the configurable
-route abstraction, observability contract, and redacted eval workflow have been
-audited together.
+license polish, and release documentation remain deferred until the
+observability contract and redacted eval workflow are audited with the
+configurable route abstraction.
+
+## Config Contract (Minimal Preset)
+
+Operator-facing contract:
+
+- `route_id` is a product-level route key.
+- `target_model` is a deployment-level upstream model name.
+- `policy_id` identifies which selection policy produced the decision.
+- `fallback_route_id` must reference an existing `route_id`.
+- `cheap-router` / `pro-router` / `free-probe-router` are sample
+  `target_model` names only.
+
+Minimal two-route preset:
+
+```yaml
+entry_model: semantic-router
+fallback_route_id: fast
+routes:
+  fast:
+    target_model: cheap-router
+  strong:
+    target_model: pro-router
+```
 
 ## Local Run
 

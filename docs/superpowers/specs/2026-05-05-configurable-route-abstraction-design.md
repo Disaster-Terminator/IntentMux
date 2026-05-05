@@ -40,8 +40,8 @@ small configuration surface.
 - `policy_id`: The policy family that selected the route, such as
   `hard_rule`, `embedding`, `low_confidence`, `embedding_error`, `explicit`, or
   `passthrough`.
-- `fallback_route_id`: The configured route to use when semantic selection is
-  unavailable or too ambiguous.
+- `fallback_route_id`: A configured `route_id` to use when semantic selection
+  is unavailable or too ambiguous.
 
 ## Configuration Direction
 
@@ -74,10 +74,12 @@ routes:
       - 这个线上 bug 为什么偶发
 ```
 
-The default preset can use a two-route mental model (`fast` and `strong`) because
-that matches common local-agent needs. The product must still support any number
-of user-defined routes. An optional `experimental` route can remain in local
-examples, but it is not part of the public contract.
+The default preset can use a two-route mental model (`fast` and `strong`)
+because that matches common local-agent needs. The product must still support
+any number of user-defined routes. An optional `experimental` route can remain
+in local examples, but it is not part of the public contract. Example names
+such as `cheap-router`, `pro-router`, and `free-probe-router` are
+deployment-level `target_model` values only.
 
 ## Runtime Contract
 
@@ -140,8 +142,9 @@ when clearly labeled as example LiteLLM targets.
 
 The project is not ready for public release while this abstraction is mixed.
 Public readiness, repository visibility changes, and license polishing should
-resume after configurable route abstraction, logs, evals, and docs are all on
-the same route-id contract.
+resume after configurable route abstraction, observability contract, and
+redacted eval workflow audits confirm the same route-id contract across logs,
+evals, and docs.
 
 ## Non-Goals For This Phase
 
