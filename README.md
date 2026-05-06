@@ -4,10 +4,16 @@
 > 按请求意图选择 `route_id`，再映射到你的本地 LiteLLM 模型组。
 
 <p align="center">
-  <img alt="status: local validation" src="https://img.shields.io/badge/status-local_validation-f59e0b?style=for-the-badge">
-  <img alt="entry: semantic-router" src="https://img.shields.io/badge/entry-semantic--router-2563eb?style=for-the-badge">
-  <img alt="gateway: LiteLLM compatible" src="https://img.shields.io/badge/gateway-LiteLLM_compatible-16a34a?style=for-the-badge">
-  <img alt="logs: no prompts or tokens" src="https://img.shields.io/badge/logs-no_prompts_or_tokens-7c3aed?style=for-the-badge">
+  <img alt="runtime Python 3.11+" src="https://img.shields.io/badge/runtime-Python%203.11%2B-3776AB">
+  <img alt="entry semantic-router" src="https://img.shields.io/badge/entry-semantic--router-0EA5E9">
+  <img alt="gateway LiteLLM compatible" src="https://img.shields.io/badge/gateway-LiteLLM%20compatible-16A34A">
+  <img alt="logs no prompt or token" src="https://img.shields.io/badge/logs-no%20prompt%20%7C%20token-7C3AED">
+</p>
+<p align="center">
+  <img alt="built with FastAPI" src="https://img.shields.io/badge/built%20with-FastAPI-009688">
+  <img alt="config YAML" src="https://img.shields.io/badge/config-YAML-CB171E">
+  <img alt="tests pytest" src="https://img.shields.io/badge/tests-pytest-0A9EDC">
+  <img alt="package uv" src="https://img.shields.io/badge/package-uv-DE5FE9">
 </p>
 
 [English](README.en.md)
