@@ -4,10 +4,16 @@
 > Select a `route_id` from request intent, then resolve it to your local LiteLLM model group.
 
 <p align="center">
-  <img alt="status: local validation" src="https://img.shields.io/badge/status-local_validation-f59e0b?style=for-the-badge">
-  <img alt="entry: semantic-router" src="https://img.shields.io/badge/entry-semantic--router-2563eb?style=for-the-badge">
-  <img alt="gateway: LiteLLM compatible" src="https://img.shields.io/badge/gateway-LiteLLM_compatible-16a34a?style=for-the-badge">
-  <img alt="logs: no prompts or tokens" src="https://img.shields.io/badge/logs-no_prompts_or_tokens-7c3aed?style=for-the-badge">
+  <img alt="runtime Python 3.11+" src="https://img.shields.io/badge/runtime-Python%203.11%2B-3776AB">
+  <img alt="entry semantic-router" src="https://img.shields.io/badge/entry-semantic--router-0EA5E9">
+  <img alt="gateway LiteLLM compatible" src="https://img.shields.io/badge/gateway-LiteLLM%20compatible-16A34A">
+  <img alt="logs no prompt or token" src="https://img.shields.io/badge/logs-no%20prompt%20%7C%20token-7C3AED">
+</p>
+<p align="center">
+  <img alt="built with FastAPI" src="https://img.shields.io/badge/built%20with-FastAPI-009688">
+  <img alt="config YAML" src="https://img.shields.io/badge/config-YAML-CB171E">
+  <img alt="tests pytest" src="https://img.shields.io/badge/tests-pytest-0A9EDC">
+  <img alt="package uv" src="https://img.shields.io/badge/package-uv-DE5FE9">
 </p>
 
 [中文](README.md)
@@ -37,7 +43,9 @@ model=semantic-router -> route_id -> target_model -> LiteLLM model group
 
 All other model names pass through.
 
-The default sample config uses product-level route ids such as `fast`, `strong`, and `experimental`, mapped to local LiteLLM model groups such as `cheap-router`, `pro-router`, and `free-probe-router`. These `target_model` values are deployment names, not product API names.
+The default sample config uses product-level route ids such as `fast`, `strong`, and `experimental`, mapped to LiteLLM model groups such as `cheap-router`, `pro-router`, and `free-probe-router`. These `target_model` values are deployment names, not product API names.
+
+Deploy IntentMux as a sidecar next to LiteLLM and keep provider secrets, tokens, `.env` files, and mounted LiteLLM data outside this repository.
 
 ## Quick Start
 
@@ -65,7 +73,7 @@ client -> LiteLLM :4000, model=semantic-router
        -> LiteLLM model group
 ```
 
-`semantic-router` is the compatibility entry name. It does not have to match the product name. LiteLLM's native `smart-router` should remain separate.
+Configure `semantic-router` in LiteLLM as a model entry that points to the IntentMux sidecar. Requests that use that model name are routed by intent; other model names pass through unchanged.
 
 ## Verification
 
@@ -115,6 +123,15 @@ curl http://127.0.0.1:4001/v1/semantic-router/decision \
 
 This returns the selected `route_id`, resolved `target_model`, `policy_id`, reason, rewrite flag, and scores without forwarding to LiteLLM.
 
-## Status
+## Runtime Behavior
 
-IntentMux is built for a real local deployment and already includes routing, preflight, LiteLLM-entry E2E, structured logs, and route-error budget gates. It is still in production validation and documentation polish; public-release packaging, license polish, local-path cleanup, and release metadata should be handled after the operational baseline is stable.
+Run IntentMux as a sidecar in the same deployment boundary as LiteLLM.
+
+- Docker health uses `/health` to avoid readiness flapping restart loops.
+- `/ready` checks router, LiteLLM, and embedding availability.
+- When embeddings are unavailable, chat requests fail open to `fallback_route_id` and log `reason=embedding_error`.
+- LiteLLM/upstream `5xx` responses or connection errors fail closed as redacted `502` responses and log `route_error`.
+
+## Current Capabilities
+
+IntentMux includes basic routing, preflight checks, LiteLLM-entry E2E, structured logs, and route-error budget gates for lightweight intent-routing validation in local or private gateway deployments.

@@ -4,10 +4,16 @@
 > 按请求意图选择 `route_id`，再映射到你的本地 LiteLLM 模型组。
 
 <p align="center">
-  <img alt="status: local validation" src="https://img.shields.io/badge/status-local_validation-f59e0b?style=for-the-badge">
-  <img alt="entry: semantic-router" src="https://img.shields.io/badge/entry-semantic--router-2563eb?style=for-the-badge">
-  <img alt="gateway: LiteLLM compatible" src="https://img.shields.io/badge/gateway-LiteLLM_compatible-16a34a?style=for-the-badge">
-  <img alt="logs: no prompts or tokens" src="https://img.shields.io/badge/logs-no_prompts_or_tokens-7c3aed?style=for-the-badge">
+  <img alt="runtime Python 3.11+" src="https://img.shields.io/badge/runtime-Python%203.11%2B-3776AB">
+  <img alt="entry semantic-router" src="https://img.shields.io/badge/entry-semantic--router-0EA5E9">
+  <img alt="gateway LiteLLM compatible" src="https://img.shields.io/badge/gateway-LiteLLM%20compatible-16A34A">
+  <img alt="logs no prompt or token" src="https://img.shields.io/badge/logs-no%20prompt%20%7C%20token-7C3AED">
+</p>
+<p align="center">
+  <img alt="built with FastAPI" src="https://img.shields.io/badge/built%20with-FastAPI-009688">
+  <img alt="config YAML" src="https://img.shields.io/badge/config-YAML-CB171E">
+  <img alt="tests pytest" src="https://img.shields.io/badge/tests-pytest-0A9EDC">
+  <img alt="package uv" src="https://img.shields.io/badge/package-uv-DE5FE9">
 </p>
 
 [English](README.en.md)
@@ -37,9 +43,9 @@ model=semantic-router -> route_id -> target_model -> LiteLLM model group
 
 其他模型名默认透传给 LiteLLM。
 
-当前示例配置使用 `fast`、`strong`、`experimental` 三个产品级 route id，并映射到本机 LiteLLM 模型组 `cheap-router`、`pro-router`、`free-probe-router`。这些 `target_model` 是部署名，不是产品接口。
+默认示例配置使用 `fast`、`strong`、`experimental` 三个产品级 route id，并映射到 LiteLLM 模型组 `cheap-router`、`pro-router`、`free-probe-router`。这些 `target_model` 是部署名，不是产品接口。
 
-本仓库和 `/path/to/gateway/litellm` 保持边界清晰。不要把 LiteLLM 挂载目录、token、`.env` 或 provider 凭据加入本仓库。
+部署时建议把 IntentMux 作为 LiteLLM 旁路 sidecar 独立管理；不要把 LiteLLM 挂载目录、token、`.env` 或 provider 凭据加入本仓库。
 
 ## 适合什么场景
 
@@ -87,9 +93,7 @@ client -> LiteLLM :4000, model=semantic-router
        -> LiteLLM model group
 ```
 
-`semantic-router` 是兼容入口名，不等于项目品牌名。项目叫 IntentMux；入口名保留 `semantic-router`，是为了降低现有部署迁移成本。
-
-LiteLLM 原生 `smart-router` 应保持独立：它仍表示 LiteLLM 的 complexity router；IntentMux 的 `semantic-router` 表示本项目的意图分流入口。
+在 LiteLLM 中把 `semantic-router` 配置为指向 IntentMux sidecar 的模型入口后，客户端即可通过这个模型名触发意图分流。未命中该入口的模型名会保持透传。
 
 ## 配置模型
 
@@ -220,19 +224,15 @@ uv run python scripts/import_review_samples.py \
 
 每条 JSONL 必须设置 `redacted: true`，并用 route id 作为 `expect`。
 
-## 生命周期
+## 运行行为
 
 推荐把 IntentMux 作为 LiteLLM compose project 里的并列 sidecar，而不是塞进 LiteLLM 挂载目录或服务内部。
-
-当前行为：
 
 - Docker health 使用 `/health`，避免 readiness 抖动触发重启循环。
 - `/ready` 检查 router、LiteLLM、embedding 三层。
 - embedding 不可用时，聊天请求 fail-open 到 `fallback_route_id`，并记录 `reason=embedding_error`。
 - LiteLLM/upstream `5xx` 或连接异常 fail-closed 为脱敏 `502`，并记录 `route_error`。
 
-未来是否把 sidecar 生命周期更强地绑定到 LiteLLM 本体服务，是单独的设计项，不在当前运行时里隐式实现。
+## 当前能力
 
-## 项目状态
-
-IntentMux 当前服务真实本地需求，已具备基本路由、preflight、E2E、结构化日志和 error-budget gate。仓库仍处于生产验证和文档打磨阶段，许可证、public-release 文档、本地路径统一和发布包装会在稳定后再处理。
+IntentMux 已具备基本路由、preflight、LiteLLM-entry E2E、结构化日志和 error-budget gate，适合在本地或私有网关环境中做轻量意图分流验证。
