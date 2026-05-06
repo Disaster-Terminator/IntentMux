@@ -7,14 +7,14 @@
   <img alt="status: local validation" src="https://img.shields.io/badge/status-local_validation-f59e0b?style=for-the-badge">
   <img alt="entry: semantic-router" src="https://img.shields.io/badge/entry-semantic--router-2563eb?style=for-the-badge">
   <img alt="gateway: LiteLLM compatible" src="https://img.shields.io/badge/gateway-LiteLLM_compatible-16a34a?style=for-the-badge">
-  <img alt="logs: no prompts" src="https://img.shields.io/badge/logs-no_prompts_or_tokens-7c3aed?style=for-the-badge">
+  <img alt="logs: no prompts or tokens" src="https://img.shields.io/badge/logs-no_prompts_or_tokens-7c3aed?style=for-the-badge">
 </p>
 
 [中文](README.md)
 
 ## One Line
 
-IntentMux is a local-first OpenAI/LiteLLM-compatible routing sidecar. Clients keep using the existing LiteLLM endpoint and opt in with `model=semantic-router`; IntentMux selects a `route_id` from request intent, then resolves that route to the deployment-specific `target_model`.
+IntentMux is a local-first OpenAI-compatible / LiteLLM-compatible routing sidecar. Clients keep using the existing LiteLLM endpoint and opt in with `model=semantic-router`; IntentMux selects a `route_id` from request intent, then resolves that route to the deployment-specific `target_model`.
 
 <table>
   <tr>
@@ -103,7 +103,7 @@ docker logs --since 12h gateway_semantic_router 2>&1 \
       --max-upstream-status-rate 400=0
 ```
 
-Structured logs count `route_id`, `target_model`, `policy_id`, `reason`, `stream`, and `upstream_status`, while avoiding prompt and bearer-token logging.
+Structured logs count `route_id`, `target_model`, `policy_id`, `reason`, `request_id`, `request_id_source`, `stream`, and `upstream_status`, while avoiding prompts, completions, token usage, and bearer tokens. `request_id` is only for cross-layer correlation and may come from headers, `metadata.semantic_router_request_id`, the `user` field, or IntentMux itself.
 
 ## Decision Preview
 
