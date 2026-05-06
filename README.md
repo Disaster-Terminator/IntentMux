@@ -3,28 +3,43 @@
 > 轻量、可审计的 LiteLLM 意图分流 sidecar。<br>
 > 按请求意图选择 `route_id`，再映射到你的本地 LiteLLM 模型组。
 
+<p align="center">
+  <img alt="status: local validation" src="https://img.shields.io/badge/status-local_validation-f59e0b?style=for-the-badge">
+  <img alt="entry: semantic-router" src="https://img.shields.io/badge/entry-semantic--router-2563eb?style=for-the-badge">
+  <img alt="gateway: LiteLLM compatible" src="https://img.shields.io/badge/gateway-LiteLLM_compatible-16a34a?style=for-the-badge">
+  <img alt="logs: no prompts or tokens" src="https://img.shields.io/badge/logs-no_prompts_or_tokens-7c3aed?style=for-the-badge">
+</p>
+
 [English](README.en.md)
 
-| 项目 | 内容 |
-| --- | --- |
-| 用途 | 在 LiteLLM / OpenAI-compatible gateway 前做轻量意图分流 |
-| 接入面 | 客户端保持打 LiteLLM，只把模型名切到 `semantic-router` |
-| 路由模型 | `semantic-router` 是兼容入口名；产品名是 IntentMux |
-| 决策输出 | `route_id -> target_model`，例如 `strong -> pro-router` |
-| 可审计性 | 结构化 `route_complete` / `route_error` 日志，不记录 prompt 或 bearer token |
-| 运行状态 | 本地生产验证中；暂不按 public-release 项目发布 |
+## 一句话
 
-IntentMux 不是模型提供商，也不是 LiteLLM 的替代品。它是一个本地优先的
-routing sidecar：只改写进入 sidecar 的请求 `model` 字段，把
-`model=semantic-router` 路由到配置里的 `route_id`，再解析到实际部署中的
-`target_model`。其他模型名默认透传给 LiteLLM。
+IntentMux 是一个本地优先的 OpenAI-compatible / LiteLLM-compatible 路由 sidecar：客户端仍然请求原来的 LiteLLM 入口，只把模型名切到 `semantic-router`，IntentMux 根据请求意图选择 `route_id`，再映射到实际部署中的 `target_model`。
 
-当前示例配置使用 `fast`、`strong`、`experimental` 三个产品级 route id，并映射到本机
-LiteLLM 模型组 `cheap-router`、`pro-router`、`free-probe-router`。这些
-`target_model` 是部署名，不是产品接口。
+<table>
+  <tr>
+    <td><strong>意图分流</strong><br>从请求内容判断 `fast` / `strong` / `experimental` 等 route id。</td>
+    <td><strong>低侵入接入</strong><br>保留 LiteLLM 作为 provider、fallback、限流和鉴权层。</td>
+  </tr>
+  <tr>
+    <td><strong>可审计日志</strong><br>结构化记录 `route_complete` / `route_error`，不记录 prompt、token 或 bearer token。</td>
+    <td><strong>生产前验证</strong><br>提供 preflight、LiteLLM-entry E2E、日志 summary 和 route-error budget gate。</td>
+  </tr>
+</table>
 
-本仓库和 `/path/to/gateway/litellm` 保持边界清晰。不要把 LiteLLM
-挂载目录、token、`.env` 或 provider 凭据加入本仓库。
+## 项目边界
+
+IntentMux 不是模型提供商，也不是 LiteLLM 的替代品。它只处理进入 sidecar 的兼容入口模型：
+
+```text
+model=semantic-router -> route_id -> target_model -> LiteLLM model group
+```
+
+其他模型名默认透传给 LiteLLM。
+
+当前示例配置使用 `fast`、`strong`、`experimental` 三个产品级 route id，并映射到本机 LiteLLM 模型组 `cheap-router`、`pro-router`、`free-probe-router`。这些 `target_model` 是部署名，不是产品接口。
+
+本仓库和 `/path/to/gateway/litellm` 保持边界清晰。不要把 LiteLLM 挂载目录、token、`.env` 或 provider 凭据加入本仓库。
 
 ## 适合什么场景
 
@@ -33,8 +48,7 @@ LiteLLM 模型组 `cheap-router`、`pro-router`、`free-probe-router`。这些
 - 你希望路由决策可回放、可审计、可用日志继续改进。
 - 你不想引入一个大型调度平台，也不想让客户端大改端点。
 
-IntentMux 的差异化不是“再造一个复杂 router”，而是轻量、本地、快速部署、日志可读。
-成熟的 provider 路由、fallback、限流和鉴权仍交给 LiteLLM。
+IntentMux 的差异化不是“再造一个复杂 router”，而是轻量、本地、快速部署、日志可读。成熟的 provider 路由、fallback、限流和鉴权仍交给 LiteLLM。
 
 ## 快速运行
 
@@ -44,11 +58,13 @@ uv run python -m router.app
 
 默认端点：
 
-- IntentMux sidecar: `http://127.0.0.1:4001`
-- LiteLLM upstream: `http://127.0.0.1:4000`
-- Embedding upstream: `http://127.0.0.1:1234/v1/embeddings`
+| 服务 | 地址 |
+| --- | --- |
+| IntentMux sidecar | `http://127.0.0.1:4001` |
+| LiteLLM upstream | `http://127.0.0.1:4000` |
+| Embedding upstream | `http://127.0.0.1:1234/v1/embeddings` |
 
-环境变量：
+常用环境变量：
 
 - `ROUTER_HOST`
 - `ROUTER_PORT`
@@ -61,8 +77,7 @@ uv run python -m router.app
 
 ## LiteLLM 接入方式
 
-低侵入接入方式是：客户端继续请求 LiteLLM `:4000`，只把模型名切到
-`semantic-router`。
+低侵入接入方式是：客户端继续请求 LiteLLM `:4000`，只把模型名切到 `semantic-router`。
 
 ```text
 client -> LiteLLM :4000, model=semantic-router
@@ -72,11 +87,9 @@ client -> LiteLLM :4000, model=semantic-router
        -> LiteLLM model group
 ```
 
-`semantic-router` 是兼容入口名，不等于项目品牌名。项目叫 IntentMux；入口名保留
-`semantic-router`，是为了降低现有部署迁移成本。
+`semantic-router` 是兼容入口名，不等于项目品牌名。项目叫 IntentMux；入口名保留 `semantic-router`，是为了降低现有部署迁移成本。
 
-LiteLLM 原生 `smart-router` 应保持独立：它仍表示 LiteLLM 的 complexity router；
-IntentMux 的 `semantic-router` 表示本项目的意图分流入口。
+LiteLLM 原生 `smart-router` 应保持独立：它仍表示 LiteLLM 的 complexity router；IntentMux 的 `semantic-router` 表示本项目的意图分流入口。
 
 ## 配置模型
 
@@ -100,8 +113,7 @@ routes:
       - 这个线上 bug 为什么偶发
 ```
 
-运行时校验会阻止递归配置：入口模型本身不能作为 route id 或 target model，
-`fallback_route_id` 必须存在。
+运行时校验会阻止递归配置：入口模型本身不能作为 route id 或 target model，`fallback_route_id` 必须存在。
 
 ## 验证
 
@@ -145,7 +157,7 @@ IntentMux 只统计结构化 JSON 路由日志：
 - `stream`
 - `upstream_status`
 
-不会记录 prompt 或 bearer token。
+不会记录 prompt、completion、token usage 或 bearer token。`request_id` 只用于跨层关联，可能来自请求头、`metadata.semantic_router_request_id`、`user` 字段，或由 IntentMux 生成。
 
 12 小时窗口 summary：
 
@@ -189,8 +201,7 @@ curl http://127.0.0.1:4001/v1/semantic-router/decision \
 
 ## 语义资产
 
-运行时保持轻依赖。更大的 route bank 从 `config/route_sources.yaml` 声明的来源离线生成，
-不把 Hugging Face 等构建依赖带进运行时。
+运行时保持轻依赖。更大的 route bank 从 `config/route_sources.yaml` 声明的来源离线生成，不把 Hugging Face 等构建依赖带进运行时。
 
 ```bash
 uv sync --group assets
@@ -211,23 +222,17 @@ uv run python scripts/import_review_samples.py \
 
 ## 生命周期
 
-推荐把 IntentMux 作为 LiteLLM compose project 里的并列 sidecar，而不是塞进
-LiteLLM 挂载目录或服务内部。
+推荐把 IntentMux 作为 LiteLLM compose project 里的并列 sidecar，而不是塞进 LiteLLM 挂载目录或服务内部。
 
 当前行为：
 
 - Docker health 使用 `/health`，避免 readiness 抖动触发重启循环。
 - `/ready` 检查 router、LiteLLM、embedding 三层。
-- embedding 不可用时，聊天请求 fail-open 到 `fallback_route_id`，并记录
-  `reason=embedding_error`。
-- LiteLLM/upstream `5xx` 或连接异常 fail-closed 为脱敏 `502`，并记录
-  `route_error`。
+- embedding 不可用时，聊天请求 fail-open 到 `fallback_route_id`，并记录 `reason=embedding_error`。
+- LiteLLM/upstream `5xx` 或连接异常 fail-closed 为脱敏 `502`，并记录 `route_error`。
 
-未来是否把 sidecar 生命周期更强地绑定到 LiteLLM 本体服务，是单独的设计项，不在当前
-运行时里隐式实现。
+未来是否把 sidecar 生命周期更强地绑定到 LiteLLM 本体服务，是单独的设计项，不在当前运行时里隐式实现。
 
 ## 项目状态
 
-IntentMux 当前服务真实本地需求，已具备基本路由、preflight、E2E、结构化日志和
-error-budget gate。仓库仍处于生产验证和文档打磨阶段，许可证、public-release 文档、
-本地路径统一和发布包装会在稳定后再处理。
+IntentMux 当前服务真实本地需求，已具备基本路由、preflight、E2E、结构化日志和 error-budget gate。仓库仍处于生产验证和文档打磨阶段，许可证、public-release 文档、本地路径统一和发布包装会在稳定后再处理。
