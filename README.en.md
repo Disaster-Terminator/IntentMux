@@ -43,7 +43,9 @@ model=semantic-router -> route_id -> target_model -> LiteLLM model group
 
 All other model names pass through.
 
-The default sample config uses product-level route ids such as `fast`, `strong`, and `experimental`, mapped to local LiteLLM model groups such as `cheap-router`, `pro-router`, and `free-probe-router`. These `target_model` values are deployment names, not product API names.
+The default sample config uses product-level route ids such as `fast`, `strong`, and `experimental`, mapped to LiteLLM model groups such as `cheap-router`, `pro-router`, and `free-probe-router`. These `target_model` values are deployment names, not product API names.
+
+Deploy IntentMux as a sidecar next to LiteLLM and keep provider secrets, tokens, `.env` files, and mounted LiteLLM data outside this repository.
 
 ## Quick Start
 
@@ -71,7 +73,7 @@ client -> LiteLLM :4000, model=semantic-router
        -> LiteLLM model group
 ```
 
-`semantic-router` is the compatibility entry name. It does not have to match the product name. LiteLLM's native `smart-router` should remain separate.
+Configure `semantic-router` in LiteLLM as a model entry that points to the IntentMux sidecar. Requests that use that model name are routed by intent; other model names pass through unchanged.
 
 ## Verification
 
@@ -121,6 +123,15 @@ curl http://127.0.0.1:4001/v1/semantic-router/decision \
 
 This returns the selected `route_id`, resolved `target_model`, `policy_id`, reason, rewrite flag, and scores without forwarding to LiteLLM.
 
-## Status
+## Runtime Behavior
 
-IntentMux is built for a real local deployment and already includes routing, preflight, LiteLLM-entry E2E, structured logs, and route-error budget gates. It is still in production validation and documentation polish; public-release packaging, license polish, local-path cleanup, and release metadata should be handled after the operational baseline is stable.
+Run IntentMux as a sidecar in the same deployment boundary as LiteLLM.
+
+- Docker health uses `/health` to avoid readiness flapping restart loops.
+- `/ready` checks router, LiteLLM, and embedding availability.
+- When embeddings are unavailable, chat requests fail open to `fallback_route_id` and log `reason=embedding_error`.
+- LiteLLM/upstream `5xx` responses or connection errors fail closed as redacted `502` responses and log `route_error`.
+
+## Current Capabilities
+
+IntentMux includes basic routing, preflight checks, LiteLLM-entry E2E, structured logs, and route-error budget gates for lightweight intent-routing validation in local or private gateway deployments.
