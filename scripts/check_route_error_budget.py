@@ -8,9 +8,21 @@ import sys
 from typing import Any, Iterable
 
 try:
-    from scripts.router_log_summary import ParseDiagnostics, parse_route_records
+    from scripts.router_log_summary import (
+        ParseDiagnostics,
+        iter_lines,
+        ok_from_record,
+        outcome_from_record,
+        parse_route_records,
+    )
 except ModuleNotFoundError:
-    from router_log_summary import ParseDiagnostics, parse_route_records
+    from router_log_summary import (
+        ParseDiagnostics,
+        iter_lines,
+        ok_from_record,
+        outcome_from_record,
+        parse_route_records,
+    )
 
 
 @dataclass(frozen=True)
@@ -18,6 +30,7 @@ class BudgetConfig:
     min_total: int = 1
     max_error_rate: float = 0.0
     max_target_error_rate: float = 0.0
+    max_not_ok_rate: float | None = None
     max_route_error_rate: float | dict[str, float] | None = None
     max_reason_rates: dict[str, float] | None = None
     max_upstream_status_rates: dict[str, float] | None = None
@@ -34,9 +47,12 @@ class BudgetResult:
     completed: int
     errors: int
     error_rate: float
+    not_ok: int
+    not_ok_rate: float
     target_error_rates: dict[str, float]
     route_error_rates: dict[str, float]
     reason_rates: dict[str, float]
+    outcome_rates: dict[str, float]
     upstream_status_rates: dict[str, float]
     error_types: dict[str, int]
     reasons: list[str]
@@ -58,10 +74,15 @@ def check_budget(
     route_errors: Counter[str] = Counter()
     reason_totals: Counter[str] = Counter()
     upstream_status_totals: Counter[str] = Counter()
+    outcome_totals: Counter[str] = Counter()
     error_types: Counter[str] = Counter()
+    not_ok = 0
 
     for record in records:
         total += 1
+        if not ok_from_record(record):
+            not_ok += 1
+        outcome_totals[outcome_from_record(record)] += 1
         target_model = record.get("target_model")
         route_id = record.get("route_id")
         if isinstance(target_model, str):
@@ -88,6 +109,7 @@ def check_budget(
                 error_types[error_type] += 1
 
     error_rate = errors / total if total else 0.0
+    not_ok_rate = not_ok / total if total else 0.0
     target_error_rates = {
         target: target_errors[target] / target_total
         for target, target_total in target_totals.items()
@@ -98,6 +120,10 @@ def check_budget(
     }
     reason_rates = {
         reason: reason_total / total for reason, reason_total in reason_totals.items()
+    }
+    outcome_rates = {
+        outcome: outcome_total / total
+        for outcome, outcome_total in outcome_totals.items()
     }
     upstream_status_rates = {
         status: status_total / total
@@ -110,6 +136,10 @@ def check_budget(
     if error_rate > config.max_error_rate:
         reasons.append(
             f"error_rate {error_rate:.4f} exceeds max_error_rate {config.max_error_rate:.4f}"
+        )
+    if config.max_not_ok_rate is not None and not_ok_rate > config.max_not_ok_rate:
+        reasons.append(
+            f"not_ok_rate {not_ok_rate:.4f} exceeds max_not_ok_rate {config.max_not_ok_rate:.4f}"
         )
     for target, target_error_rate in sorted(target_error_rates.items()):
         if target_error_rate > config.max_target_error_rate:
@@ -189,9 +219,12 @@ def check_budget(
         completed=completed,
         errors=errors,
         error_rate=error_rate,
+        not_ok=not_ok,
+        not_ok_rate=not_ok_rate,
         target_error_rates=target_error_rates,
         route_error_rates=route_error_rates,
         reason_rates=reason_rates,
+        outcome_rates=outcome_rates,
         upstream_status_rates=upstream_status_rates,
         error_types=dict(error_types),
         reasons=reasons,
@@ -206,11 +239,13 @@ def format_budget_result(result: BudgetResult) -> str:
         f"{status} route_error_budget",
         (
             f"total={result.total} completed={result.completed} "
-            f"errors={result.errors} error_rate={result.error_rate:.4f}"
+            f"errors={result.errors} error_rate={result.error_rate:.4f} "
+            f"not_ok={result.not_ok} not_ok_rate={result.not_ok_rate:.4f}"
         ),
         f"target_error_rates: {format_rates(result.target_error_rates)}",
         f"route_error_rates: {format_rates(result.route_error_rates)}",
         f"reason_rates: {format_rates(result.reason_rates)}",
+        f"outcome_rates: {format_rates(result.outcome_rates)}",
         f"upstream_status_rates: {format_rates(result.upstream_status_rates)}",
         f"error_types: {format_counts(result.error_types)}",
     ]
@@ -240,9 +275,12 @@ def budget_result_to_dict(result: BudgetResult) -> dict[str, Any]:
         "completed": result.completed,
         "errors": result.errors,
         "error_rate": result.error_rate,
+        "not_ok": result.not_ok,
+        "not_ok_rate": result.not_ok_rate,
         "target_error_rates": result.target_error_rates,
         "route_error_rates": result.route_error_rates,
         "reason_rates": result.reason_rates,
+        "outcome_rates": result.outcome_rates,
         "upstream_status_rates": result.upstream_status_rates,
         "error_types": result.error_types,
         "reasons": result.reasons,
@@ -327,9 +365,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Fail when structured semantic-router logs exceed route_error budgets.",
     )
+    parser.add_argument("paths", nargs="*", help="JSONL log files. Reads stdin when omitted.")
     parser.add_argument("--min-total", type=int, default=1)
     parser.add_argument("--max-error-rate", type=float, default=0.0)
     parser.add_argument("--max-target-error-rate", type=float, default=0.0)
+    parser.add_argument("--max-not-ok-rate", type=float, default=None)
     parser.add_argument(
         "--max-route-error-rate",
         action="append",
@@ -376,7 +416,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     diagnostics = ParseDiagnostics()
-    records = list(parse_route_records(sys.stdin, diagnostics=diagnostics))
+    records = list(parse_route_records(iter_lines(args.paths), diagnostics=diagnostics))
     max_route_error_rate: float | dict[str, float] | None = None
     if args.max_route_error_rate:
         default_route_budget = [rate for route, rate in args.max_route_error_rate if route is None]
@@ -397,6 +437,7 @@ def main(argv: list[str] | None = None) -> int:
             min_total=args.min_total,
             max_error_rate=args.max_error_rate,
             max_target_error_rate=args.max_target_error_rate,
+            max_not_ok_rate=args.max_not_ok_rate,
             max_route_error_rate=max_route_error_rate,
             max_reason_rates=dict(args.max_reason_rate),
             max_upstream_status_rates=dict(args.max_upstream_status_rate),

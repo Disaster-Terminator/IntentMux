@@ -142,6 +142,8 @@ def test_summarize_records_counts_routes_errors_and_latency():
     }
     assert summary.error_types == {"RemoteProtocolError": 1}
     assert summary.upstream_statuses == {"503": 1}
+    assert summary.outcomes == {"success": 2, "upstream_non_200": 1}
+    assert summary.not_ok == 1
     assert summary.upstream_non_200 == {
         "status=503 target=pro-router reason=embedding stream=true": 1
     }
@@ -171,6 +173,8 @@ def test_format_summary_is_stable_for_runbooks():
             "targets: pro-router=1",
             "reasons: embedding_error=1",
             "error_types: RemoteProtocolError=1",
+            "outcomes: upstream_non_200=1",
+            "not_ok=1",
             "upstream_statuses: 503=1",
             "upstream_non_200: status=503 target=pro-router reason=embedding_error stream=true=1",
             "max_duration_ms=1400.00",
@@ -226,6 +230,8 @@ def test_format_summary_json_is_deterministic_and_includes_diagnostics():
         },
         "max_duration_ms": 42.0,
         "nonstreams": 1,
+        "not_ok": 1,
+        "outcomes": {"success": 1, "upstream_non_200": 1},
         "reasons": {"embedding": 1, "hard_rule": 1},
         "route_complete": 1,
         "route_error": 1,
@@ -266,6 +272,8 @@ def test_main_json_output_parses_mixed_stream_and_ignores_access_logs():
     assert payload["targets"] == {"cheap-router": 1, "pro-router": 1}
     assert payload["reasons"] == {"embedding": 1, "hard_rule": 1}
     assert payload["upstream_statuses"] == {"503": 1}
+    assert payload["outcomes"] == {"success": 1, "upstream_non_200": 1}
+    assert payload["not_ok"] == 1
     assert payload["upstream_non_200"] == {
         "status=503 target=pro-router reason=hard_rule stream=true": 1
     }
@@ -300,6 +308,8 @@ INFO:     127.0.0.1:53000 - \"POST /v1/chat/completions HTTP/1.1\" 200 OK
         "ignored_records": {"malformed_json": 1, "missing_event": 1, "unknown_event": 1},
         "max_duration_ms": 40.0,
         "nonstreams": 1,
+        "not_ok": 1,
+        "outcomes": {"success": 1, "upstream_non_200": 1},
         "reasons": {"embedding_error": 1, "hard_rule": 1},
         "route_complete": 1,
         "route_error": 1,
@@ -328,6 +338,31 @@ def test_contract_fixture_summary_separates_routes_and_targets():
     assert summary.error_types == {"RemoteProtocolError": 1, "UpstreamStatusError": 1}
     assert summary.parse_diagnostics.malformed_json_lines == 1
     assert summary.parse_diagnostics.unknown_event_records == 1
+
+
+def test_main_accepts_log_file_paths(tmp_path: Path):
+    log_path = tmp_path / "routes.jsonl"
+    log_path.write_text(
+        "\n".join(
+            [
+                '{"event":"route_complete","target_model":"cheap-router","ok":true,"outcome":"success","upstream_status":200}',
+                '{"event":"route_complete","target_model":"cheap-router","ok":false,"outcome":"upstream_non_200","upstream_status":400}',
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    completed = subprocess.run(
+        [sys.executable, "scripts/router_log_summary.py", str(log_path), "--json"],
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+
+    payload = json.loads(completed.stdout)
+    assert payload["total"] == 2
+    assert payload["not_ok"] == 1
+    assert payload["outcomes"] == {"success": 1, "upstream_non_200": 1}
 
 
 def test_contract_fixture_has_no_sensitive_payload_fields():

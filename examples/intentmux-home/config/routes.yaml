@@ -1,0 +1,53 @@
+route_model: semantic-router
+fallback_route_id: fast
+threshold: 0.55
+margin: 0.04
+route_bank_path: ../semantic_sets/route_bank.yaml
+embedding_url: http://127.0.0.1:1234/v1/embeddings
+embedding_model: text-embedding-jina-embeddings-v5-text-small-retrieval@q8_0
+litellm_base_url: http://127.0.0.1:4000
+litellm_timeout: 120
+listen_host: 0.0.0.0
+listen_port: 4001
+
+hard_rules:
+  - route_id: strong
+    keywords:
+      - debug
+      - 报错
+      - 异常
+      - traceback
+      - PR
+      - review
+      - 架构
+      - 线上
+      - 回滚
+      - 安全
+
+routes:
+  fast:
+    target_model: cheap-router
+    description: 低风险、普通问答、解释、翻译、格式转换、轻量总结
+    utterances:
+      - 什么是 Java File 类
+      - 帮我解释一下这段概念
+      - 翻译成中文
+      - 总结这篇文章
+
+  strong:
+    target_model: pro-router
+    description: 代码、debug、架构、agent、多步推理、高风险判断
+    utterances:
+      - 帮我分析这个 PR 有没有问题
+      - 这个线上 bug 为什么偶发
+      - 分析这段代码的竞态条件
+      - 设计一个高并发后端架构
+
+  experimental:
+    target_model: free-probe-router
+    description: 免费端点探活、批量试探、低价值质量比较
+    utterances:
+      - 批量测试这些免费模型是否可用
+      - 探活这些端点
+      - 测试模型
+      - benchmark

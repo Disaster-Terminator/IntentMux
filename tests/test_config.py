@@ -214,6 +214,66 @@ routes:
     assert settings.litellm_timeout == 123.5
 
 
+def test_load_settings_uses_router_config_env_when_path_not_supplied(
+    tmp_path: Path, monkeypatch
+):
+    routes_path = tmp_path / "runtime" / "config" / "routes.yaml"
+    routes_path.parent.mkdir(parents=True)
+    routes_path.write_text(
+        """
+route_model: runtime-router
+fallback_route_id: runtime-fast
+routes:
+  runtime-fast:
+    target_model: runtime-target
+    description: runtime config
+    utterances:
+      - runtime utterance
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("ROUTER_CONFIG", str(routes_path))
+
+    settings = load_settings()
+
+    assert settings.route_model == "runtime-router"
+    assert settings.routes["runtime-fast"].target_model == "runtime-target"
+
+
+def test_load_settings_fails_loudly_when_router_config_env_is_missing(
+    tmp_path: Path, monkeypatch
+):
+    missing_path = tmp_path / "missing" / "routes.yaml"
+    monkeypatch.setenv("ROUTER_CONFIG", str(missing_path))
+
+    with pytest.raises(FileNotFoundError, match=str(missing_path)):
+        load_settings()
+
+
+def test_load_settings_reads_audit_log_overrides(tmp_path: Path, monkeypatch):
+    routes_path = tmp_path / "routes.yaml"
+    audit_dir = tmp_path / "logs" / "routes"
+    routes_path.write_text(
+        """
+route_model: semantic-router
+default_route: cheap-router
+routes:
+  cheap-router:
+    description: seed cheap
+    utterances:
+      - seed cheap utterance
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("ROUTER_AUDIT_LOG_DIR", str(audit_dir))
+    monkeypatch.setenv("ROUTER_AUDIT_LOG_ENABLED", "true")
+
+    settings = load_settings(routes_path)
+
+    assert settings.audit_log_dir == str(audit_dir)
+    assert settings.audit_log_enabled is True
+
+
 def test_load_settings_disables_access_log_by_default(tmp_path: Path):
     routes_path = tmp_path / "routes.yaml"
     routes_path.write_text(

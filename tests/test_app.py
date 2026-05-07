@@ -154,6 +154,19 @@ class UpstreamStatusProxy(FakeProxy):
         )
 
 
+class UpstreamBadRequestProxy(FakeProxy):
+    async def forward_chat(
+        self, payload: dict[str, Any], headers: dict[str, str]
+    ) -> FakeProxyResponse:
+        self.payloads.append(payload)
+        self.headers.append(headers)
+        return FakeProxyResponse(
+            status_code=400,
+            content=b'{"error":{"message":"bad request"}}',
+            headers={"content-type": "application/json"},
+        )
+
+
 class UpstreamStatusStreamProxy(FakeProxy):
     @asynccontextmanager
     async def stream_chat(self, payload: dict[str, Any], headers: dict[str, str]):
@@ -558,26 +571,138 @@ def test_chat_completion_emits_structured_log_without_sensitive_payload(caplog):
     records = [json.loads(record.message) for record in caplog.records]
     route_logs = [record for record in records if record["event"] == "route_complete"]
     assert route_logs == [
-        {
-            "event": "route_complete",
-            "request_id": "external-request-1",
-            "request_id_source": "x-request-id",
-            "source_model": "smart-router",
-            "route_id": "strong",
-            "target_model": "pro-router",
-            "policy_id": "hard_rule",
-            "reason": "hard_rule:线上",
-            "rewrite": True,
-            "stream": False,
-            "upstream_status": 200,
-            "score": None,
-            "second_score": None,
-            "duration_ms": route_logs[0]["duration_ms"],
-        }
-    ]
+            {
+                "duration_ms": route_logs[0]["duration_ms"],
+                "event": "route_complete",
+                "ok": True,
+                "outcome": "success",
+                "policy_id": "hard_rule",
+                "reason": "hard_rule:线上",
+                "request_id": "external-request-1",
+                "request_id_source": "x-request-id",
+                "rewrite": True,
+                "route_id": "strong",
+                "score": None,
+                "second_score": None,
+                "source_model": "smart-router",
+                "stream": False,
+                "target_model": "pro-router",
+                "ts": route_logs[0]["ts"],
+                "upstream_status": 200,
+            }
+        ]
     serialized = "\n".join(record.message for record in caplog.records)
     assert "敏感 prompt" not in serialized
     assert "Bearer litellm-test" not in serialized
+
+
+def test_chat_completion_writes_redacted_audit_log(tmp_path):
+    audit_dir = tmp_path / "logs" / "routes"
+    settings = RouterSettings(
+        route_model="semantic-router",
+        fallback_route_id="fast",
+        routes={
+            "fast": RouteSpec(
+                target_model="cheap-router",
+                description="fast",
+                utterances=["hello"],
+            )
+        },
+        audit_log_enabled=True,
+        audit_log_dir=str(audit_dir),
+    )
+    app = create_app(
+        settings=settings,
+        router=FakeRouter(
+            RoutingDecision(
+                "cheap-router",
+                "embedding",
+                rewrite=True,
+                route_id="fast",
+                policy_id="embedding",
+                source_model="semantic-router",
+                score=0.7,
+                second_score=0.2,
+            )
+        ),
+        proxy=FakeProxy(),
+    )
+
+    response = TestClient(app).post(
+        "/v1/chat/completions",
+        headers={"Authorization": "Bearer litellm-test"},
+        json={
+            "model": "semantic-router",
+            "metadata": {"semantic_router_request_id": "audit-request-1"},
+            "messages": [{"role": "user", "content": "敏感 prompt"}],
+        },
+    )
+
+    assert response.status_code == 200
+    audit_files = list(audit_dir.glob("*.jsonl"))
+    assert len(audit_files) == 1
+    records = [json.loads(line) for line in audit_files[0].read_text().splitlines()]
+    assert records == [
+        {
+            "duration_ms": records[0]["duration_ms"],
+            "event": "route_complete",
+            "ok": True,
+            "outcome": "success",
+            "policy_id": "embedding",
+            "reason": "embedding",
+            "request_id": "audit-request-1",
+            "request_id_source": "metadata.semantic_router_request_id",
+            "rewrite": True,
+            "route_id": "fast",
+            "score": 0.7,
+            "second_score": 0.2,
+            "source_model": "semantic-router",
+            "stream": False,
+            "target_model": "cheap-router",
+            "ts": records[0]["ts"],
+            "upstream_status": 200,
+        }
+    ]
+    serialized = audit_files[0].read_text()
+    assert "敏感 prompt" not in serialized
+    assert "Bearer litellm-test" not in serialized
+
+
+def test_chat_completion_marks_upstream_4xx_as_unhealthy_without_gateway_rewrite(caplog):
+    app = create_app(
+        router=FakeRouter(
+            RoutingDecision(
+                "cheap-router",
+                "low_confidence",
+                rewrite=True,
+                route_id="fast",
+                policy_id="low_confidence",
+                source_model="semantic-router",
+                score=0.36,
+                second_score=0.19,
+            )
+        ),
+        proxy=UpstreamBadRequestProxy(),
+    )
+
+    with caplog.at_level(logging.INFO, logger="gateway_semantic_router"):
+        response = TestClient(app, raise_server_exceptions=False).post(
+            "/v1/chat/completions",
+            json={
+                "model": "semantic-router",
+                "metadata": {"semantic_router_request_id": "bad-request-1"},
+                "messages": [{"role": "user", "content": "敏感 prompt"}],
+            },
+        )
+
+    assert response.status_code == 400
+    records = [json.loads(record.message) for record in caplog.records]
+    route_logs = [record for record in records if record["event"] == "route_complete"]
+    assert len(route_logs) == 1
+    assert route_logs[0]["request_id"] == "bad-request-1"
+    assert route_logs[0]["upstream_status"] == 400
+    assert route_logs[0]["ok"] is False
+    assert route_logs[0]["outcome"] == "upstream_non_200"
 
 
 def test_chat_completion_uses_metadata_request_id_when_header_is_not_forwarded(caplog):

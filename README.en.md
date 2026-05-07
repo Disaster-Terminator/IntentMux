@@ -61,6 +61,36 @@ Default endpoints:
 | LiteLLM upstream | `http://127.0.0.1:4000` |
 | Embedding upstream | `http://127.0.0.1:1234/v1/embeddings` |
 
+For container deployment, run IntentMux as a LiteLLM sidecar with its own mounted home:
+
+```text
+litellm/
+  docker-compose.yml
+  config.yaml
+  .env
+  intentmux/
+    config/routes.yaml
+    semantic_sets/route_bank.yaml
+    logs/routes/YYYY-MM-DD.jsonl
+```
+
+Inside the container, `/app` is image code and `/data` is the user-mounted IntentMux home:
+
+```yaml
+services:
+  intentmux:
+    image: ghcr.io/<owner>/intentmux:<version>
+    volumes:
+      - ./intentmux:/data
+    environment:
+      ROUTER_CONFIG: /data/config/routes.yaml
+      ROUTER_AUDIT_LOG_ENABLED: "true"
+      ROUTER_AUDIT_LOG_DIR: /data/logs/routes
+      ROUTER_LITELLM_BASE_URL: http://litellm:4000
+```
+
+`examples/intentmux-home/` is a copyable runtime template. Keep LiteLLM `.env`, provider tokens, databases, and raw prompts outside the IntentMux home.
+
 ## LiteLLM Entry
 
 The low-intrusion path is to keep clients on LiteLLM `:4000` and change only the model name to `semantic-router`.
@@ -101,17 +131,20 @@ uv run python scripts/e2e_litellm_entry.py --litellm-base-url http://127.0.0.1:4
 docker logs --since 12h gateway_semantic_router 2>&1 \
   | uv run python scripts/router_log_summary.py
 
+uv run python scripts/router_log_summary.py /data/logs/routes/*.jsonl
+
 docker logs --since 12h gateway_semantic_router 2>&1 \
   | uv run python scripts/check_route_error_budget.py \
       --min-total 1 \
       --max-error-rate 0 \
       --max-target-error-rate 0 \
       --max-route-error-rate 0 \
+      --max-not-ok-rate 0 \
       --max-reason-rate embedding_error=0 \
       --max-upstream-status-rate 400=0
 ```
 
-Structured logs count `route_id`, `target_model`, `policy_id`, `reason`, `request_id`, `request_id_source`, `stream`, and `upstream_status`, while avoiding prompts, completions, token usage, and bearer tokens. `request_id` is only for cross-layer correlation and may come from headers, `metadata.semantic_router_request_id`, the `user` field, or IntentMux itself.
+Structured logs count `route_id`, `target_model`, `policy_id`, `reason`, `request_id`, `request_id_source`, `stream`, `upstream_status`, `ok`, and `outcome`, while avoiding prompts, completions, token usage, and bearer tokens. `event` is lifecycle; `ok/outcome` is route health. Upstream non-2xx responses record `ok=false` and `outcome=upstream_non_200`.
 
 ## Decision Preview
 
@@ -131,6 +164,7 @@ Run IntentMux as a sidecar in the same deployment boundary as LiteLLM.
 - `/ready` checks router, LiteLLM, and embedding availability.
 - When embeddings are unavailable, chat requests fail open to `fallback_route_id` and log `reason=embedding_error`.
 - LiteLLM/upstream `5xx` responses or connection errors fail closed as redacted `502` responses and log `route_error`.
+- LiteLLM/upstream `4xx` responses are passed through by proxy semantics, but audit logs mark them as `ok=false` / `outcome=upstream_non_200`.
 
 ## Current Capabilities
 

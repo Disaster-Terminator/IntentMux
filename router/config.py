@@ -41,6 +41,8 @@ class RouterSettings(BaseModel):
     litellm_base_url: str = "http://127.0.0.1:4000"
     litellm_timeout: float = 120.0
     access_log: bool = False
+    audit_log_enabled: bool = False
+    audit_log_dir: str | None = None
     readiness_timeout: float = 2.0
     listen_host: str = "127.0.0.1"
     listen_port: int = 4001
@@ -75,8 +77,10 @@ class RouterSettings(BaseModel):
         return self.route_model
 
 
-def load_settings(path: str | Path = "config/routes.yaml") -> RouterSettings:
-    config_path = Path(path)
+def load_settings(path: str | Path | None = None) -> RouterSettings:
+    config_path = Path(path or os.getenv("ROUTER_CONFIG", "config/routes.yaml"))
+    if not config_path.exists():
+        raise FileNotFoundError(f"router config not found: {config_path}")
     raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
     raw = merge_route_bank(raw, config_path.parent)
     settings = RouterSettings.model_validate(raw)
@@ -89,6 +93,10 @@ def load_settings(path: str | Path = "config/routes.yaml") -> RouterSettings:
                 os.getenv("ROUTER_LITELLM_TIMEOUT", str(settings.litellm_timeout))
             ),
             "access_log": bool_from_env("ROUTER_ACCESS_LOG", settings.access_log),
+            "audit_log_enabled": bool_from_env(
+                "ROUTER_AUDIT_LOG_ENABLED", settings.audit_log_enabled
+            ),
+            "audit_log_dir": os.getenv("ROUTER_AUDIT_LOG_DIR", settings.audit_log_dir or ""),
             "readiness_timeout": float(
                 os.getenv("ROUTER_READINESS_TIMEOUT", str(settings.readiness_timeout))
             ),

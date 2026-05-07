@@ -1,0 +1,8 @@
+version: 1
+routes:
+  fast:
+    utterances: []
+  strong:
+    utterances: []
+  experimental:
+    utterances: []

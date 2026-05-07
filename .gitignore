@@ -10,3 +10,9 @@ build/
 data/downloads/
 data/semantic_sets/*.yaml
 data/semantic_sets/*.jsonl
+logs/
+!examples/intentmux-home/logs/
+!examples/intentmux-home/logs/routes/
+!examples/intentmux-home/logs/routes/.gitkeep
+intentmux/
+*-runtime/

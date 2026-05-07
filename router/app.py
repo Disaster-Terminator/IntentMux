@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 from router.config import RouterSettings, load_settings
 from router.embedding import OpenAIEmbeddingClient
 from router.observability import (
+    AuditLogger,
     configure_logging,
     log_route_complete,
     log_route_error,
@@ -49,6 +50,7 @@ def create_app(
         proxy = LiteLLMProxy(settings.litellm_base_url, timeout=settings.litellm_timeout)
     if readiness_checker is None:
         readiness_checker = ReadinessChecker(settings)
+    audit_logger = AuditLogger(settings.audit_log_dir, enabled=settings.audit_log_enabled)
 
     app = FastAPI(title="Gateway Semantic Router")
 
@@ -121,6 +123,7 @@ def create_app(
                     stream=True,
                     error=exc,
                     started_ms=started_ms,
+                    audit_logger=audit_logger,
                 )
                 return upstream_error_response(
                     request_id=request_id,
@@ -138,6 +141,7 @@ def create_app(
                     error=error,
                     started_ms=started_ms,
                     upstream_status=upstream.status_code,
+                    audit_logger=audit_logger,
                 )
                 await stream_context.__aexit__(None, None, None)
                 return upstream_error_response(
@@ -156,6 +160,7 @@ def create_app(
                     decision=decision,
                     upstream_status=upstream.status_code,
                     started_ms=started_ms,
+                    audit_logger=audit_logger,
                 ),
                 status_code=upstream.status_code,
                 headers=headers,
@@ -173,6 +178,7 @@ def create_app(
                 stream=False,
                 error=exc,
                 started_ms=started_ms,
+                audit_logger=audit_logger,
             )
             return upstream_error_response(
                 request_id=request_id,
@@ -190,6 +196,7 @@ def create_app(
                 error=error,
                 started_ms=started_ms,
                 upstream_status=upstream.status_code,
+                audit_logger=audit_logger,
             )
             return upstream_error_response(
                 request_id=request_id,
@@ -206,6 +213,7 @@ def create_app(
             stream=False,
             upstream_status=upstream.status_code,
             started_ms=started_ms,
+            audit_logger=audit_logger,
         )
         return Response(
             content=upstream.content,
@@ -226,6 +234,7 @@ async def stream_with_context(
     decision,
     upstream_status: int,
     started_ms: float,
+    audit_logger: AuditLogger | None = None,
 ):
     exc_info = (None, None, None)
     route_error: Exception | None = None
@@ -243,6 +252,7 @@ async def stream_with_context(
             stream=True,
             error=exc,
             started_ms=started_ms,
+            audit_logger=audit_logger,
         )
         return
     except BaseException as exc:
@@ -259,6 +269,7 @@ async def stream_with_context(
                 stream=True,
                 upstream_status=upstream_status,
                 started_ms=started_ms,
+                audit_logger=audit_logger,
             )
 
 

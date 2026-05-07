@@ -5,6 +5,8 @@ import logging
 import time
 import uuid
 from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from router.routing import RoutingDecision
@@ -17,6 +19,24 @@ LOGGER_NAME = "gateway_semantic_router"
 class RequestIdentity:
     value: str
     source: str
+
+
+class AuditLogger:
+    def __init__(self, log_dir: str | None, *, enabled: bool = False):
+        self.enabled = enabled
+        self.log_dir = Path(log_dir) if log_dir else None
+        if self.enabled:
+            if self.log_dir is None:
+                raise ValueError("audit_log_dir is required when audit logging is enabled")
+            self.log_dir.mkdir(parents=True, exist_ok=True)
+
+    def write(self, record: dict[str, Any]) -> None:
+        if not self.enabled or self.log_dir is None:
+            return
+        path = self.log_dir / f"{datetime.now(UTC).date().isoformat()}.jsonl"
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(record, ensure_ascii=False, sort_keys=True))
+            handle.write("\n")
 
 
 def request_id_from_request(headers: dict[str, str], payload: dict[str, Any]) -> str:
@@ -98,29 +118,21 @@ def log_route_complete(
     stream: bool,
     upstream_status: int,
     started_ms: float,
+    audit_logger: AuditLogger | None = None,
 ) -> None:
-    logger.info(
-        json.dumps(
-            {
-                "event": "route_complete",
-                "request_id": request_id,
-                "request_id_source": request_id_source,
-                "source_model": decision.source_model,
-                "route_id": decision.route_id,
-                "target_model": decision.target_model,
-                "policy_id": decision.policy_id,
-                "reason": decision.reason,
-                "rewrite": decision.rewrite,
-                "stream": stream,
-                "upstream_status": upstream_status,
-                "score": decision.score,
-                "second_score": decision.second_score,
-                "duration_ms": round(now_ms() - started_ms, 2),
-            },
-            ensure_ascii=False,
-            sort_keys=True,
-        )
+    ok = 200 <= upstream_status <= 299
+    record = route_record(
+        event="route_complete",
+        request_id=request_id,
+        request_id_source=request_id_source,
+        decision=decision,
+        stream=stream,
+        started_ms=started_ms,
+        ok=ok,
+        outcome="success" if ok else "upstream_non_200",
+        upstream_status=upstream_status,
     )
+    emit_route_record(logger, record, audit_logger)
 
 
 def log_route_error(
@@ -133,32 +145,73 @@ def log_route_error(
     error: BaseException,
     started_ms: float,
     upstream_status: int | None = None,
+    audit_logger: AuditLogger | None = None,
 ) -> None:
+    record = route_record(
+        event="route_error",
+        request_id=request_id,
+        request_id_source=request_id_source,
+        decision=decision,
+        stream=stream,
+        started_ms=started_ms,
+        ok=False,
+        outcome=(
+            "upstream_non_200"
+            if upstream_status is not None and not 200 <= upstream_status <= 299
+            else "route_error"
+        ),
+        upstream_status=upstream_status,
+    )
+    record.update(
+        {"error_type": type(error).__name__}
+    )
+    emit_route_record(logger, record, audit_logger)
+
+
+def route_record(
+    *,
+    event: str,
+    request_id: str,
+    request_id_source: str,
+    decision: RoutingDecision,
+    stream: bool,
+    started_ms: float,
+    ok: bool,
+    outcome: str,
+    upstream_status: int | None = None,
+) -> dict[str, Any]:
     record: dict[str, Any] = {
-        "event": "route_error",
-        "request_id": request_id,
-        "request_id_source": request_id_source,
-        "source_model": decision.source_model,
-        "route_id": decision.route_id,
-        "target_model": decision.target_model,
+        "duration_ms": round(now_ms() - started_ms, 2),
+        "event": event,
+        "ok": ok,
+        "outcome": outcome,
         "policy_id": decision.policy_id,
         "reason": decision.reason,
+        "request_id": request_id,
+        "request_id_source": request_id_source,
         "rewrite": decision.rewrite,
-        "stream": stream,
-        "error_type": type(error).__name__,
+        "route_id": decision.route_id,
         "score": decision.score,
         "second_score": decision.second_score,
-        "duration_ms": round(now_ms() - started_ms, 2),
+        "source_model": decision.source_model,
+        "stream": stream,
+        "target_model": decision.target_model,
+        "ts": datetime.now(UTC).isoformat(),
     }
     if upstream_status is not None:
         record["upstream_status"] = upstream_status
-    logger.info(
-        json.dumps(
-            record,
-            ensure_ascii=False,
-            sort_keys=True,
-        )
-    )
+    return record
+
+
+def emit_route_record(
+    logger: logging.Logger,
+    record: dict[str, Any],
+    audit_logger: AuditLogger | None,
+) -> None:
+    serialized = json.dumps(record, ensure_ascii=False, sort_keys=True)
+    logger.info(serialized)
+    if audit_logger is not None:
+        audit_logger.write(record)
 
 
 def configure_logging() -> None:

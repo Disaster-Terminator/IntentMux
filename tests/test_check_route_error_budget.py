@@ -57,6 +57,33 @@ def test_check_budget_fails_when_error_rate_exceeds_budget():
     assert result.reasons == ["error_rate 0.5000 exceeds max_error_rate 0.0000"]
 
 
+def test_check_budget_fails_when_not_ok_rate_exceeds_budget():
+    records = records_from_text(
+        "\n".join(
+            [
+                '{"event":"route_complete","target_model":"cheap-router","ok":true,"outcome":"success","upstream_status":200}',
+                '{"event":"route_complete","target_model":"cheap-router","ok":false,"outcome":"upstream_non_200","upstream_status":400}',
+            ]
+        )
+    )
+
+    result = check_budget(
+        records,
+        BudgetConfig(
+            min_total=1,
+            max_error_rate=1.0,
+            max_target_error_rate=1.0,
+            max_not_ok_rate=0.0,
+        ),
+    )
+
+    assert result.passed is False
+    assert result.not_ok == 1
+    assert result.not_ok_rate == 0.5
+    assert result.outcome_rates == {"success": 0.5, "upstream_non_200": 0.5}
+    assert result.reasons == ["not_ok_rate 0.5000 exceeds max_not_ok_rate 0.0000"]
+
+
 def test_check_budget_fails_when_target_error_rate_exceeds_budget():
     records = records_from_text(
         "\n".join(
@@ -160,10 +187,11 @@ def test_format_budget_result_is_stable_for_runbooks():
     assert format_budget_result(result) == "\n".join(
         [
             "PASS route_error_budget",
-            "total=2 completed=1 errors=1 error_rate=0.5000",
+            "total=2 completed=1 errors=1 error_rate=0.5000 not_ok=1 not_ok_rate=0.5000",
             "target_error_rates: cheap-router=1.0000, pro-router=0.0000",
             "route_error_rates: chat.default=1.0000, unknown=0.0000",
             "reason_rates: none",
+            "outcome_rates: route_error=0.5000, success=0.5000",
             "upstream_status_rates: none",
             "error_types: TimeoutError=1",
         ]
@@ -266,6 +294,37 @@ def test_script_file_execution_works_from_repo_root():
 
     assert completed.returncode == 0
     assert completed.stdout.startswith("PASS route_error_budget\n")
+
+
+def test_script_file_execution_accepts_log_file_path(tmp_path: Path):
+    log_path = tmp_path / "routes.jsonl"
+    log_path.write_text(
+        "\n".join(
+            [
+                '{"event":"route_complete","target_model":"cheap-router","ok":true,"outcome":"success","upstream_status":200}',
+                '{"event":"route_complete","target_model":"cheap-router","ok":false,"outcome":"upstream_non_200","upstream_status":400}',
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "scripts/check_route_error_budget.py",
+            str(log_path),
+            "--min-total",
+            "1",
+            "--max-not-ok-rate",
+            "0",
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode == 1
+    assert "not_ok_rate 0.5000 exceeds max_not_ok_rate 0.0000" in completed.stdout
 
 
 def test_cli_reports_parse_diagnostics_for_malformed_or_partial_logs(monkeypatch, capsys):

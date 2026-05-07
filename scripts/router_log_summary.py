@@ -4,6 +4,7 @@ import argparse
 from collections import Counter
 from dataclasses import dataclass
 import json
+from pathlib import Path
 import sys
 from typing import Any, Iterable
 
@@ -29,6 +30,8 @@ class RouteLogSummary:
     targets: dict[str, int]
     reasons: dict[str, int]
     error_types: dict[str, int]
+    outcomes: dict[str, int]
+    not_ok: int
     upstream_statuses: dict[str, int]
     upstream_non_200: dict[str, int]
     max_duration_ms: float
@@ -77,6 +80,8 @@ def summarize_records(
     targets: Counter[str] = Counter()
     reasons: Counter[str] = Counter()
     error_types: Counter[str] = Counter()
+    outcomes: Counter[str] = Counter()
+    not_ok = 0
     upstream_statuses: Counter[str] = Counter()
     upstream_non_200: Counter[str] = Counter()
     max_duration_ms = 0.0
@@ -109,6 +114,11 @@ def summarize_records(
         if isinstance(reason, str):
             reasons[reason] += 1
 
+        outcome = outcome_from_record(record)
+        outcomes[outcome] += 1
+        if not ok_from_record(record):
+            not_ok += 1
+
         duration_ms = record.get("duration_ms")
         if isinstance(duration_ms, int | float):
             max_duration_ms = max(max_duration_ms, float(duration_ms))
@@ -116,7 +126,7 @@ def summarize_records(
         upstream_status = record.get("upstream_status")
         if isinstance(upstream_status, int):
             upstream_statuses[str(upstream_status)] += 1
-            if upstream_status != 200:
+            if not 200 <= upstream_status <= 299:
                 upstream_non_200[upstream_status_key(record, upstream_status)] += 1
 
     return RouteLogSummary(
@@ -129,11 +139,37 @@ def summarize_records(
         targets=dict(targets),
         reasons=dict(reasons),
         error_types=dict(error_types),
+        outcomes=dict(outcomes),
+        not_ok=not_ok,
         upstream_statuses=dict(upstream_statuses),
         upstream_non_200=dict(upstream_non_200),
         max_duration_ms=max_duration_ms,
         parse_diagnostics=parse_diagnostics or ParseDiagnostics(),
     )
+
+
+def ok_from_record(record: dict[str, Any]) -> bool:
+    ok = record.get("ok")
+    if isinstance(ok, bool):
+        return ok
+    if record.get("event") == "route_error":
+        return False
+    upstream_status = record.get("upstream_status")
+    if isinstance(upstream_status, int):
+        return 200 <= upstream_status <= 299
+    return True
+
+
+def outcome_from_record(record: dict[str, Any]) -> str:
+    outcome = record.get("outcome")
+    if isinstance(outcome, str):
+        return outcome
+    upstream_status = record.get("upstream_status")
+    if isinstance(upstream_status, int) and not 200 <= upstream_status <= 299:
+        return "upstream_non_200"
+    if record.get("event") == "route_error":
+        return "route_error"
+    return "success"
 
 
 def upstream_status_key(record: dict[str, Any], upstream_status: int) -> str:
@@ -161,6 +197,8 @@ def format_summary(summary: RouteLogSummary) -> str:
         f"targets: {format_counts(summary.targets)}",
         f"reasons: {format_counts(summary.reasons)}",
         f"error_types: {format_counts(summary.error_types)}",
+        f"outcomes: {format_counts(summary.outcomes)}",
+        f"not_ok={summary.not_ok}",
         f"upstream_statuses: {format_counts(summary.upstream_statuses)}",
         f"upstream_non_200: {format_counts(summary.upstream_non_200)}",
         f"max_duration_ms={summary.max_duration_ms:.2f}",
@@ -194,6 +232,8 @@ def format_summary_json(summary: RouteLogSummary) -> str:
         "targets": summary.targets,
         "reasons": summary.reasons,
         "error_types": summary.error_types,
+        "outcomes": summary.outcomes,
+        "not_ok": summary.not_ok,
         "upstream_statuses": summary.upstream_statuses,
         "upstream_non_200": summary.upstream_non_200,
         "max_duration_ms": summary.max_duration_ms,
@@ -214,6 +254,7 @@ def format_counts(counts: dict[str, int]) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Summarize semantic-router route logs.")
+    parser.add_argument("paths", nargs="*", help="JSONL log files. Reads stdin when omitted.")
     parser.add_argument(
         "--output",
         choices=("text", "json"),
@@ -228,10 +269,18 @@ def main() -> None:
     args = parser.parse_args()
 
     diagnostics = ParseDiagnostics()
-    records = list(parse_route_records(sys.stdin, diagnostics=diagnostics))
+    records = list(parse_route_records(iter_lines(args.paths), diagnostics=diagnostics))
     summary = summarize_records(records, parse_diagnostics=diagnostics)
     output_json = args.json or args.output == "json"
     print(format_summary_json(summary) if output_json else format_summary(summary))
+
+
+def iter_lines(paths: list[str]) -> Iterable[str]:
+    if not paths:
+        yield from sys.stdin
+        return
+    for raw_path in paths:
+        yield from Path(raw_path).read_text(encoding="utf-8").splitlines()
 
 
 if __name__ == "__main__":
