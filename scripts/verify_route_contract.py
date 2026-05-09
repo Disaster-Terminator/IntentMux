@@ -11,6 +11,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from router.config import load_settings
+from router.config import resolve_route_bank_path
 
 
 def verify_route_contract(routes_path: Path, cases_path: Path) -> list[str]:
@@ -36,6 +37,8 @@ def verify_route_contract(routes_path: Path, cases_path: Path) -> list[str]:
         route_id = hard_rule.get("route_id")
         if route_id not in route_ids:
             errors.append(f"hard_rules route_id '{route_id}' must be present in routes")
+
+    errors.extend(verify_route_bank_contract(raw, routes_path.parent, route_ids))
 
     try:
         settings = load_settings(routes_path)
@@ -65,6 +68,37 @@ def verify_route_contract(routes_path: Path, cases_path: Path) -> list[str]:
                 f"eval case #{idx} expect '{expect}' is not a configured route_id"
             )
 
+    return errors
+
+
+def verify_route_bank_contract(
+    raw: dict,
+    base_dir: Path,
+    route_ids: set[str],
+) -> list[str]:
+    route_bank_path = raw.get("route_bank_path")
+    if not route_bank_path:
+        return []
+
+    bank_path = resolve_route_bank_path(route_bank_path, base_dir)
+    if not bank_path.exists():
+        return []
+
+    bank_raw = yaml.safe_load(bank_path.read_text(encoding="utf-8")) or {}
+    bank_routes = bank_raw.get("routes", {}) or {}
+    bank_route_ids = set(bank_routes)
+    unknown_bank_routes = sorted(bank_route_ids - route_ids)
+    matched_bank_routes = sorted(bank_route_ids & route_ids)
+    errors: list[str] = []
+
+    if bank_route_ids and not matched_bank_routes:
+        errors.append(
+            f"route_bank_path '{route_bank_path}' has no route_id keys matching routes"
+        )
+    for route_id in unknown_bank_routes:
+        errors.append(
+            f"route_bank_path '{route_bank_path}' contains unknown route_id '{route_id}'"
+        )
     return errors
 
 

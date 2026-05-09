@@ -113,3 +113,97 @@ cases:
     errors = verify_route_contract(routes_path, cases_path)
 
     assert any("looks like a target_model" in error for error in errors)
+
+
+def test_verify_route_contract_rejects_route_bank_target_model_keys(tmp_path: Path):
+    bank_dir = tmp_path / "semantic_sets"
+    bank_dir.mkdir()
+    (bank_dir / "route_bank.yaml").write_text(
+        """
+version: 1
+routes:
+  cheap-router:
+    utterances:
+      - text: hello
+  pro-router:
+    utterances:
+      - text: debug
+""",
+        encoding="utf-8",
+    )
+    routes_path = write_routes(
+        tmp_path,
+        """
+route_model: semantic-router
+fallback_route_id: fast
+route_bank_path: semantic_sets/route_bank.yaml
+routes:
+  fast:
+    target_model: cheap-router
+    description: low risk
+    utterances: [hello]
+  strong:
+    target_model: pro-router
+    description: high risk
+    utterances: [debug]
+""",
+    )
+    cases_path = write_cases(
+        tmp_path,
+        """
+cases:
+  - text: hello
+    expect: fast
+""",
+    )
+
+    errors = verify_route_contract(routes_path, cases_path)
+
+    assert any("has no route_id keys matching routes" in error for error in errors)
+    assert any("unknown route_id 'cheap-router'" in error for error in errors)
+    assert any("unknown route_id 'pro-router'" in error for error in errors)
+
+
+def test_verify_route_contract_allows_route_bank_route_id_keys(tmp_path: Path):
+    bank_dir = tmp_path / "semantic_sets"
+    bank_dir.mkdir()
+    (bank_dir / "route_bank.yaml").write_text(
+        """
+version: 1
+routes:
+  fast:
+    utterances:
+      - text: hello
+  strong:
+    utterances:
+      - text: debug
+""",
+        encoding="utf-8",
+    )
+    routes_path = write_routes(
+        tmp_path,
+        """
+route_model: semantic-router
+fallback_route_id: fast
+route_bank_path: semantic_sets/route_bank.yaml
+routes:
+  fast:
+    target_model: cheap-router
+    description: low risk
+    utterances: [hello]
+  strong:
+    target_model: pro-router
+    description: high risk
+    utterances: [debug]
+""",
+    )
+    cases_path = write_cases(
+        tmp_path,
+        """
+cases:
+  - text: hello
+    expect: fast
+""",
+    )
+
+    assert verify_route_contract(routes_path, cases_path) == []
