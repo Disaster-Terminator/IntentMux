@@ -123,6 +123,19 @@ services:
 
 仓库里的 `examples/intentmux-home/` 是可复制的运行时目录模板。`/data` 不应放 LiteLLM 的 `.env`、provider token、数据库或原始 prompt。
 
+运行时目录是用户部署资产，不是本仓库的源码内容。本仓库默认通过 `.gitignore` 排除
+`*-runtime/` 和 `data/semantic_sets/*.yaml`，避免把本机语义资产、审计日志或生产配置误提交。
+生产部署应把运行时目录单独备份和迁移；本机当前采用：
+
+```text
+/path/to/intentmux-runtime:/data
+```
+
+其中 `config/routes.yaml` 定义产品级 `route_id` 到 LiteLLM `target_model` 的映射，
+`semantic_sets/route_bank.yaml` 必须使用同一组 `route_id` 作为 key，例如
+`fast`、`strong`、`experimental`，不能使用 `cheap-router`、`pro-router`
+这类部署侧 target model 名称作为 key。
+
 ## LiteLLM 接入方式
 
 低侵入接入方式是：客户端继续请求 LiteLLM `:4000`，只把模型名切到 `semantic-router`。
