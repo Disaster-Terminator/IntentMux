@@ -84,7 +84,16 @@ uv run python -m router.app
 - `ROUTER_AUDIT_LOG_DIR`
 - `ROUTER_READINESS_TIMEOUT`
 
-容器部署时推荐把 IntentMux 当成 LiteLLM 的并列 sidecar，并给它一个独立的运行时目录：
+IntentMux 支持本地进程和容器两种运行方式。容器不是唯一部署形态；挂载目录也不是开发
+必需项，而是生产持久化配置、语义资产和 audit JSONL 的推荐方式。
+
+不挂载也可以启动容器：镜像默认读取内置的 `/app/config/routes.yaml`，适合快速试用。
+但这时用户配置不在宿主机上，audit JSONL 若写入容器可写层，只能保证同一个容器重启后
+仍在；删除容器、重建容器、升级镜像或被运行时清理后会丢失。Docker stdout/stderr 日志
+由 Docker logging driver 管理，普通 `docker restart` 不会清空，但会受日志轮转、容器删除
+和宿主机日志策略影响。
+
+生产部署时推荐把 IntentMux 当成 LiteLLM 的并列 sidecar，并给它一个独立的运行时目录：
 
 ```text
 litellm/
@@ -125,11 +134,7 @@ services:
 
 运行时目录是用户部署资产，不是本仓库的源码内容。本仓库默认通过 `.gitignore` 排除
 `*-runtime/` 和 `data/semantic_sets/*.yaml`，避免把本机语义资产、审计日志或生产配置误提交。
-生产部署应把运行时目录单独备份和迁移；本机当前采用：
-
-```text
-/path/to/intentmux-runtime:/data
-```
+生产部署应把运行时目录单独备份和迁移。
 
 其中 `config/routes.yaml` 定义产品级 `route_id` 到 LiteLLM `target_model` 的映射，
 `semantic_sets/route_bank.yaml` 必须使用同一组 `route_id` 作为 key，例如
