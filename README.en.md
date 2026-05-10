@@ -102,6 +102,21 @@ services:
       ROUTER_LITELLM_BASE_URL: http://litellm:4000
 ```
 
+Update rules:
+
+- Changes to `/data/config/routes.yaml`, `/data/semantic_sets/route_bank.yaml`, or environment variables require restarting the IntentMux sidecar so startup-loaded config and route vectors refresh.
+- Changes to Python code, `Dockerfile`, built-in `config/`, or `examples/` require rebuilding the image and recreating the IntentMux sidecar.
+- README, test, and offline-script changes do not affect the running container, but should still be verified with the matching test or check command.
+
+Common compose update flow:
+
+```bash
+docker compose build intentmux
+docker compose up -d intentmux
+```
+
+If your compose service is named `gateway-semantic-router`, replace `intentmux` with that service name. IntentMux does not hot-reload yet; production updates follow the rule: restart for config, rebuild for code.
+
 `examples/intentmux-home/` is a copyable runtime template. Keep LiteLLM `.env`, provider tokens, databases, and raw prompts outside the IntentMux home.
 
 ## LiteLLM Entry

@@ -140,6 +140,21 @@ services:
       ROUTER_EMBEDDING_URL: http://host.docker.internal:1234/v1/embeddings
 ```
 
+更新同步规则：
+
+- 只改 `/data/config/routes.yaml`、`/data/semantic_sets/route_bank.yaml` 或环境变量：重启 IntentMux sidecar，让启动时加载的配置和向量索引刷新。
+- 改 Python 代码、`Dockerfile`、内置 `config/` 或 `examples/`：重新构建镜像，再重建 IntentMux sidecar。
+- 只改 README、测试或离线脚本：不影响正在运行的容器，但仍应跑对应测试或校验脚本。
+
+compose 部署的常用更新命令：
+
+```bash
+docker compose build intentmux
+docker compose up -d intentmux
+```
+
+如果本机 compose 服务名使用 `gateway-semantic-router`，把上面命令里的 `intentmux` 替换为该服务名。IntentMux 暂未实现热重载，生产变更按“配置重启、代码重建”的规则处理。
+
 仓库里的 `examples/intentmux-home/` 是可复制的运行时目录模板。`/data` 不应放 LiteLLM 的 `.env`、provider token、数据库或原始 prompt。
 
 运行时目录是用户部署资产，不是本仓库的源码内容。本仓库默认通过 `.gitignore` 排除
