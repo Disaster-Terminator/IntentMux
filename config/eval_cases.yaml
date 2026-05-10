@@ -13,10 +13,3 @@ cases:
     expect: strong
   - text: 这个方案靠谱吗
     expect: strong
-  - text: 批量测试这些免费模型哪个还活着
-    expect: experimental
-  - text: 探活这些端点
-    expect: experimental
-  - text: 跑一组非关键样例比较免费模型输出
-    expect: experimental
-

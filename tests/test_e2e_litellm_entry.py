@@ -317,13 +317,11 @@ def test_run_e2e_emits_progress_before_each_probe(monkeypatch):
         "pro_nonstream_stub",
         "pro_stream_stub",
         "cheap_nonstream_stub",
-        "free_probe_nonstream_stub",
     ]
     assert [line.split("\t")[:2] for line in progress] == [
         ["RUN", "pro_nonstream"],
         ["RUN", "pro_stream"],
         ["RUN", "cheap_nonstream"],
-        ["RUN", "free_probe_nonstream"],
     ]
 
 

@@ -34,13 +34,8 @@ def settings() -> RouterSettings:
                 description="high risk",
                 utterances=["分析这个线上 bug", "代码审查"],
             ),
-            "experimental": RouteSpec(
-                target_model="free-probe-router",
-                description="probe",
-                utterances=["测试免费模型", "批量探活"],
-            ),
         },
-        hard_rules=[{"route_id": "strong", "keywords": ["报错", "竞态", "线上", "PR"]}],
+        hard_rules=[{"route_id": "strong", "keywords": ["线上事故", "死锁", "密钥"]}],
     )
 
 
@@ -63,33 +58,31 @@ async def test_non_smart_router_passes_through_without_embedding():
 
 
 @pytest.mark.asyncio
-async def test_hard_rule_routes_smart_router_to_pro_without_embedding():
+async def test_high_precision_hard_rule_routes_to_strong_without_embedding():
     router = Router(settings(), FakeEmbeddingClient({}))
 
     decision = await router.decide(
         {
             "model": "smart-router",
-            "messages": [{"role": "user", "content": "这个 NPE 为什么只在线上偶发"}],
+            "messages": [{"role": "user", "content": "生产环境发生线上事故，需要回滚"}],
         }
     )
 
     assert decision.route_id == "strong"
     assert decision.target_model == "pro-router"
     assert decision.policy_id == "hard_rule"
-    assert decision.reason == "hard_rule:线上"
+    assert decision.reason == "hard_rule:线上事故"
     assert decision.rewrite is True
 
 
 @pytest.mark.asyncio
-async def test_embedding_similarity_routes_probe_request():
+async def test_ambiguous_engineering_terms_use_embedding_not_hard_rule():
     vectors = {
         "翻译成中文": [1.0, 0.0, 0.0],
         "总结这篇文章": [1.0, 0.0, 0.0],
         "分析这个线上 bug": [0.0, 1.0, 0.0],
         "代码审查": [0.0, 1.0, 0.0],
-        "测试免费模型": [0.0, 0.0, 1.0],
-        "批量探活": [0.0, 0.0, 1.0],
-        "批量测试这些免费模型哪个还活着": [0.0, 0.0, 1.0],
+        "帮我看这个 PR 里的索引改动是否合理": [0.0, 1.0, 0.0],
     }
     router = Router(settings(), FakeEmbeddingClient(vectors))
 
@@ -98,16 +91,40 @@ async def test_embedding_similarity_routes_probe_request():
             "model": "smart-router",
             "messages": [
                 {"role": "system", "content": "route normally"},
-                {"role": "user", "content": "批量测试这些免费模型哪个还活着"},
+                {"role": "user", "content": "帮我看这个 PR 里的索引改动是否合理"},
             ],
         }
     )
 
-    assert decision.route_id == "experimental"
-    assert decision.target_model == "free-probe-router"
+    assert decision.route_id == "strong"
+    assert decision.target_model == "pro-router"
     assert decision.policy_id == "embedding"
     assert decision.reason == "embedding"
     assert decision.score == 1.0
+
+
+@pytest.mark.asyncio
+async def test_ambiguous_engineering_terms_can_route_fast_when_semantics_are_light():
+    vectors = {
+        "翻译成中文": [1.0, 0.0, 0.0],
+        "总结这篇文章": [1.0, 0.0, 0.0],
+        "分析这个线上 bug": [0.0, 1.0, 0.0],
+        "代码审查": [0.0, 1.0, 0.0],
+        "把这个 PR 标题翻译成英文": [1.0, 0.0, 0.0],
+    }
+    router = Router(settings(), FakeEmbeddingClient(vectors))
+
+    decision = await router.decide(
+        {
+            "model": "smart-router",
+            "messages": [{"role": "user", "content": "把这个 PR 标题翻译成英文"}],
+        }
+    )
+
+    assert decision.route_id == "fast"
+    assert decision.target_model == "cheap-router"
+    assert decision.policy_id == "embedding"
+    assert decision.reason == "embedding"
 
 
 @pytest.mark.asyncio
@@ -117,8 +134,6 @@ async def test_low_confidence_embedding_falls_back_to_default_route():
         "总结这篇文章": [1.0, 0.0, 0.0],
         "分析这个线上 bug": [0.0, 1.0, 0.0],
         "代码审查": [0.0, 1.0, 0.0],
-        "测试免费模型": [0.0, 0.0, 1.0],
-        "批量探活": [0.0, 0.0, 1.0],
         "天气怎么样": [0.2, 0.2, 0.2],
     }
     router = Router(settings(), FakeEmbeddingClient(vectors))
@@ -205,8 +220,6 @@ async def test_decide_with_empty_extracted_text_returns_low_confidence_not_crash
         "总结这篇文章": [1.0, 0.0, 0.0],
         "分析这个线上 bug": [0.0, 1.0, 0.0],
         "代码审查": [0.0, 1.0, 0.0],
-        "测试免费模型": [0.0, 0.0, 1.0],
-        "批量探活": [0.0, 0.0, 1.0],
         "": [0.0, 0.0, 0.0],
     }
     router = Router(settings(), FakeEmbeddingClient(vectors))
@@ -244,8 +257,6 @@ async def test_empty_utterance_route_is_skipped_for_embedding_and_hard_rule_can_
         "总结这篇文章": [1.0, 0.0, 0.0],
         "分析这个线上 bug": [0.0, 1.0, 0.0],
         "代码审查": [0.0, 1.0, 0.0],
-        "测试免费模型": [0.0, 0.0, 1.0],
-        "批量探活": [0.0, 0.0, 1.0],
         "这是紧急事件": [0.1, 0.1, 0.1],
     }
     router = Router(route_settings, FakeEmbeddingClient(vectors))
@@ -314,7 +325,7 @@ async def test_explicit_route_id_precedence_over_legacy_metadata_keys():
             "metadata": {
                 "route_id": "strong",
                 "route": "fast",
-                "target_route": "experimental",
+                "target_route": "legacy",
             },
             "messages": [{"role": "user", "content": "anything"}],
         }
@@ -332,9 +343,7 @@ async def test_unknown_explicit_route_id_is_ignored_and_normal_routing_continues
         "总结这篇文章": [1.0, 0.0, 0.0],
         "分析这个线上 bug": [0.0, 1.0, 0.0],
         "代码审查": [0.0, 1.0, 0.0],
-        "测试免费模型": [0.0, 0.0, 1.0],
-        "批量探活": [0.0, 0.0, 1.0],
-        "批量测试这些免费模型哪个还活着": [0.0, 0.0, 1.0],
+        "代码审查这个变更": [0.0, 1.0, 0.0],
     }
     router = Router(settings(), FakeEmbeddingClient(vectors))
 
@@ -342,10 +351,10 @@ async def test_unknown_explicit_route_id_is_ignored_and_normal_routing_continues
         {
             "model": "smart-router",
             "metadata": {"route_id": "does-not-exist"},
-            "messages": [{"role": "user", "content": "批量测试这些免费模型哪个还活着"}],
+            "messages": [{"role": "user", "content": "代码审查这个变更"}],
         }
     )
 
-    assert decision.route_id == "experimental"
-    assert decision.target_model == "free-probe-router"
+    assert decision.route_id == "strong"
+    assert decision.target_model == "pro-router"
     assert decision.policy_id == "embedding"

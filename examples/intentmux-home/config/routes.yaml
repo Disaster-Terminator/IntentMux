@@ -13,16 +13,21 @@ listen_port: 4001
 hard_rules:
   - route_id: strong
     keywords:
-      - debug
-      - 报错
-      - 异常
-      - traceback
-      - PR
-      - review
-      - 架构
-      - 线上
+      - 死锁
+      - 内存泄漏
+      - 线上事故
+      - 生产事故
       - 回滚
+      - 数据丢失
+      - 数据损坏
       - 安全
+      - 漏洞
+      - 泄露
+      - token
+      - 密钥
+      - 认证
+      - 鉴权
+      - 权限
 
 routes:
   fast:
@@ -42,12 +47,3 @@ routes:
       - 这个线上 bug 为什么偶发
       - 分析这段代码的竞态条件
       - 设计一个高并发后端架构
-
-  experimental:
-    target_model: free-probe-router
-    description: 免费端点探活、批量试探、低价值质量比较
-    utterances:
-      - 批量测试这些免费模型是否可用
-      - 探活这些端点
-      - 测试模型
-      - benchmark

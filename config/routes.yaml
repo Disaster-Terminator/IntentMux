@@ -13,35 +13,13 @@ listen_port: 4001
 hard_rules:
   - route_id: strong
     keywords:
-      - debug
-      - 报错
-      - 异常
-      - 栈
-      - stacktrace
-      - traceback
-      - PR
-      - diff
-      - patch
-      - review
-      - 代码审查
-      - 竞态
       - 死锁
-      - 并发
-      - 锁
-      - 线程
       - 内存泄漏
-      - 性能瓶颈
-      - 数据库性能
-      - SQL 优化
-      - 索引
-      - 事务
-      - 一致性
-      - 架构
-      - 高并发
-      - 分布式
-      - 部署
-      - 线上
+      - 线上事故
+      - 生产事故
       - 回滚
+      - 数据丢失
+      - 数据损坏
       - 安全
       - 漏洞
       - 泄露
@@ -79,14 +57,3 @@ routes:
       - 评估这个技术选型的风险
       - 帮我看这段代码为什么卡死
       - 这个方案靠谱吗
-
-  experimental:
-    target_model: free-probe-router
-    description: 免费端点探活、批量试探、低价值质量比较
-    utterances:
-      - 批量测试这些免费模型是否可用
-      - 探活这些端点
-      - 跑一组非关键样例看看哪个模型能返回
-      - 比较免费模型输出风格
-      - 测试模型
-      - benchmark

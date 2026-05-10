@@ -24,7 +24,7 @@ IntentMux 是一个本地优先的 OpenAI-compatible / LiteLLM-compatible 路由
 
 <table>
   <tr>
-    <td><strong>意图分流</strong><br>从请求内容判断 `fast` / `strong` / `experimental` 等 route id。</td>
+    <td><strong>意图分流</strong><br>默认在 `fast` / `strong` 两档之间按意图和阈值分流。</td>
     <td><strong>低侵入接入</strong><br>保留 LiteLLM 作为 provider、fallback、限流和鉴权层。</td>
   </tr>
   <tr>
@@ -43,7 +43,7 @@ model=semantic-router -> route_id -> target_model -> LiteLLM model group
 
 其他模型名默认透传给 LiteLLM。
 
-默认示例配置使用 `fast`、`strong`、`experimental` 三个产品级 route id，并映射到 LiteLLM 模型组 `cheap-router`、`pro-router`、`free-probe-router`。这些 `target_model` 是部署名，不是产品接口。
+默认示例配置使用 `fast`、`strong` 两个产品级 route id，并映射到 LiteLLM 模型组 `cheap-router`、`pro-router`。这些 `target_model` 是部署名，不是产品接口。代码仍支持用户自定义更多 route，但默认产品心智是高/低两档。
 
 部署时建议把 IntentMux 作为 LiteLLM 旁路 sidecar 独立管理；不要把 LiteLLM 挂载目录、token、`.env` 或 provider 凭据加入本仓库。
 
@@ -55,6 +55,16 @@ model=semantic-router -> route_id -> target_model -> LiteLLM model group
 - 你不想引入一个大型调度平台，也不想让客户端大改端点。
 
 IntentMux 的差异化不是“再造一个复杂 router”，而是轻量、本地、快速部署、日志可读。成熟的 provider 路由、fallback、限流和鉴权仍交给 LiteLLM。
+
+默认路由方法借鉴 strong/weak 两档 LLM router 和 Semantic Router 的成熟做法：
+
+```text
+explicit override -> high-precision hard escalation -> semantic score + threshold -> fallback fast
+```
+
+`hard_rules` 只用于安全、密钥泄露、线上事故、数据损坏等高风险强制升级场景。
+`PR`、`debug`、`部署`、`索引`、`异常`、`报错` 等容易被 agent 累积上下文污染的普通工程词，
+默认交给语义样本、相似度分数和阈值判断，避免后续轻量请求长期粘在 `strong`。
 
 ## 快速运行
 
@@ -138,7 +148,7 @@ services:
 
 其中 `config/routes.yaml` 定义产品级 `route_id` 到 LiteLLM `target_model` 的映射，
 `semantic_sets/route_bank.yaml` 必须使用同一组 `route_id` 作为 key，例如
-`fast`、`strong`、`experimental`，不能使用 `cheap-router`、`pro-router`
+`fast`、`strong`，不能使用 `cheap-router`、`pro-router`
 这类部署侧 target model 名称作为 key。
 
 ## LiteLLM 接入方式

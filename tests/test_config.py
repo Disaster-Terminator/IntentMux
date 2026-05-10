@@ -164,12 +164,19 @@ routes:
     ]
 
 
-def test_default_hard_rules_do_not_include_ambiguous_production_word():
+def test_default_hard_rules_keep_only_high_precision_strong_escalations():
     settings = load_settings("config/routes.yaml")
 
     keywords = [keyword for hard_rule in settings.hard_rules for keyword in hard_rule.keywords]
     assert "生产" not in keywords
-    assert "线上" in keywords
+    assert "线上" not in keywords
+    assert "PR" not in keywords
+    assert "部署" not in keywords
+    assert "索引" not in keywords
+    assert "异常" not in keywords
+    assert "报错" not in keywords
+    assert "线上事故" in keywords
+    assert "密钥" in keywords
     assert settings.hard_rules[0].route_id == "strong"
 
 

@@ -62,10 +62,3 @@ sources:
     route: strong
     text_field: prompt
     limit: 40
-
-  - name: local_model_probe
-    kind: local_jsonl
-    path: data/source_samples/local_model_probe.jsonl
-    route: experimental
-    text_field: text
-    limit: 80

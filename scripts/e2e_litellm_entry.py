@@ -48,12 +48,6 @@ DEFAULT_PROBES = [
         expected_route="fast",
         expected_target_model="cheap-router",
     ),
-    Probe(
-        name="free_probe_nonstream",
-        prompt="探活这些端点，只回答 OK",
-        expected_route="experimental",
-        expected_target_model="free-probe-router",
-    ),
 ]
 
 

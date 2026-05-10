@@ -24,7 +24,7 @@ IntentMux is a local-first OpenAI-compatible / LiteLLM-compatible routing sideca
 
 <table>
   <tr>
-    <td><strong>Intent routing</strong><br>Select product-level routes such as `fast`, `strong`, and `experimental` from request content.</td>
+    <td><strong>Intent routing</strong><br>Route between the default `fast` and `strong` tiers with semantic scores and thresholds.</td>
     <td><strong>Low-intrusion integration</strong><br>Keep LiteLLM responsible for providers, fallback, rate limits, and authentication.</td>
   </tr>
   <tr>
@@ -43,9 +43,22 @@ model=semantic-router -> route_id -> target_model -> LiteLLM model group
 
 All other model names pass through.
 
-The default sample config uses product-level route ids such as `fast`, `strong`, and `experimental`, mapped to LiteLLM model groups such as `cheap-router`, `pro-router`, and `free-probe-router`. These `target_model` values are deployment names, not product API names.
+The default sample config uses two product-level route ids, `fast` and `strong`, mapped to LiteLLM model groups such as `cheap-router` and `pro-router`. These `target_model` values are deployment names, not product API names. Custom routes remain supported, but the default product model is a weak/strong two-tier router.
 
 Deploy IntentMux as a sidecar next to LiteLLM and keep provider secrets, tokens, `.env` files, and mounted LiteLLM data outside this repository.
+
+The default router borrows the common strong/weak LLM-router shape and Semantic
+Router thresholding:
+
+```text
+explicit override -> high-precision hard escalation -> semantic score + threshold -> fallback fast
+```
+
+`hard_rules` are reserved for high-risk escalation signals such as security,
+secret leakage, production incidents, rollbacks, or data corruption. Ambiguous
+engineering words such as `PR`, `debug`, deployment, indexing, exceptions, and
+errors are handled by semantic examples and thresholds by default, so agent
+context accumulation does not permanently pin a conversation to `strong`.
 
 ## Quick Start
 

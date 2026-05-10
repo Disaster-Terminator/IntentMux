@@ -84,7 +84,6 @@ def test_route_sources_manifest_loads_mature_sources():
     assert "swebench_issue_resolution" in names
     assert "mbpp_codegen" in names
     assert "humaneval_codegen" in names
-    assert "local_model_probe" in names
 
 
 def test_load_rows_reads_remote_tar_jsonl_from_cache(tmp_path):
