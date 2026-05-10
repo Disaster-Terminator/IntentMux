@@ -153,7 +153,7 @@ docker compose build intentmux
 docker compose up -d intentmux
 ```
 
-如果本机 compose 服务名使用 `gateway-semantic-router`，把上面命令里的 `intentmux` 替换为该服务名。IntentMux 暂未实现热重载，生产变更按“配置重启、代码重建”的规则处理。
+IntentMux 暂未实现热重载，生产变更按“配置重启、代码重建”的规则处理。
 
 仓库里的 `examples/intentmux-home/` 是可复制的运行时目录模板。`/data` 不应放 LiteLLM 的 `.env`、provider token、数据库或原始 prompt。
 
@@ -262,7 +262,7 @@ IntentMux 只统计结构化 JSON 路由日志：
 12 小时窗口 summary：
 
 ```bash
-docker logs --since 12h gateway_semantic_router 2>&1 \
+docker logs --since 12h intentmux 2>&1 \
   | uv run python scripts/router_log_summary.py
 ```
 
@@ -275,7 +275,7 @@ uv run python scripts/router_log_summary.py /data/logs/routes/*.jsonl
 route-error budget gate：
 
 ```bash
-docker logs --since 12h gateway_semantic_router 2>&1 \
+docker logs --since 12h intentmux 2>&1 \
   | uv run python scripts/check_route_error_budget.py \
       --min-total 1 \
       --max-error-rate 0 \

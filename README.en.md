@@ -115,7 +115,7 @@ docker compose build intentmux
 docker compose up -d intentmux
 ```
 
-If your compose service is named `gateway-semantic-router`, replace `intentmux` with that service name. IntentMux does not hot-reload yet; production updates follow the rule: restart for config, rebuild for code.
+IntentMux does not hot-reload yet; production updates follow the rule: restart for config, rebuild for code.
 
 `examples/intentmux-home/` is a copyable runtime template. Keep LiteLLM `.env`, provider tokens, databases, and raw prompts outside the IntentMux home.
 
@@ -156,12 +156,12 @@ uv run python scripts/e2e_litellm_entry.py --litellm-base-url http://127.0.0.1:4
 ## Log Review
 
 ```bash
-docker logs --since 12h gateway_semantic_router 2>&1 \
+docker logs --since 12h intentmux 2>&1 \
   | uv run python scripts/router_log_summary.py
 
 uv run python scripts/router_log_summary.py /data/logs/routes/*.jsonl
 
-docker logs --since 12h gateway_semantic_router 2>&1 \
+docker logs --since 12h intentmux 2>&1 \
   | uv run python scripts/check_route_error_budget.py \
       --min-total 1 \
       --max-error-rate 0 \
