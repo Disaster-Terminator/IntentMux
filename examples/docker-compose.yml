@@ -1,0 +1,29 @@
+services:
+  intentmux:
+    build:
+      context: ..
+    image: intentmux:local
+    container_name: intentmux
+    restart: unless-stopped
+    ports:
+      - "${INTENTMUX_PORT:-4001}:4001"
+    volumes:
+      - "${INTENTMUX_HOME:-../.intentmux-home}:/data"
+    environment:
+      ROUTER_HOST: "0.0.0.0"
+      ROUTER_PORT: "4001"
+      ROUTER_CONFIG: "/data/config/routes.yaml"
+      ROUTER_AUDIT_LOG_ENABLED: "${ROUTER_AUDIT_LOG_ENABLED:-true}"
+      ROUTER_AUDIT_LOG_DIR: "/data/logs/routes"
+      ROUTER_LITELLM_BASE_URL: "${ROUTER_LITELLM_BASE_URL:-http://host.docker.internal:4000}"
+      ROUTER_LITELLM_TIMEOUT: "${ROUTER_LITELLM_TIMEOUT:-120}"
+      ROUTER_EMBEDDING_URL: "${ROUTER_EMBEDDING_URL:-http://host.docker.internal:1234/v1/embeddings}"
+      ROUTER_EMBEDDING_MODEL: "${ROUTER_EMBEDDING_MODEL:-text-embedding-jina-embeddings-v5-text-small-retrieval@q8_0}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4001/health', timeout=3).read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

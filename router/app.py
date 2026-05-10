@@ -24,7 +24,7 @@ from router.readiness import ReadinessChecker
 from router.routing import Router
 
 
-logger = logging.getLogger("gateway_semantic_router")
+logger = logging.getLogger("intentmux")
 
 
 class UpstreamStatusError(Exception):
@@ -52,7 +52,7 @@ def create_app(
         readiness_checker = ReadinessChecker(settings)
     audit_logger = AuditLogger(settings.audit_log_dir, enabled=settings.audit_log_enabled)
 
-    app = FastAPI(title="Gateway Semantic Router")
+    app = FastAPI(title="IntentMux")
 
     @app.get("/health")
     async def health() -> dict[str, str]:

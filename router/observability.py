@@ -12,7 +12,7 @@ from typing import Any
 from router.routing import RoutingDecision
 
 
-LOGGER_NAME = "gateway_semantic_router"
+LOGGER_NAME = "intentmux"
 
 
 @dataclass(frozen=True)

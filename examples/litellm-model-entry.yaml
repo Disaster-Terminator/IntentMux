@@ -1,0 +1,8 @@
+# Add this model entry to your LiteLLM config, then point api_base at the
+# IntentMux sidecar URL visible from the LiteLLM process or container.
+model_list:
+  - model_name: semantic-router
+    litellm_params:
+      model: openai/semantic-router
+      api_base: http://intentmux:4001/v1
+      api_key: sk-local-placeholder

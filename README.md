@@ -103,7 +103,7 @@ IntentMux 支持本地进程和容器两种运行方式。容器不是唯一部�
 由 Docker logging driver 管理，普通 `docker restart` 不会清空，但会受日志轮转、容器删除
 和宿主机日志策略影响。
 
-生产部署时推荐把 IntentMux 当成 LiteLLM 的并列 sidecar，并给它一个独立的运行时目录：
+生产部署时推荐把 IntentMux 当成 LiteLLM 的并列 sidecar，并给它一个独立的运行时目录。下面是通用目录形态，不要求使用这些宿主机路径：
 
 ```text
 litellm/
@@ -125,20 +125,25 @@ litellm/
 
 compose 示例：
 
-```yaml
-services:
-  intentmux:
-    image: ghcr.io/<owner>/intentmux:<version>
-    restart: unless-stopped
-    volumes:
-      - ./intentmux:/data
-    environment:
-      ROUTER_CONFIG: /data/config/routes.yaml
-      ROUTER_AUDIT_LOG_ENABLED: "true"
-      ROUTER_AUDIT_LOG_DIR: /data/logs/routes
-      ROUTER_LITELLM_BASE_URL: http://litellm:4000
-      ROUTER_EMBEDDING_URL: http://host.docker.internal:1234/v1/embeddings
+仓库提供通用 compose 示例：[examples/docker-compose.yml](examples/docker-compose.yml)。
+
+```bash
+mkdir -p .intentmux-home
+cp -R examples/intentmux-home/. .intentmux-home/
+docker compose -f examples/docker-compose.yml up -d --build
 ```
+
+默认示例会把仓库根目录下的 `.intentmux-home/` 挂载到容器 `/data`，它已被 `.gitignore` 排除，适合本地试用。生产部署建议复制 [examples/intentmux-home](examples/intentmux-home) 到源码仓库外的持久化位置，再用 `INTENTMUX_HOME=/path/to/intentmux-home` 指向它。
+
+可覆盖变量：
+
+- `INTENTMUX_PORT`：宿主机暴露端口，默认 `4001`。
+- `INTENTMUX_HOME`：宿主机上的 IntentMux home，默认 `../.intentmux-home`（相对 `examples/docker-compose.yml`）。
+- `ROUTER_LITELLM_BASE_URL`：LiteLLM 上游地址，默认 `http://host.docker.internal:4000`。
+- `ROUTER_EMBEDDING_URL`：embedding 上游地址，默认 `http://host.docker.internal:1234/v1/embeddings`。
+- `ROUTER_EMBEDDING_MODEL`：embedding 模型名。
+
+LiteLLM 入口模型示例见 [examples/litellm-model-entry.yaml](examples/litellm-model-entry.yaml)。如果 IntentMux 和 LiteLLM 在同一个 compose network 中，`api_base` 可以使用 `http://intentmux:4001/v1`；如果 LiteLLM 在宿主机或另一个网络里，请改成它能访问到的 IntentMux 地址。
 
 更新同步规则：
 
@@ -149,8 +154,8 @@ services:
 compose 部署的常用更新命令：
 
 ```bash
-docker compose build intentmux
-docker compose up -d intentmux
+docker compose -f examples/docker-compose.yml build intentmux
+docker compose -f examples/docker-compose.yml up -d intentmux
 ```
 
 IntentMux 暂未实现热重载，生产变更按“配置重启、代码重建”的规则处理。
@@ -158,7 +163,7 @@ IntentMux 暂未实现热重载，生产变更按“配置重启、代码重建�
 仓库里的 `examples/intentmux-home/` 是可复制的运行时目录模板。`/data` 不应放 LiteLLM 的 `.env`、provider token、数据库或原始 prompt。
 
 运行时目录是用户部署资产，不是本仓库的源码内容。本仓库默认通过 `.gitignore` 排除
-`*-runtime/` 和 `data/semantic_sets/*.yaml`，避免把本机语义资产、审计日志或生产配置误提交。
+`*-runtime/` 和 `data/semantic_sets/*.yaml`，避免把用户语义资产、审计日志或生产配置误提交。
 生产部署应把运行时目录单独备份和迁移。
 
 其中 `config/routes.yaml` 定义产品级 `route_id` 到 LiteLLM `target_model` 的映射，

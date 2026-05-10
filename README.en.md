@@ -74,7 +74,7 @@ Default endpoints:
 | LiteLLM upstream | `http://127.0.0.1:4000` |
 | Embedding upstream | `http://127.0.0.1:1234/v1/embeddings` |
 
-For container deployment, run IntentMux as a LiteLLM sidecar with its own mounted home:
+For container deployment, run IntentMux as a LiteLLM sidecar with its own mounted home. This is a generic layout, not a required host path:
 
 ```text
 litellm/
@@ -87,20 +87,27 @@ litellm/
     logs/routes/YYYY-MM-DD.jsonl
 ```
 
-Inside the container, `/app` is image code and `/data` is the user-mounted IntentMux home:
+Inside the container, `/app` is image code and `/data` is the user-mounted IntentMux home.
 
-```yaml
-services:
-  intentmux:
-    image: ghcr.io/<owner>/intentmux:<version>
-    volumes:
-      - ./intentmux:/data
-    environment:
-      ROUTER_CONFIG: /data/config/routes.yaml
-      ROUTER_AUDIT_LOG_ENABLED: "true"
-      ROUTER_AUDIT_LOG_DIR: /data/logs/routes
-      ROUTER_LITELLM_BASE_URL: http://litellm:4000
+The repository ships a generic compose example: [examples/docker-compose.yml](examples/docker-compose.yml).
+
+```bash
+mkdir -p .intentmux-home
+cp -R examples/intentmux-home/. .intentmux-home/
+docker compose -f examples/docker-compose.yml up -d --build
 ```
+
+By default, the example mounts `.intentmux-home/` from the repository root to `/data`. That directory is ignored by git and is suitable for local trials. For production, copy [examples/intentmux-home](examples/intentmux-home) outside the source checkout and point `INTENTMUX_HOME=/path/to/intentmux-home` at it.
+
+Common overrides:
+
+- `INTENTMUX_PORT`: host port, default `4001`.
+- `INTENTMUX_HOME`: host-side IntentMux home, default `../.intentmux-home` relative to `examples/docker-compose.yml`.
+- `ROUTER_LITELLM_BASE_URL`: LiteLLM upstream URL, default `http://host.docker.internal:4000`.
+- `ROUTER_EMBEDDING_URL`: embedding upstream URL, default `http://host.docker.internal:1234/v1/embeddings`.
+- `ROUTER_EMBEDDING_MODEL`: embedding model name.
+
+See [examples/litellm-model-entry.yaml](examples/litellm-model-entry.yaml) for a LiteLLM entry-model snippet. If IntentMux and LiteLLM share one compose network, `api_base` can be `http://intentmux:4001/v1`; otherwise, set it to the IntentMux URL reachable from LiteLLM.
 
 Update rules:
 
@@ -111,8 +118,8 @@ Update rules:
 Common compose update flow:
 
 ```bash
-docker compose build intentmux
-docker compose up -d intentmux
+docker compose -f examples/docker-compose.yml build intentmux
+docker compose -f examples/docker-compose.yml up -d intentmux
 ```
 
 IntentMux does not hot-reload yet; production updates follow the rule: restart for config, rebuild for code.

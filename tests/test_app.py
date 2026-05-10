@@ -549,7 +549,7 @@ def test_chat_completion_emits_structured_log_without_sensitive_payload(caplog):
         proxy=proxy,
     )
 
-    with caplog.at_level(logging.INFO, logger="gateway_semantic_router"):
+    with caplog.at_level(logging.INFO, logger="intentmux"):
         response = TestClient(app).post(
             "/v1/chat/completions",
             headers={
@@ -685,7 +685,7 @@ def test_chat_completion_marks_upstream_4xx_as_unhealthy_without_gateway_rewrite
         proxy=UpstreamBadRequestProxy(),
     )
 
-    with caplog.at_level(logging.INFO, logger="gateway_semantic_router"):
+    with caplog.at_level(logging.INFO, logger="intentmux"):
         response = TestClient(app, raise_server_exceptions=False).post(
             "/v1/chat/completions",
             json={
@@ -719,7 +719,7 @@ def test_chat_completion_uses_metadata_request_id_when_header_is_not_forwarded(c
         proxy=proxy,
     )
 
-    with caplog.at_level(logging.INFO, logger="gateway_semantic_router"):
+    with caplog.at_level(logging.INFO, logger="intentmux"):
         response = TestClient(app).post(
             "/v1/chat/completions",
             json={
@@ -753,7 +753,7 @@ def test_chat_completion_uses_user_request_id_when_proxy_drops_metadata(caplog):
         proxy=proxy,
     )
 
-    with caplog.at_level(logging.INFO, logger="gateway_semantic_router"):
+    with caplog.at_level(logging.INFO, logger="intentmux"):
         response = TestClient(app).post(
             "/v1/chat/completions",
             json={
@@ -786,7 +786,7 @@ def test_chat_completion_uses_traceparent_when_request_id_headers_are_absent(cap
     )
 
     trace_id = "0123456789abcdef0123456789abcdef"
-    with caplog.at_level(logging.INFO, logger="gateway_semantic_router"):
+    with caplog.at_level(logging.INFO, logger="intentmux"):
         response = TestClient(app).post(
             "/v1/chat/completions",
             headers={"traceparent": f"00-{trace_id}-0123456789abcdef-01"},
@@ -850,7 +850,7 @@ def test_embedding_degraded_readiness_but_chat_falls_back_to_default_route(caplo
         "detail": "ConnectError",
     }
 
-    with caplog.at_level(logging.INFO, logger="gateway_semantic_router"):
+    with caplog.at_level(logging.INFO, logger="intentmux"):
         response = client.post(
             "/v1/chat/completions",
             json={
@@ -890,7 +890,7 @@ def test_chat_completion_logs_structured_route_error_without_sensitive_payload(c
         proxy=FailingProxy(),
     )
 
-    with caplog.at_level(logging.INFO, logger="gateway_semantic_router"):
+    with caplog.at_level(logging.INFO, logger="intentmux"):
         response = TestClient(app, raise_server_exceptions=False).post(
             "/v1/chat/completions",
             headers={"Authorization": "Bearer litellm-test"},
@@ -934,7 +934,7 @@ def test_chat_completion_maps_upstream_5xx_to_redacted_route_error(caplog):
         proxy=UpstreamStatusProxy(),
     )
 
-    with caplog.at_level(logging.INFO, logger="gateway_semantic_router"):
+    with caplog.at_level(logging.INFO, logger="intentmux"):
         response = TestClient(app, raise_server_exceptions=False).post(
             "/v1/chat/completions",
             headers={"Authorization": "Bearer litellm-test"},
@@ -981,7 +981,7 @@ def test_streaming_chat_completion_returns_gateway_error_when_upstream_disconnec
         proxy=FailingStreamProxy(),
     )
 
-    with caplog.at_level(logging.INFO, logger="gateway_semantic_router"):
+    with caplog.at_level(logging.INFO, logger="intentmux"):
         response = TestClient(app, raise_server_exceptions=False).post(
             "/v1/chat/completions",
             headers={"Authorization": "Bearer litellm-test"},
@@ -1024,7 +1024,7 @@ def test_streaming_chat_completion_maps_upstream_5xx_to_redacted_route_error(cap
         proxy=proxy,
     )
 
-    with caplog.at_level(logging.INFO, logger="gateway_semantic_router"):
+    with caplog.at_level(logging.INFO, logger="intentmux"):
         response = TestClient(app, raise_server_exceptions=False).post(
             "/v1/chat/completions",
             headers={"Authorization": "Bearer litellm-test"},
@@ -1074,7 +1074,7 @@ def test_streaming_chat_completion_logs_after_body_iteration(caplog):
         proxy=proxy,
     )
 
-    with caplog.at_level(logging.INFO, logger="gateway_semantic_router"):
+    with caplog.at_level(logging.INFO, logger="intentmux"):
         with TestClient(app).stream(
             "POST",
             "/v1/chat/completions",
@@ -1112,7 +1112,7 @@ async def test_streaming_chat_completion_logs_when_client_closes_early(caplog):
 
     stream_context = StreamContext()
 
-    with caplog.at_level(logging.INFO, logger="gateway_semantic_router"):
+    with caplog.at_level(logging.INFO, logger="intentmux"):
         stream = stream_with_context(
             chunks(),
             stream_context,
@@ -1152,7 +1152,7 @@ async def test_streaming_chat_completion_logs_route_error_when_body_iteration_fa
 
     stream_context = StreamContext()
 
-    with caplog.at_level(logging.INFO, logger="gateway_semantic_router"):
+    with caplog.at_level(logging.INFO, logger="intentmux"):
         stream = stream_with_context(
             chunks(),
             stream_context,

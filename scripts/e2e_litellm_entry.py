@@ -381,7 +381,7 @@ def main() -> None:
     )
     parser.add_argument("--api-key", default=os.getenv("LITELLM_MASTER_KEY"))
     parser.add_argument("--timeout", type=float, default=150.0)
-    parser.add_argument("--log-container", default="gateway_semantic_router")
+    parser.add_argument("--log-container", default="intentmux")
     parser.add_argument("--log-tail", type=int, default=300)
     parser.add_argument("--skip-log-check", action="store_true")
     parser.add_argument("--require-request-id-log-match", action="store_true")
