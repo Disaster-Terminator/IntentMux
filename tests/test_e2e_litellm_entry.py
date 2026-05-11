@@ -257,6 +257,26 @@ def test_validate_nonstream_probe_response_detects_missing_model_field():
     assert fail_by_name["p1_outer_model"].detail == "model=None"
 
 
+def test_validate_nonstream_probe_response_extracts_provider_router_request_id():
+    probe = Probe("p1", "prompt", "fast", "cheap-router", stream=False)
+    response = FakeResponse(
+        status_code=200,
+        headers={
+            "content-type": "application/json",
+            "llm_provider-x-router-request-id": "router-generated-1",
+        },
+        payload={"model": "semantic-router"},
+    )
+
+    by_name = {
+        result.name: result
+        for result in validate_nonstream_probe_response(probe=probe, response=response)
+    }
+
+    assert by_name["p1_router_request_id"].ok is True
+    assert by_name["p1_router_request_id"].detail == "request_id=router-generated-1"
+
+
 def test_validate_streaming_probe_response_detects_missing_sse_marker():
     probe = Probe("p1", "prompt", "strong", "pro-router", stream=True)
     response = FakeResponse(status_code=200)
@@ -280,6 +300,62 @@ def test_validate_streaming_probe_response_detects_missing_sse_marker():
 
     assert pass_by_name["p1_sse"].ok is True
     assert fail_by_name["p1_sse"].ok is False
+
+
+def test_run_e2e_uses_provider_router_request_id_for_strict_log_match(monkeypatch):
+    monkeypatch.setattr(
+        "scripts.e2e_litellm_entry.httpx.Client",
+        FakeClient,
+    )
+
+    def fake_run_probe(**kwargs):
+        probe = kwargs["probe"]
+        return [
+            CheckResult(f"{probe.name}_status", True, "status=200"),
+            CheckResult(
+                f"{probe.name}_router_request_id",
+                True,
+                f"request_id=router-{probe.name}",
+            ),
+        ]
+
+    monkeypatch.setattr("scripts.e2e_litellm_entry.run_probe", fake_run_probe)
+    monkeypatch.setattr(
+        "scripts.e2e_litellm_entry.docker_logs",
+        lambda container, tail: "\n".join(
+            _log_line(
+                {
+                    "event": "route_complete",
+                    "request_id": f"router-{probe.name}",
+                    "stream": probe.stream,
+                    "source_model": "semantic-router",
+                    "route_id": probe.expected_route,
+                    "target_model": probe.expected_target_model,
+                    "upstream_status": 200,
+                }
+            )
+            for probe in [
+                Probe("pro_nonstream", "prompt", "strong", "pro-router"),
+                Probe("pro_stream", "prompt", "strong", "pro-router", stream=True),
+                Probe("cheap_nonstream", "prompt", "fast", "cheap-router"),
+            ]
+        ),
+    )
+
+    results = run_e2e(
+        litellm_base_url="http://litellm.local",
+        api_key="test-key",
+        timeout=3.0,
+        log_container="unused",
+        log_tail=10,
+        skip_log_check=False,
+        require_request_id_log_match=True,
+        progress=None,
+    )
+
+    by_name = {result.name: result for result in results}
+    assert by_name["route_log_match_mode"].ok is True
+    assert "strict_request_id_matches=3/3" in by_name["route_log_match_mode"].detail
 
 
 def test_format_route_failure_detail_is_stable():

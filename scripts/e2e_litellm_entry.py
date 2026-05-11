@@ -116,6 +116,7 @@ def validate_nonstream_probe_response(
     model = None
     if response.headers.get("content-type", "").startswith("application/json"):
         model = response.json().get("model")
+    router_request_id = router_request_id_from_response(response)
     return [
         CheckResult(
             f"{probe.name}_status",
@@ -127,6 +128,11 @@ def validate_nonstream_probe_response(
             model == "semantic-router",
             f"model={model}",
         ),
+        CheckResult(
+            f"{probe.name}_router_request_id",
+            bool(router_request_id),
+            f"request_id={router_request_id}",
+        ),
     ]
 
 
@@ -134,6 +140,7 @@ def validate_streaming_probe_response(
     *, probe: Probe, response: httpx.Response, first_chunk: bytes
 ) -> list[CheckResult]:
     starts_with_data = first_chunk.startswith(b"data:")
+    router_request_id = router_request_id_from_response(response)
     return [
         CheckResult(
             f"{probe.name}_status",
@@ -145,7 +152,19 @@ def validate_streaming_probe_response(
             starts_with_data,
             f"starts_with_data={starts_with_data}",
         ),
+        CheckResult(
+            f"{probe.name}_router_request_id",
+            bool(router_request_id),
+            f"request_id={router_request_id}",
+        ),
     ]
+
+
+def router_request_id_from_response(response: httpx.Response) -> str | None:
+    return (
+        response.headers.get("x-router-request-id")
+        or response.headers.get("llm_provider-x-router-request-id")
+    )
 
 
 def run_probe(
@@ -318,6 +337,16 @@ def probe_request_succeeded(probe: Probe, results: list[CheckResult]) -> bool:
     return any(result.name == f"{probe.name}_status" and result.ok for result in results)
 
 
+def router_request_id_from_results(probe: Probe, results: list[CheckResult]) -> str | None:
+    expected_name = f"{probe.name}_router_request_id"
+    for result in results:
+        if result.name == expected_name and result.ok:
+            prefix = "request_id="
+            if result.detail.startswith(prefix):
+                return result.detail[len(prefix) :]
+    return None
+
+
 def run_e2e(
     *,
     litellm_base_url: str,
@@ -350,7 +379,9 @@ def run_e2e(
             )
             results.extend(probe_results)
             if probe_request_succeeded(probe, probe_results):
-                successful_probes_with_ids.append((probe, request_id))
+                successful_probes_with_ids.append(
+                    (probe, router_request_id_from_results(probe, probe_results) or request_id)
+                )
             else:
                 failed_probes_with_ids.append((probe, request_id))
 
