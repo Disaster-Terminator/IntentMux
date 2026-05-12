@@ -1,160 +1,281 @@
-# 中文语义路由层 —— 接力文档
+# IntentMux 巡检交接文档
 
-> 更新时间：2026-05-03 20:00 UTC+8
-> 状态：方案已定，待编码落地
-> 接力目标：实现轻量中文路由 sidecar，替换 LiteLLM 内置 complexity_router
-
----
-
-## 1. 背景与问题
-
-LiteLLM 内置的 `auto_router/complexity_router` 基于英文关键词规则打分，在中文环境下系统性低估复杂度：
-- 代码关键词（"function", "class"）、推理标记（"step by step"）中文几乎匹配不到
-- 结果：中文技术请求被分到 `SIMPLE` 档，打到 `cheap-router`，实际应该用 `pro-router`
-
-当前 `smart-router` 仍挂在 `complexity_router` 上，配置注释已写明"初测仍建议手动指定"。
-
-**目标**：把 `smart-router` 从 LiteLLM 内置路由迁到外部中文语义路由 sidecar，前置在 LiteLLM 前面。
+> 更新时间：2026-05-12 UTC+8
+> 当前状态：项目基本功能已进入生产试用；巡检编排交给本机 Hermes cron 体系，Codex 不负责 cron。
+> 接力目标：Hermes 定时生成巡检报告；后续 Codex 只根据报告和真实日志改进 IntentMux 项目本体。
 
 ---
 
-## 2. 已评估方案（及排除理由）
+## 1. 责任边界
 
-| 方案 | 结论 | 理由 |
-|------|------|------|
-| aurelio-labs/semantic-router | ❌ 不推荐 | 126KB 本体轻量，但顶层 `__init__.py` 无条件 import `aurelio_sdk` + `litellm` SDK，即使只用 `OpenAIEncoder` 也必须全装。litellm Python SDK（>=1.61.3）会和 Docker 网关冗余，性价比低 |
-| vllm-project/semantic-router | ❌ 排除 | K8s/Envoy 基础设施级，Rust + ModernBERT（英文分类器），面向云厂商集群调度。WSL 本地环境过度设计 |
-| Arch-Router-1.5B | ❌ 排除 | language 标 en，底座虽 Qwen2.5 但中文 eval 未验证 |
-| RouteLLM | ❌ 排除 | 研究型 strong/weak routing，不是中文意图分类器 |
-| Not Diamond / Martian | ❌ 排除 | 商业服务，中国区/中文 eval 不明 |
-| **手写轻量路由** | ✅ **推荐** | 30 行核心逻辑，零额外依赖，复用现有 LM Studio embedding，中文 utterance 完全可控 |
+IntentMux 仓库负责：
+
+- 提供可重复执行的日志 summary、budget gate、LiteLLM 入口 E2E 和预检脚本；
+- 保持日志字段可审计、可关联、无 prompt/token/bearer 泄漏；
+- 根据巡检报告暴露的问题改进路由策略、配置契约、日志口径和测试。
+
+Hermes cron 体系负责：
+
+- 定时调用本文件列出的巡检命令；
+- 收集 stdout、退出码和关键摘要；
+- 生成面向后续 Codex 回合阅读的报告。
+
+Codex 后续不负责：
+
+- 创建或维护 cron job；
+- 决定本机报告投递渠道；
+- 接管 Hermes 的调度、告警、重试或消息发送。
 
 ---
 
-## 3. 推荐架构
+## 2. 生产路径与服务
+
+仓库路径：
+
+```bash
+/path/to/gateway/gateway-semantic-router
+```
+
+持久审计日志路径：
+
+```bash
+/path/to/intentmux-runtime/logs/routes/YYYY-MM-DD.jsonl
+```
+
+当前生产入口：
+
+- LiteLLM：`http://127.0.0.1:4000`
+- IntentMux：`http://127.0.0.1:4001`
+- LiteLLM 内的 `semantic-router` 模型组应指向 `http://intentmux:4001/v1`
+
+容器名：
+
+- `intentmux`
+- `litellm`
+- `litellm_db`
+- `litellm_prometheus`
+
+---
+
+## 3. 推荐巡检命令
+
+以下命令从仓库根目录执行。
+
+### 3.1 服务健康
+
+```bash
+curl -sS http://127.0.0.1:4001/ready
+```
+
+期望：
+
+- `ready=true`
+- `router.ok=true`
+- `embedding.ok=true`
+- `litellm.detail` 可以是 `status=401 auth_required`，这表示 LiteLLM 活着且需要鉴权。
+
+### 3.2 持久日志 summary
+
+```bash
+uv run python scripts/router_log_summary.py \
+  /path/to/intentmux-runtime/logs/routes/*.jsonl \
+  --slow-request-limit 10
+```
+
+报告应保留这些字段：
+
+- `total/completed/errors`
+- `routes`
+- `targets`
+- `reasons`
+- `outcomes`
+- `not_ok`
+- `upstream_statuses`
+- `upstream_non_200`
+- `max_duration_ms`
+- `duration_percentiles_ms`
+- `slow_requests`
+
+### 3.3 当日严格 budget gate
+
+```bash
+uv run python scripts/check_route_error_budget.py \
+  /path/to/intentmux-runtime/logs/routes/$(date +%F).jsonl \
+  --min-total 1 \
+  --max-error-rate 0 \
+  --max-target-error-rate 0 \
+  --max-route-error-rate 0 \
+  --max-not-ok-rate 0 \
+  --max-embedding-error-rate 0 \
+  --max-upstream-status-rate 400=0
+```
+
+说明：
+
+- 严格 budget 失败不等于服务一定不可用；
+- 它的价值是把 `embedding_error`、上游 400、非 OK 请求显式暴露出来；
+- Hermes 报告应记录退出码和 `reasons:` 行。
+
+### 3.4 当前生产观测容忍 budget
+
+当严格 budget 失败时，可以再跑一条容忍阈值命令，用来区分“已知噪声”与“继续恶化”：
+
+```bash
+uv run python scripts/check_route_error_budget.py \
+  /path/to/intentmux-runtime/logs/routes/$(date +%F).jsonl \
+  --min-total 1 \
+  --max-error-rate 0 \
+  --max-target-error-rate 0 \
+  --max-route-error-rate 0 \
+  --max-not-ok-rate 0.02 \
+  --max-embedding-error-rate 0.13 \
+  --max-upstream-status-rate 400=0.02
+```
+
+这些阈值来自 2026-05-12 的真实观测基线：
+
+- `embedding_error=12.64%`
+- `not_ok=1.10%`
+- `upstream_status 400=1.10%`
+
+后续应根据连续报告收紧或调整，不要把这组数字当成永久 SLA。
+
+### 3.5 LiteLLM 入口严格 E2E
+
+```bash
+set -a
+. /path/to/gateway/litellm/.env
+set +a
+uv run python scripts/e2e_litellm_entry.py \
+  --litellm-base-url http://127.0.0.1:4000 \
+  --log-container intentmux \
+  --log-tail 300 \
+  --require-request-id-log-match
+```
+
+期望：
+
+- `strict_request_id_matches=3/3`
+- `pro_nonstream` 和 `pro_stream` 命中 `route_id=strong`、`target_model=pro-router`
+- `cheap_nonstream` 命中 `route_id=fast`、`target_model=cheap-router`
+- `log_redaction` 通过
+
+这条命令会发真实请求，适合作为低频巡检或变更后验收，不建议高频跑。
+
+---
+
+## 4. 报告格式建议
+
+Hermes 报告建议至少包含：
 
 ```text
-client / Hermes / OpenCode / OMO
-        ↓
-    [中文路由 sidecar]  ← 这是本次要写的
-        - 收 /v1/chat/completions
-        - 抽 latest user message
-        - 调 LM Studio :1234 embedding（OpenAI-compatible）
-        - cosine 相似度匹配 → 决定 route
-        - 改写 model 字段为 cheap-router / pro-router / free-probe-router
-        ↓
-    LiteLLM :4000
-        - 执行现有 order / fallback / cooldown / 监控
-        ↓
-    真实模型池
+time: 2026-05-12T20:00:00+08:00
+repo: /path/to/gateway/gateway-semantic-router
+commit: <git rev-parse --short HEAD>
+
+ready:
+  exit_code: 0
+  summary: ready=true router=true litellm=auth_required embedding=true
+
+route_summary:
+  log_files: routes/YYYY-MM-DD.jsonl
+  total: ...
+  routes: ...
+  targets: ...
+  reasons: ...
+  outcomes: ...
+  upstream_statuses: ...
+  duration_percentiles_ms: ...
+  slow_requests_top:
+    - duration_ms=... request_id=... route=... target=... reason=... upstream_status=...
+
+strict_budget:
+  exit_code: ...
+  reasons: ...
+
+tolerant_budget:
+  exit_code: ...
+  reasons: ...
+
+e2e:
+  skipped_or_exit_code: ...
+  strict_request_id_matches: ...
+  failures: ...
 ```
 
-**sidecar 定位**：只做"分类决策 + model 改写"，不替代 LiteLLM 的执行层。
+报告不要包含：
+
+- prompt 原文；
+- completion 原文；
+- bearer token；
+- LiteLLM master key；
+- 完整请求体。
 
 ---
 
-## 4. 技术约束
+## 5. 后续 Codex 看报告时的判断口径
 
-### 4.1 Embedding 后端
-- **地址**：`http://127.0.0.1:1234/v1/embeddings`
-- **格式**：OpenAI-compatible（已验证）
-- **模型**：`text-embedding-jina-embeddings-v5-text-small-retrieval@q8_0`
-- **常驻**：LM Studio 本地常驻，不需要额外启动
+优先处理：
 
-### 4.2 Python 环境
-- **管理器**：`uv`（不是 pip/conda）
-- **已有依赖**：`numpy`, `openai`, `openai-whisper`
-- **新增需求**：仅 `requests` 或 `httpx`（很可能已有）
-- **不需要**：semantic-router, litellm SDK, aurelio-sdk, torch, transformers
+1. `/ready` 不通过。
+2. LiteLLM 入口 E2E 失败，尤其是 request-id 无法关联到 IntentMux 日志。
+3. `route_error > 0`。
+4. `not_ok` 或 `upstream_status 400/5xx` 上升。
+5. `embedding_error` 持续出现或比例升高。
+6. `duration_percentiles_ms.p95/p99` 或 `slow_requests` 明显恶化。
+7. `routes` 分布长期偏斜，尤其是 hard rule 导致上下文持续命中 strong，与两档路由产品语义冲突。
 
-### 4.3 LiteLLM 不重启
-- sidecar 是独立进程，LiteLLM Docker 容器不动
-- `smart-router` 在 LiteLLM config.yaml 里的定义可保留或移除，不影响 sidecar 独立运行
+暂不直接改代码的情况：
+
+- 单日样本量太小；
+- 只有上游模型偶发 400，且 request-id 能关联、IntentMux 自身没有 `route_error`；
+- 只有慢请求，但原因明显来自下游 provider 超时或模型排队。
+
+需要沉淀为项目改进的问题：
+
+- embedding 不可用时是否需要更强的降级/告警策略；
+- hard rule 在长上下文 agent 框架下是否过度粘滞；
+- `low_confidence` 占比长期过高时是否需要调 route bank 或阈值；
+- 是否需要把 slow request 进一步拆成 IntentMux 耗时与 upstream 耗时；
+- 是否需要为巡检报告生成专用 JSON 输出，减少 Hermes 解析文本的负担。
 
 ---
 
-## 5. 路由规则
+## 6. 最近已知基线
 
-### 5.1 Route 定义（中文 utterance）
+2026-05-12 巡检结果：
 
-```python
-ROUTE_UTTERANCES = {
-    "coding":      [
-        "写个函数", "怎么实现", "代码审查", "优化这段代码",
-        "报错了", "debug", "接口集成", "后端实现",
-        "写代码", "编程", "调试", "review 代码"
-    ],
-    "analysis":    [
-        "分析", "对比", "架构设计", "多步推理",
-        "方案权衡", "评估", "复杂分析", "tradeoff",
-        "一步一步", "仔细思考", "深入分析"
-    ],
-    "probe":       [
-        "测试模型", "对比模型", "benchmark", "评估",
-        "哪个更好", "跑个基准", "probe", "对比效果"
-    ],
-    "chat":        [
-        "你好", "谢谢", "什么意思", "解释一下",
-        "总结", "简单说明", "聊天", "闲聊"
-    ],
-}
+- `total=182`
+- `errors=0`
+- `routes: fast=146, strong=36`
+- `targets: cheap-router=146, pro-router=36`
+- `reasons: embedding_error=23, hard_rule:token=23, hard_rule:安全=13, low_confidence=123`
+- `outcomes: success=180, upstream_non_200=2`
+- `not_ok=2`
+- `upstream_statuses: 200=180, 400=2`
+- `max_duration_ms=117919.39`
+- `p95=41123.26`
+- 严格 LiteLLM-entry E2E：`strict_request_id_matches=3/3`
+
+当时判断：
+
+- IntentMux 本体服务正常；
+- 两个 400 来自下游 LiteLLM/provider 语义，不是 IntentMux `route_error`；
+- `embedding_error` 比例已经值得持续追踪；
+- 延迟尾部明显，需要后续结合下游日志判断是否可由 IntentMux 改进。
+
+---
+
+## 7. 变更纪律
+
+后续修改 IntentMux 后必须至少跑：
+
+```bash
+uv run pytest -q
+uv run ruff check scripts/router_log_summary.py scripts/check_route_error_budget.py tests/test_router_log_summary.py tests/test_check_route_error_budget.py
+curl -sS http://127.0.0.1:4001/ready
 ```
 
-### 5.2 路由映射
+涉及运行时路由、配置、容器或 LiteLLM 接入的改动，还必须跑 LiteLLM 入口严格 E2E。
 
-| 命中 route | 转发到 LiteLLM model |
-|-----------|---------------------|
-| coding | `pro-router` |
-| analysis | `pro-router` |
-| probe | `free-probe-router` |
-| chat | `cheap-router` |
-| 未命中（相似度 < threshold）| `cheap-router`（保守兜底）|
-
-### 5.3 阈值建议
-- 初始 `threshold = 0.55`，根据实际效果调
-- 可以支持 `threshold_per_route` 让 probe 更灵敏
-
----
-
-## 6. 下一步任务（编码 TODO）
-
-### 6.1 核心路由模块
-- [ ] `semantic_router.py`：embedding 调用 + cosine 相似度 + route 决策
-- [ ] `main.py`：FastAPI/Flask HTTP sidecar，收 `/v1/chat/completions`
-- [ ] 启动时预计算 route centroids（避免每次请求重复 embed utterances）
-
-### 6.2 配置与部署
-- [ ] 配置项：LM Studio base_url、模型名、threshold、routes 定义
-- [ ] uv run / systemd / tmux 等启动方式
-- [ ] 监听端口建议：`0.0.0.0:4001`（LiteLLM :4000 旁边）
-
-### 6.3 集成到 Hermes
-- [ ] Hermes `config.yaml` 的 `model.base_url` 从 `:4000` 切到 `:4001`（sidecar）
-- [ ] 或 sidecar 只处理 `model=smart-router` 请求，其他透传
-
-### 6.4 测试验证
-- [ ] 中文 coding 请求 → 确认打到 pro-router
-- [ ] 中文闲聊 → 确认打到 cheap-router
-- [ ] 探活请求 → 确认打到 free-probe-router
-- [ ] 阈值边界 case 调优
-
----
-
-## 7. 关键参考文件
-
-| 文件 | 说明 |
-|------|------|
-| `~/gateway/litellm/config.yaml` | LiteLLM 当前配置，定义了 cheap-router / pro-router / free-probe-router |
-| `~/gateway/litellm/HANDOFF.md` | LiteLLM 部署接力文档 |
-| LiteLLM 环境变量 | API keys 留在 LiteLLM 挂载目录；sidecar 不读取、不提交、不复制 |
-| `C:\Users\Disas\OneDrive\Desktop\meta.md` | 路由方案调研结论原文（用户桌面） |
-
----
-
-## 8. 注意事项
-
-1. **不要装 semantic-router 包**：依赖冗余（litellm SDK + aurelio-sdk），且仍需自写 HTTP 层。手写 30 行更干净。
-2. **不要动 LiteLLM 容器**：sidecar 是独立进程，不需要重启网关。
-3. **embedding API 已验证兼容**：`/v1/embeddings` 返回标准 OpenAI 格式，可直接 requests.post。
-4. **中文 utterance 优先覆盖 coding / analysis**：这是当前 complexity_router 最大的盲区。
-5. **阈值可调**：先跑起来再精调，不要一开始追求 perfect accuracy。
+每次完成有效改动后提交并推送到 `origin/main`。
