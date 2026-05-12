@@ -148,6 +148,95 @@ def test_summarize_records_counts_routes_errors_and_latency():
         "status=503 target=pro-router reason=embedding stream=true": 1
     }
     assert summary.max_duration_ms == 1400
+    assert summary.duration_percentiles_ms == {
+        "p50": 1200.0,
+        "p90": 1400.0,
+        "p95": 1400.0,
+        "p99": 1400.0,
+    }
+    assert [sample.duration_ms for sample in summary.slow_requests] == [
+        1400.0,
+        1200.0,
+        300.0,
+    ]
+
+
+def test_summarize_records_limits_slow_request_samples_and_preserves_context():
+    records = [
+        {
+            "event": "route_complete",
+            "timestamp": "2026-05-12T00:00:00Z",
+            "request_id": "req-fast",
+            "route_id": "fast",
+            "target_model": "cheap-router",
+            "reason": "low_confidence",
+            "stream": True,
+            "upstream_status": 200,
+            "duration_ms": 100,
+        },
+        {
+            "event": "route_complete",
+            "ts": "2026-05-12T00:00:01Z",
+            "request_id": "req-slow",
+            "route_id": "strong",
+            "target_model": "pro-router",
+            "reason": "hard_rule:安全",
+            "stream": True,
+            "upstream_status": 400,
+            "duration_ms": 2500,
+        },
+        {
+            "event": "route_complete",
+            "timestamp": "2026-05-12T00:00:02Z",
+            "request_id": "req-mid",
+            "route_id": "fast",
+            "target_model": "cheap-router",
+            "reason": "embedding_error",
+            "stream": False,
+            "upstream_status": 200,
+            "duration_ms": 1200,
+        },
+    ]
+
+    summary = summarize_records(records, slow_request_limit=2)
+
+    assert summary.duration_percentiles_ms == {
+        "p50": 1200.0,
+        "p90": 2500.0,
+        "p95": 2500.0,
+        "p99": 2500.0,
+    }
+    assert [
+        (
+            sample.timestamp,
+            sample.request_id,
+            sample.duration_ms,
+            sample.route_id,
+            sample.target_model,
+            sample.reason,
+            sample.upstream_status,
+        )
+        for sample in summary.slow_requests
+    ] == [
+        (
+            "2026-05-12T00:00:01Z",
+            "req-slow",
+            2500.0,
+            "strong",
+            "pro-router",
+            "hard_rule:安全",
+            400,
+        ),
+        (
+            "2026-05-12T00:00:02Z",
+            "req-mid",
+            1200.0,
+            "fast",
+            "cheap-router",
+            "embedding_error",
+            200,
+        ),
+    ]
 
 
 def test_format_summary_is_stable_for_runbooks():
@@ -178,6 +267,9 @@ def test_format_summary_is_stable_for_runbooks():
             "upstream_statuses: 503=1",
             "upstream_non_200: status=503 target=pro-router reason=embedding_error stream=true=1",
             "max_duration_ms=1400.00",
+            "duration_percentiles_ms: p50=1400.00, p90=1400.00, p95=1400.00, p99=1400.00",
+            "slow_requests:",
+            "- duration_ms=1400.00 timestamp=unknown request_id=unknown route=strong target=pro-router reason=embedding_error upstream_status=503",
         ]
     )
 
@@ -229,6 +321,12 @@ def test_format_summary_json_is_deterministic_and_includes_diagnostics():
             "unknown_event": 1,
         },
         "max_duration_ms": 42.0,
+        "duration_percentiles_ms": {
+            "p50": 42.0,
+            "p90": 42.0,
+            "p95": 42.0,
+            "p99": 42.0,
+        },
         "nonstreams": 1,
         "not_ok": 1,
         "outcomes": {"success": 1, "upstream_non_200": 1},
@@ -243,6 +341,17 @@ def test_format_summary_json_is_deterministic_and_includes_diagnostics():
             "status=503 target=pro-router reason=hard_rule stream=true": 1
         },
         "upstream_statuses": {"503": 1},
+        "slow_requests": [
+            {
+                "duration_ms": 42.0,
+                "reason": "hard_rule",
+                "request_id": None,
+                "route_id": None,
+                "target_model": "pro-router",
+                "timestamp": None,
+                "upstream_status": 503,
+            }
+        ],
     }
 
 
@@ -307,6 +416,12 @@ INFO:     127.0.0.1:53000 - \"POST /v1/chat/completions HTTP/1.1\" 200 OK
         "error_types": {"RemoteProtocolError": 1},
         "ignored_records": {"malformed_json": 1, "missing_event": 1, "unknown_event": 1},
         "max_duration_ms": 40.0,
+        "duration_percentiles_ms": {
+            "p50": 40.0,
+            "p90": 40.0,
+            "p95": 40.0,
+            "p99": 40.0,
+        },
         "nonstreams": 1,
         "not_ok": 1,
         "outcomes": {"success": 1, "upstream_non_200": 1},
@@ -321,6 +436,26 @@ INFO:     127.0.0.1:53000 - \"POST /v1/chat/completions HTTP/1.1\" 200 OK
             "status=503 target=fallback-model reason=embedding_error stream=true": 1
         },
         "upstream_statuses": {"200": 1, "503": 1},
+        "slow_requests": [
+            {
+                "duration_ms": 40.0,
+                "reason": "embedding_error",
+                "request_id": None,
+                "route_id": None,
+                "target_model": "fallback-model",
+                "timestamp": None,
+                "upstream_status": 503,
+            },
+            {
+                "duration_ms": 12.5,
+                "reason": "hard_rule",
+                "request_id": None,
+                "route_id": None,
+                "target_model": "safe-model",
+                "timestamp": None,
+                "upstream_status": 200,
+            },
+        ],
     }
 
 def test_contract_fixture_summary_separates_routes_and_targets():

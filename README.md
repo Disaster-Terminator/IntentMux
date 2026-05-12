@@ -268,14 +268,17 @@ IntentMux 只统计结构化 JSON 路由日志：
 
 ```bash
 docker logs --since 12h intentmux 2>&1 \
-  | uv run python scripts/router_log_summary.py
+  | uv run python scripts/router_log_summary.py --slow-request-limit 10
 ```
 
 持久审计文件 summary：
 
 ```bash
-uv run python scripts/router_log_summary.py /data/logs/routes/*.jsonl
+uv run python scripts/router_log_summary.py /data/logs/routes/*.jsonl \
+  --slow-request-limit 10
 ```
+
+summary 会输出路由/目标/原因分布、`ok/outcome` 分布、上游状态码、`max_duration_ms`、`p50/p90/p95/p99` 延迟分位数，以及最慢请求 top N。慢请求列表只包含可审计元数据：时间、`request_id`、`route_id`、`target_model`、`reason`、`upstream_status` 和耗时。
 
 route-error budget gate：
 
@@ -287,7 +290,7 @@ docker logs --since 12h intentmux 2>&1 \
       --max-target-error-rate 0 \
       --max-route-error-rate 0 \
       --max-not-ok-rate 0 \
-      --max-reason-rate embedding_error=0 \
+      --max-embedding-error-rate 0 \
       --max-upstream-status-rate 400=0
 ```
 
@@ -299,8 +302,11 @@ uv run python scripts/check_route_error_budget.py /data/logs/routes/*.jsonl \
   --max-error-rate 0 \
   --max-target-error-rate 0 \
   --max-route-error-rate 0 \
-  --max-not-ok-rate 0
+  --max-not-ok-rate 0 \
+  --max-embedding-error-rate 0
 ```
+
+`embedding_error` 不一定会导致请求失败，它表示 embedding 不可用后按配置降级到 fast 路由；生产巡检应给它独立预算。若要放宽预算，可以用 `--max-embedding-error-rate 0.02` 这类阈值保留告警能力。
 
 配置 + 日志诊断摘要：
 

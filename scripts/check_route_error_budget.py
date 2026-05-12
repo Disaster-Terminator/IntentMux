@@ -4,7 +4,6 @@ import argparse
 from collections import Counter
 from dataclasses import dataclass
 import json
-import sys
 from typing import Any, Iterable
 
 try:
@@ -328,6 +327,16 @@ def parse_reason_rate_budget(raw_budget: str) -> tuple[str, float]:
     return reason, rate
 
 
+def parse_non_negative_rate(raw_rate: str) -> float:
+    try:
+        rate = float(raw_rate)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("rate must be a float") from exc
+    if rate < 0:
+        raise argparse.ArgumentTypeError("rate must be non-negative")
+    return rate
+
+
 def parse_upstream_status_rate_budget(raw_budget: str) -> tuple[str, float]:
     if "=" not in raw_budget:
         raise argparse.ArgumentTypeError("expected STATUS=RATE")
@@ -398,6 +407,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--max-embedding-error-rate",
+        type=parse_non_negative_rate,
+        default=None,
+        help=(
+            "Shortcut for --max-reason-rate embedding_error=RATE. "
+            "Useful for production patrols because embedding failures silently "
+            "fall back to the configured fast route."
+        ),
+    )
+    parser.add_argument(
         "--max-upstream-status-rate",
         action="append",
         default=[],
@@ -430,6 +449,9 @@ def main(argv: list[str] | None = None) -> int:
                 max_route_error_rate["*"] = default_route_budget[-1]
             else:
                 max_route_error_rate = default_route_budget[-1]
+    max_reason_rates = dict(args.max_reason_rate)
+    if args.max_embedding_error_rate is not None:
+        max_reason_rates["embedding_error"] = args.max_embedding_error_rate
 
     result = check_budget(
         records,
@@ -439,7 +461,7 @@ def main(argv: list[str] | None = None) -> int:
             max_target_error_rate=args.max_target_error_rate,
             max_not_ok_rate=args.max_not_ok_rate,
             max_route_error_rate=max_route_error_rate,
-            max_reason_rates=dict(args.max_reason_rate),
+            max_reason_rates=max_reason_rates,
             max_upstream_status_rates=dict(args.max_upstream_status_rate),
             max_malformed_json=args.max_malformed_json,
             max_missing_event=args.max_missing_event,

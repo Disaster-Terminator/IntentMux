@@ -278,6 +278,37 @@ def test_cli_accepts_repeatable_reason_rate_budgets(monkeypatch, capsys):
     assert "reason embedding_error rate 0.5000 exceeds max_reason_rate 0.0000" in output
 
 
+def test_cli_accepts_embedding_error_budget_alias(monkeypatch, capsys):
+    monkeypatch.setattr(
+        sys,
+        "stdin",
+        [
+            (
+                '{"event":"route_complete","target_model":"cheap-router",'
+                '"reason":"embedding_error"}\n'
+            ),
+            (
+                '{"event":"route_complete","target_model":"pro-router",'
+                '"reason":"low_confidence"}\n'
+            ),
+        ],
+    )
+
+    exit_code = main(
+        [
+            "--min-total",
+            "1",
+            "--max-embedding-error-rate",
+            "0",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert exit_code == 1
+    assert "reason_rates: embedding_error=0.5000, low_confidence=0.5000" in output
+    assert "reason embedding_error rate 0.5000 exceeds max_reason_rate 0.0000" in output
+
+
 def test_script_file_execution_works_from_repo_root():
     completed = subprocess.run(
         [

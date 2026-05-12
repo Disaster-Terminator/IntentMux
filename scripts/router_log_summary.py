@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 import json
+import math
 from pathlib import Path
 import sys
 from typing import Any, Iterable
@@ -17,6 +18,17 @@ class ParseDiagnostics:
     malformed_json_lines: int = 0
     missing_event_records: int = 0
     unknown_event_records: int = 0
+
+
+@dataclass(frozen=True)
+class SlowRequest:
+    duration_ms: float
+    timestamp: str | None
+    request_id: str | None
+    route_id: str | None
+    target_model: str | None
+    reason: str | None
+    upstream_status: int | None
 
 
 @dataclass(frozen=True)
@@ -35,6 +47,8 @@ class RouteLogSummary:
     upstream_statuses: dict[str, int]
     upstream_non_200: dict[str, int]
     max_duration_ms: float
+    duration_percentiles_ms: dict[str, float]
+    slow_requests: list[SlowRequest]
     parse_diagnostics: ParseDiagnostics
 
 
@@ -70,6 +84,7 @@ def parse_route_records(
 def summarize_records(
     records: Iterable[dict[str, Any]],
     parse_diagnostics: ParseDiagnostics | None = None,
+    slow_request_limit: int = 5,
 ) -> RouteLogSummary:
     total = 0
     completed = 0
@@ -85,6 +100,8 @@ def summarize_records(
     upstream_statuses: Counter[str] = Counter()
     upstream_non_200: Counter[str] = Counter()
     max_duration_ms = 0.0
+    duration_samples: list[float] = []
+    slow_requests: list[SlowRequest] = []
 
     for record in records:
         total += 1
@@ -121,7 +138,10 @@ def summarize_records(
 
         duration_ms = record.get("duration_ms")
         if isinstance(duration_ms, int | float):
-            max_duration_ms = max(max_duration_ms, float(duration_ms))
+            duration_ms_float = float(duration_ms)
+            max_duration_ms = max(max_duration_ms, duration_ms_float)
+            duration_samples.append(duration_ms_float)
+            slow_requests.append(slow_request_from_record(record, duration_ms_float))
 
         upstream_status = record.get("upstream_status")
         if isinstance(upstream_status, int):
@@ -144,8 +164,53 @@ def summarize_records(
         upstream_statuses=dict(upstream_statuses),
         upstream_non_200=dict(upstream_non_200),
         max_duration_ms=max_duration_ms,
+        duration_percentiles_ms=duration_percentiles(duration_samples),
+        slow_requests=sorted(
+            slow_requests,
+            key=lambda sample: sample.duration_ms,
+            reverse=True,
+        )[: max(0, slow_request_limit)],
         parse_diagnostics=parse_diagnostics or ParseDiagnostics(),
     )
+
+
+def duration_percentiles(samples: list[float]) -> dict[str, float]:
+    if not samples:
+        return {}
+    sorted_samples = sorted(samples)
+    return {
+        "p50": upper_percentile(sorted_samples, 0.50),
+        "p90": upper_percentile(sorted_samples, 0.90),
+        "p95": upper_percentile(sorted_samples, 0.95),
+        "p99": upper_percentile(sorted_samples, 0.99),
+    }
+
+
+def upper_percentile(sorted_samples: list[float], quantile: float) -> float:
+    if len(sorted_samples) == 1:
+        return sorted_samples[0]
+    index = math.ceil((len(sorted_samples) - 1) * quantile)
+    return sorted_samples[index]
+
+
+def slow_request_from_record(record: dict[str, Any], duration_ms: float) -> SlowRequest:
+    timestamp = string_or_none(record.get("timestamp"))
+    if timestamp is None:
+        timestamp = string_or_none(record.get("ts"))
+    upstream_status = record.get("upstream_status")
+    return SlowRequest(
+        duration_ms=duration_ms,
+        timestamp=timestamp,
+        request_id=string_or_none(record.get("request_id")),
+        route_id=string_or_none(record.get("route_id")),
+        target_model=string_or_none(record.get("target_model")),
+        reason=string_or_none(record.get("reason")),
+        upstream_status=upstream_status if isinstance(upstream_status, int) else None,
+    )
+
+
+def string_or_none(value: Any) -> str | None:
+    return value if isinstance(value, str) else None
 
 
 def ok_from_record(record: dict[str, Any]) -> bool:
@@ -202,7 +267,11 @@ def format_summary(summary: RouteLogSummary) -> str:
         f"upstream_statuses: {format_counts(summary.upstream_statuses)}",
         f"upstream_non_200: {format_counts(summary.upstream_non_200)}",
         f"max_duration_ms={summary.max_duration_ms:.2f}",
+        f"duration_percentiles_ms: {format_float_counts(summary.duration_percentiles_ms)}",
     ]
+    if summary.slow_requests:
+        lines.append("slow_requests:")
+        lines.extend(format_slow_request(sample) for sample in summary.slow_requests)
     diag = summary.parse_diagnostics
     if any(
         (
@@ -237,6 +306,8 @@ def format_summary_json(summary: RouteLogSummary) -> str:
         "upstream_statuses": summary.upstream_statuses,
         "upstream_non_200": summary.upstream_non_200,
         "max_duration_ms": summary.max_duration_ms,
+        "duration_percentiles_ms": summary.duration_percentiles_ms,
+        "slow_requests": [asdict(sample) for sample in summary.slow_requests],
         "ignored_records": {
             "malformed_json": diag.malformed_json_lines,
             "missing_event": diag.missing_event_records,
@@ -250,6 +321,24 @@ def format_counts(counts: dict[str, int]) -> str:
     if not counts:
         return "none"
     return ", ".join(f"{name}={count}" for name, count in sorted(counts.items()))
+
+
+def format_float_counts(counts: dict[str, float]) -> str:
+    if not counts:
+        return "none"
+    return ", ".join(f"{name}={value:.2f}" for name, value in counts.items())
+
+
+def format_slow_request(sample: SlowRequest) -> str:
+    return (
+        f"- duration_ms={sample.duration_ms:.2f} "
+        f"timestamp={sample.timestamp or 'unknown'} "
+        f"request_id={sample.request_id or 'unknown'} "
+        f"route={sample.route_id or 'unknown'} "
+        f"target={sample.target_model or 'unknown'} "
+        f"reason={sample.reason or 'unknown'} "
+        f"upstream_status={sample.upstream_status if sample.upstream_status is not None else 'unknown'}"
+    )
 
 
 def main() -> None:
@@ -266,11 +355,21 @@ def main() -> None:
         action="store_true",
         help="Shortcut for --output json.",
     )
+    parser.add_argument(
+        "--slow-request-limit",
+        type=int,
+        default=5,
+        help="Number of slowest requests to print/include (default: 5). Use 0 to disable.",
+    )
     args = parser.parse_args()
 
     diagnostics = ParseDiagnostics()
     records = list(parse_route_records(iter_lines(args.paths), diagnostics=diagnostics))
-    summary = summarize_records(records, parse_diagnostics=diagnostics)
+    summary = summarize_records(
+        records,
+        parse_diagnostics=diagnostics,
+        slow_request_limit=args.slow_request_limit,
+    )
     output_json = args.json or args.output == "json"
     print(format_summary_json(summary) if output_json else format_summary(summary))
 

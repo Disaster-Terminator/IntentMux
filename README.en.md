@@ -164,9 +164,10 @@ uv run python scripts/e2e_litellm_entry.py --litellm-base-url http://127.0.0.1:4
 
 ```bash
 docker logs --since 12h intentmux 2>&1 \
-  | uv run python scripts/router_log_summary.py
+  | uv run python scripts/router_log_summary.py --slow-request-limit 10
 
-uv run python scripts/router_log_summary.py /data/logs/routes/*.jsonl
+uv run python scripts/router_log_summary.py /data/logs/routes/*.jsonl \
+  --slow-request-limit 10
 
 docker logs --since 12h intentmux 2>&1 \
   | uv run python scripts/check_route_error_budget.py \
@@ -175,11 +176,13 @@ docker logs --since 12h intentmux 2>&1 \
       --max-target-error-rate 0 \
       --max-route-error-rate 0 \
       --max-not-ok-rate 0 \
-      --max-reason-rate embedding_error=0 \
+      --max-embedding-error-rate 0 \
       --max-upstream-status-rate 400=0
 ```
 
-Structured logs count `route_id`, `target_model`, `policy_id`, `reason`, `request_id`, `request_id_source`, `stream`, `upstream_status`, `ok`, and `outcome`, while avoiding prompts, completions, token usage, and bearer tokens. `event` is lifecycle; `ok/outcome` is route health. Upstream non-2xx responses record `ok=false` and `outcome=upstream_non_200`.
+Summary output includes route/target/reason distributions, `ok/outcome`, upstream status codes, `max_duration_ms`, `p50/p90/p95/p99` duration percentiles, and the slowest request samples. Slow request samples include only audit metadata: timestamp, `request_id`, `route_id`, `target_model`, `reason`, `upstream_status`, and duration.
+
+Structured logs count `route_id`, `target_model`, `policy_id`, `reason`, `request_id`, `request_id_source`, `stream`, `upstream_status`, `ok`, and `outcome`, while avoiding prompts, completions, token usage, and bearer tokens. `event` is lifecycle; `ok/outcome` is route health. Upstream non-2xx responses record `ok=false` and `outcome=upstream_non_200`. `embedding_error` has a dedicated budget shortcut because it can fail open to the configured fast route without making the user request fail.
 
 ## Decision Preview
 
