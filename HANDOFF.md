@@ -61,7 +61,44 @@ Codex 后续不负责：
 
 以下命令从仓库根目录执行。
 
-### 3.1 服务健康
+### 3.1 Hermes cron 主入口
+
+Hermes cron 只需要定时调用这个脚本：
+
+```bash
+cd /path/to/gateway/gateway-semantic-router
+uv run python scripts/intentmux_daily_health.py
+```
+
+默认不会发真实 E2E 请求，只生成给 Codex 读取的巡检报告。产物写在持久日志目录旁边：
+
+```text
+/path/to/intentmux-runtime/logs/health/intentmux-health-YYYY-MM-DD.json
+/path/to/intentmux-runtime/logs/health/intentmux-health-YYYY-MM-DD.md
+/path/to/intentmux-runtime/logs/health/intentmux-health-latest.json
+/path/to/intentmux-runtime/logs/health/intentmux-health-latest.md
+```
+
+报告包含：
+
+- `ready`
+- `route_summary_today`
+- `route_summary_all_logs`
+- `strict_budget`
+- `tolerant_budget`
+- `e2e`
+- `paths`
+
+其中 `route_summary_today` 是日常判断主口径，`route_summary_all_logs` 只作历史上下文。报告会保留 `slow_requests` top N 明细，方便 Codex 直接看尾延迟样本。
+
+变更后或低频深巡检可手动加真实 E2E：
+
+```bash
+cd /path/to/gateway/gateway-semantic-router
+uv run python scripts/intentmux_daily_health.py --run-e2e
+```
+
+### 3.2 分项命令：服务健康
 
 ```bash
 curl -sS http://127.0.0.1:4001/ready
@@ -72,9 +109,9 @@ curl -sS http://127.0.0.1:4001/ready
 - `ready=true`
 - `router.ok=true`
 - `embedding.ok=true`
-- `litellm.detail` 可以是 `status=401 auth_required`，这表示 LiteLLM 活着且需要鉴权。
+- `components.litellm.detail` 可以是 `status=401 auth_required`，这表示 LiteLLM 活着且需要鉴权。
 
-### 3.2 持久日志 summary
+### 3.3 分项命令：持久日志 summary
 
 ```bash
 uv run python scripts/router_log_summary.py \
@@ -96,7 +133,7 @@ uv run python scripts/router_log_summary.py \
 - `duration_percentiles_ms`
 - `slow_requests`
 
-### 3.3 当日严格 budget gate
+### 3.4 分项命令：当日严格 budget gate
 
 ```bash
 uv run python scripts/check_route_error_budget.py \
@@ -116,7 +153,7 @@ uv run python scripts/check_route_error_budget.py \
 - 它的价值是把 `embedding_error`、上游 400、非 OK 请求显式暴露出来；
 - Hermes 报告应记录退出码和 `reasons:` 行。
 
-### 3.4 当前生产观测容忍 budget
+### 3.5 分项命令：当前生产观测容忍 budget
 
 当严格 budget 失败时，可以再跑一条容忍阈值命令，用来区分“已知噪声”与“继续恶化”：
 
@@ -140,7 +177,7 @@ uv run python scripts/check_route_error_budget.py \
 
 后续应根据连续报告收紧或调整，不要把这组数字当成永久 SLA。
 
-### 3.5 LiteLLM 入口严格 E2E
+### 3.6 分项命令：LiteLLM 入口严格 E2E
 
 ```bash
 set -a
