@@ -1,6 +1,14 @@
 from __future__ import annotations
 
-from scripts.intentmux_daily_health import keep, parse_ready, render_md
+from pathlib import Path
+
+from scripts.intentmux_daily_health import (
+    build_e2e_cmd,
+    keep,
+    parse_ready,
+    path_from_arg_or_env,
+    render_md,
+)
 
 
 def test_parse_ready_reads_components_contract():
@@ -79,3 +87,42 @@ def test_render_md_nests_slow_request_rows():
     md = render_md(report)
 
     assert "- slow_requests:\n  - duration_ms=117919.39 request_id=req-1 route=fast" in md
+
+
+def test_path_from_arg_or_env_prefers_cli_value(monkeypatch):
+    monkeypatch.setenv("INTENTMUX_LOG_DIR", "/env/logs")
+
+    path = path_from_arg_or_env("/cli/logs", "INTENTMUX_LOG_DIR", Path("logs"))
+
+    assert path == Path("/cli/logs")
+
+
+def test_path_from_arg_or_env_uses_env_before_default(monkeypatch):
+    monkeypatch.setenv("INTENTMUX_LOG_DIR", "/env/logs")
+
+    path = path_from_arg_or_env(None, "INTENTMUX_LOG_DIR", Path("logs"))
+
+    assert path == Path("/env/logs")
+
+
+def test_build_e2e_cmd_sources_env_file_only_when_provided():
+    cmd = build_e2e_cmd(
+        litellm_base_url="http://127.0.0.1:4000",
+        log_container="intentmux",
+        litellm_env=Path("/runtime/litellm.env"),
+    )
+
+    assert ". /runtime/litellm.env" in cmd
+    assert "--litellm-base-url http://127.0.0.1:4000" in cmd
+    assert "--log-container intentmux" in cmd
+
+
+def test_build_e2e_cmd_does_not_hardcode_local_litellm_env():
+    cmd = build_e2e_cmd(
+        litellm_base_url="http://127.0.0.1:4000",
+        log_container="intentmux",
+        litellm_env=None,
+    )
+
+    assert "set -a;" not in cmd
+    assert cmd.startswith("uv run python scripts/e2e_litellm_entry.py")

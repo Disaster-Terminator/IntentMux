@@ -338,6 +338,7 @@ curl http://127.0.0.1:4001/v1/semantic-router/decision \
 ## 语义资产
 
 运行时保持轻依赖。更大的 route bank 从 `config/route_sources.yaml` 声明的来源离线生成，不把 Hugging Face 等构建依赖带进运行时。
+来源选择和语料政策见 [docs/router_quality_research.md](docs/router_quality_research.md)：默认不使用自生成语料，只使用成熟公开数据源和脱敏生产 review 样本。
 
 ```bash
 uv sync --group assets
@@ -355,6 +356,8 @@ uv run python scripts/import_review_samples.py \
 ```
 
 每条 JSONL 必须设置 `redacted: true`，并用 route id 作为 `expect`。
+
+生产变更必须先通过 [docs/production_rollout_gate.md](docs/production_rollout_gate.md)，不要在探索阶段直接重启或重建生产 sidecar。
 
 ## 运行行为
 

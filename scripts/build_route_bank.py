@@ -32,6 +32,9 @@ class RouteSource:
     dataset: str | None = None
     subset: str | None = None
     split: str | None = None
+    homepage: str | None = None
+    license: str | None = None
+    license_url: str | None = None
     mappings: list[SourceMapping] = field(default_factory=list)
 
 
@@ -65,7 +68,23 @@ def build_route_bank(
 
     return {
         "version": 1,
+        "sources": [source_metadata(source) for source in sources],
         "routes": routes,
+    }
+
+
+def source_metadata(source: RouteSource) -> dict[str, str | int | None]:
+    return {
+        "name": source.name,
+        "kind": source.kind,
+        "route": source.route,
+        "limit": source.limit,
+        "url": source.url,
+        "dataset": source.dataset,
+        "split": source.split,
+        "homepage": source.homepage,
+        "license": source.license,
+        "license_url": source.license_url,
     }
 
 
@@ -94,6 +113,9 @@ def load_sources(path: Path) -> list[RouteSource]:
             dataset=item.get("dataset"),
             subset=item.get("subset"),
             split=item.get("split"),
+            homepage=item.get("homepage"),
+            license=item.get("license"),
+            license_url=item.get("license_url"),
             mappings=[
                 SourceMapping(
                     field=mapping["field"],

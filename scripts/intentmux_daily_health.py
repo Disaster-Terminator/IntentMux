@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shlex
 import subprocess
 from datetime import datetime
@@ -11,16 +12,16 @@ from typing import Any
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
-REPO = Path("/path/to/gateway/gateway-semantic-router")
-LOG_DIR = Path("/path/to/intentmux-runtime/logs")
-ROUTE_ALL_GLOB = "/path/to/intentmux-runtime/logs/routes/*.jsonl"
-HEALTH_DIR = LOG_DIR / "health"
+DEFAULT_REPO = Path(__file__).resolve().parents[1]
+DEFAULT_LOG_DIR = Path(os.getenv("INTENTMUX_LOG_DIR", "logs"))
+DEFAULT_ROUTER_BASE_URL = os.getenv("INTENTMUX_ROUTER_BASE_URL", "http://127.0.0.1:4001")
+DEFAULT_LITELLM_BASE_URL = os.getenv("INTENTMUX_LITELLM_BASE_URL", "http://127.0.0.1:4000")
 
 
-def run(cmd: str, timeout: int = 120) -> dict[str, Any]:
+def run(cmd: str, *, cwd: Path, timeout: int = 120) -> dict[str, Any]:
     proc = subprocess.run(
         ["bash", "-lc", cmd],
-        cwd=REPO,
+        cwd=cwd,
         capture_output=True,
         text=True,
         timeout=timeout,
@@ -110,6 +111,29 @@ def budget_no_samples(day_log: Path) -> bool:
     return (not day_log.exists()) or day_log.stat().st_size == 0
 
 
+def path_from_arg_or_env(value: str | None, env_name: str, default: Path) -> Path:
+    raw = value or os.getenv(env_name)
+    return Path(raw).expanduser() if raw else default
+
+
+def build_e2e_cmd(
+    *,
+    litellm_base_url: str,
+    log_container: str,
+    litellm_env: Path | None,
+) -> str:
+    parts: list[str] = []
+    if litellm_env is not None:
+        parts.append(f"set -a; . {shlex.quote(str(litellm_env))}; set +a;")
+    parts.append(
+        "uv run python scripts/e2e_litellm_entry.py "
+        f"--litellm-base-url {shlex.quote(litellm_base_url)} "
+        f"--log-container {shlex.quote(log_container)} "
+        "--log-tail 300 --require-request-id-log-match"
+    )
+    return " ".join(parts)
+
+
 def render_md(report: dict[str, Any]) -> str:
     r = report
     lines = [
@@ -183,27 +207,69 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--run-e2e", action="store_true", help="Run strict LiteLLM-entry e2e (real requests)")
     ap.add_argument("--slow-request-limit", type=int, default=10)
+    ap.add_argument(
+        "--repo",
+        help="IntentMux repository path. Defaults to this script's repository, or INTENTMUX_REPO.",
+    )
+    ap.add_argument(
+        "--log-dir",
+        help="Directory containing routes/ and health/. Defaults to logs, or INTENTMUX_LOG_DIR.",
+    )
+    ap.add_argument(
+        "--route-log-glob",
+        help="Glob for all route audit logs. Defaults to <log-dir>/routes/*.jsonl, or INTENTMUX_ROUTE_LOG_GLOB.",
+    )
+    ap.add_argument(
+        "--router-base-url",
+        default=DEFAULT_ROUTER_BASE_URL,
+        help="IntentMux base URL for /ready. Defaults to INTENTMUX_ROUTER_BASE_URL or http://127.0.0.1:4001.",
+    )
+    ap.add_argument(
+        "--litellm-base-url",
+        default=DEFAULT_LITELLM_BASE_URL,
+        help="LiteLLM base URL for strict E2E. Defaults to INTENTMUX_LITELLM_BASE_URL or http://127.0.0.1:4000.",
+    )
+    ap.add_argument(
+        "--litellm-env",
+        help="Optional env file to source before strict E2E. May also be set with INTENTMUX_LITELLM_ENV.",
+    )
+    ap.add_argument(
+        "--log-container",
+        default=os.getenv("INTENTMUX_LOG_CONTAINER", "intentmux"),
+        help="Container name used by strict E2E log correlation.",
+    )
     args = ap.parse_args()
+
+    repo = path_from_arg_or_env(args.repo, "INTENTMUX_REPO", DEFAULT_REPO)
+    log_dir = path_from_arg_or_env(args.log_dir, "INTENTMUX_LOG_DIR", DEFAULT_LOG_DIR)
+    route_all_glob = (
+        args.route_log_glob
+        or os.getenv("INTENTMUX_ROUTE_LOG_GLOB")
+        or str(log_dir / "routes" / "*.jsonl")
+    )
+    health_dir = log_dir / "health"
+    litellm_env_raw = args.litellm_env or os.getenv("INTENTMUX_LITELLM_ENV")
+    litellm_env = Path(litellm_env_raw).expanduser() if litellm_env_raw else None
 
     now = datetime.now().astimezone()
     day = now.strftime("%Y-%m-%d")
-    HEALTH_DIR.mkdir(parents=True, exist_ok=True)
+    health_dir.mkdir(parents=True, exist_ok=True)
 
-    commit = run("git rev-parse --short HEAD", timeout=10)
+    commit = run("git rev-parse --short HEAD", cwd=repo, timeout=10)
     commit_id = commit["stdout"] if commit["ok"] else "unknown"
 
     # 1) ready
-    code, payload, err = http_get_json("http://127.0.0.1:4001/ready", timeout=5)
+    code, payload, err = http_get_json(f"{args.router_base_url.rstrip('/')}/ready", timeout=5)
     ready_ok, ready_summary, ready_detail = parse_ready(payload, code, err)
 
     # 2) route summary (today)
-    day_log = Path(f"/path/to/intentmux-runtime/logs/routes/{day}.jsonl")
+    day_log = log_dir / "routes" / f"{day}.jsonl"
     if day_log.exists() and day_log.stat().st_size > 0:
         summary_today_cmd = (
             "uv run python scripts/router_log_summary.py "
             f"{shlex.quote(str(day_log))} --slow-request-limit {args.slow_request_limit}"
         )
-        route_summary_today = run(summary_today_cmd, timeout=90)
+        route_summary_today = run(summary_today_cmd, cwd=repo, timeout=90)
         summary_today_highlights = keep(
             (route_summary_today["stdout"] + "\n" + route_summary_today["stderr"]).strip(),
             [
@@ -218,9 +284,9 @@ def main() -> int:
     # 2b) route summary (all logs) - context only
     summary_all_cmd = (
         "uv run python scripts/router_log_summary.py "
-        f"{ROUTE_ALL_GLOB} --slow-request-limit {args.slow_request_limit}"
+        f"{route_all_glob} --slow-request-limit {args.slow_request_limit}"
     )
-    route_summary_all = run(summary_all_cmd, timeout=90)
+    route_summary_all = run(summary_all_cmd, cwd=repo, timeout=90)
     summary_all_highlights = keep(
         (route_summary_all["stdout"] + "\n" + route_summary_all["stderr"]).strip(),
         [
@@ -242,7 +308,7 @@ def main() -> int:
             "--max-route-error-rate 0 --max-not-ok-rate 0 --max-embedding-error-rate 0 "
             "--max-upstream-status-rate 400=0"
         )
-        strict = run(strict_cmd, timeout=90)
+        strict = run(strict_cmd, cwd=repo, timeout=90)
         strict_reasons = keep(
             (strict["stdout"] + "\n" + strict["stderr"]).strip(),
             ["reason", "rate", "total", "fails", "failed", "no_samples"],
@@ -255,7 +321,7 @@ def main() -> int:
             "--max-route-error-rate 0 --max-not-ok-rate 0.02 --max-embedding-error-rate 0.13 "
             "--max-upstream-status-rate 400=0.02"
         )
-        tolerant = run(tol_cmd, timeout=90)
+        tolerant = run(tol_cmd, cwd=repo, timeout=90)
         tolerant_reasons = keep(
             (tolerant["stdout"] + "\n" + tolerant["stderr"]).strip(),
             ["reason", "rate", "total", "fails", "failed", "no_samples"],
@@ -264,13 +330,12 @@ def main() -> int:
 
     # 5) e2e (optional)
     if args.run_e2e:
-        e2e_cmd = (
-            "set -a; . /path/to/gateway/litellm/.env; set +a; "
-            "uv run python scripts/e2e_litellm_entry.py "
-            "--litellm-base-url http://127.0.0.1:4000 "
-            "--log-container intentmux --log-tail 300 --require-request-id-log-match"
+        e2e_cmd = build_e2e_cmd(
+            litellm_base_url=args.litellm_base_url,
+            log_container=args.log_container,
+            litellm_env=litellm_env,
         )
-        e2e = run(e2e_cmd, timeout=240)
+        e2e = run(e2e_cmd, cwd=repo, timeout=240)
         e2e_mode = "strict"
     else:
         e2e = {"ok": True, "exit_code": 0, "stdout": "skipped by policy", "stderr": ""}
@@ -283,7 +348,7 @@ def main() -> int:
 
     report = {
         "time": now.isoformat(),
-        "repo": str(REPO),
+        "repo": str(repo),
         "commit": commit_id,
         "ready": {
             "ok": ready_ok,
@@ -298,7 +363,7 @@ def main() -> int:
         "route_summary_all_logs": {
             "exit_code": route_summary_all["exit_code"],
             "highlights": summary_all_highlights,
-            "glob": ROUTE_ALL_GLOB,
+            "glob": route_all_glob,
         },
         "strict_budget": {
             "exit_code": strict["exit_code"],
@@ -315,10 +380,10 @@ def main() -> int:
         },
     }
 
-    json_path = HEALTH_DIR / f"intentmux-health-{day}.json"
-    md_path = HEALTH_DIR / f"intentmux-health-{day}.md"
-    latest_json = HEALTH_DIR / "intentmux-health-latest.json"
-    latest_md = HEALTH_DIR / "intentmux-health-latest.md"
+    json_path = health_dir / f"intentmux-health-{day}.json"
+    md_path = health_dir / f"intentmux-health-{day}.md"
+    latest_json = health_dir / "intentmux-health-latest.json"
+    latest_md = health_dir / "intentmux-health-latest.md"
 
     report["paths"] = {
         "json": str(json_path),

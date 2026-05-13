@@ -63,8 +63,9 @@ Compose service with its own health check and explicit upstream URLs.
 
 ## Semantic Assets
 
-The route bank should be built from mature datasets plus local logs, not from
-hand-written keyword expansion. The first production-grade milestone is:
+The route bank should be built from mature datasets plus redacted production
+review samples, not from hand-written keyword expansion or self-generated
+semantic corpora. The first production-grade milestone is:
 
 - source manifest with auditable dataset names and filters
 - reproducible small-sample route bank generation

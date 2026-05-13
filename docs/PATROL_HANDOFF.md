@@ -1,0 +1,154 @@
+# IntentMux Patrol Handoff
+
+This is the repository-safe handoff for running IntentMux patrol checks.
+Deployment-specific paths, secrets, cron schedules, and notification targets
+belong outside this repository.
+
+## Responsibility Boundary
+
+IntentMux provides:
+
+- route-log summary scripts;
+- route error-budget gates;
+- LiteLLM-entry E2E checks;
+- preflight checks;
+- structured audit logs without prompt, completion, token, or bearer-token
+  content.
+
+An external scheduler such as cron, systemd timers, CI, or a private ops agent
+provides:
+
+- scheduling;
+- stdout and exit-code collection;
+- report delivery;
+- retry and alert policy.
+
+## Runtime Inputs
+
+Choose these values in your deployment:
+
+```text
+INTENTMUX_REPO=/path/to/IntentMux
+INTENTMUX_LOG_DIR=/path/to/intentmux-home/logs
+INTENTMUX_ROUTER_BASE_URL=http://127.0.0.1:4001
+INTENTMUX_LITELLM_BASE_URL=http://127.0.0.1:4000
+INTENTMUX_LITELLM_ENV=/path/to/litellm.env
+INTENTMUX_LOG_CONTAINER=intentmux
+```
+
+`INTENTMUX_LOG_DIR` is the directory that contains:
+
+```text
+routes/YYYY-MM-DD.jsonl
+health/intentmux-health-YYYY-MM-DD.json
+health/intentmux-health-YYYY-MM-DD.md
+health/intentmux-health-latest.json
+health/intentmux-health-latest.md
+```
+
+The LiteLLM env file is optional. Use it only when E2E needs to source
+`LITELLM_MASTER_KEY` or equivalent credentials.
+
+## Main Patrol Command
+
+```bash
+uv --directory "$INTENTMUX_REPO" run python scripts/intentmux_daily_health.py \
+  --repo "$INTENTMUX_REPO" \
+  --log-dir "$INTENTMUX_LOG_DIR" \
+  --router-base-url "$INTENTMUX_ROUTER_BASE_URL" \
+  --litellm-base-url "$INTENTMUX_LITELLM_BASE_URL" \
+  --log-container "$INTENTMUX_LOG_CONTAINER"
+```
+
+By default this does not send real chat requests. It writes daily JSON and
+Markdown reports under `$INTENTMUX_LOG_DIR/health/`.
+
+For low-frequency deep checks or post-change validation, add strict E2E:
+
+```bash
+uv --directory "$INTENTMUX_REPO" run python scripts/intentmux_daily_health.py \
+  --repo "$INTENTMUX_REPO" \
+  --log-dir "$INTENTMUX_LOG_DIR" \
+  --router-base-url "$INTENTMUX_ROUTER_BASE_URL" \
+  --litellm-base-url "$INTENTMUX_LITELLM_BASE_URL" \
+  --litellm-env "$INTENTMUX_LITELLM_ENV" \
+  --log-container "$INTENTMUX_LOG_CONTAINER" \
+  --run-e2e
+```
+
+## Report Contract
+
+The daily health report includes:
+
+- `ready`
+- `route_summary_today`
+- `route_summary_all_logs`
+- `strict_budget`
+- `tolerant_budget`
+- `e2e`
+- `paths`
+
+`route_summary_today` is the main daily signal. `route_summary_all_logs` is only
+historical context.
+
+Slow request rows include:
+
+- `decision_ms`
+- `upstream_ms`
+- `upstream_headers_ms`
+- `upstream_body_ms`
+
+Schedulers should not parse prompt text because IntentMux audit logs do not
+write prompt text.
+
+## Read-Only Checks
+
+```bash
+curl -sS "$INTENTMUX_ROUTER_BASE_URL/ready"
+uv --directory "$INTENTMUX_REPO" run python scripts/router_log_summary.py \
+  "$INTENTMUX_LOG_DIR/routes/*.jsonl" \
+  --slow-request-limit 10
+```
+
+For today's strict budget:
+
+```bash
+uv --directory "$INTENTMUX_REPO" run python scripts/check_route_error_budget.py \
+  "$INTENTMUX_LOG_DIR/routes/$(date +%F).jsonl" \
+  --min-total 1 \
+  --max-error-rate 0 \
+  --max-target-error-rate 0 \
+  --max-route-error-rate 0 \
+  --max-not-ok-rate 0 \
+  --max-embedding-error-rate 0 \
+  --max-upstream-status-rate 400=0
+```
+
+For a tolerant budget, tune thresholds from your own production baseline.
+
+## E2E Expectations
+
+Strict LiteLLM-entry E2E should verify:
+
+- non-stream strong route succeeds;
+- stream strong route succeeds;
+- non-stream fast route succeeds;
+- each probe has a matching IntentMux route log by request id;
+- route logs do not contain prompts or bearer tokens.
+
+## Production Change Discipline
+
+Repository changes do not imply production container changes. Before restarting
+or rebuilding a live sidecar, use [production_rollout_gate.md](production_rollout_gate.md).
+
+After code or config changes, run at least:
+
+```bash
+uv run python -m pytest -q
+uv run python scripts/verify_route_contract.py
+uv run python scripts/eval_routes.py --mock-embeddings
+```
+
+Changes touching runtime route behavior or LiteLLM integration also require
+preflight and strict E2E against the target stack.
+
