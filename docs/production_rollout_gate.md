@@ -11,7 +11,9 @@ Config or asset changes:
 - `/data/config/routes.yaml`
 - `/data/semantic_sets/route_bank.yaml`
 - environment variables such as `ROUTER_LITELLM_BASE_URL`,
-  `ROUTER_LITELLM_API_KEY`, or `ROUTER_INBOUND_API_KEY`
+  `ROUTER_LITELLM_API_KEY`, `ROUTER_INBOUND_API_KEY`,
+  `ROUTER_EMBEDDING_API_KEY`, `ROUTER_EMBEDDING_HEADERS_JSON`, or
+  `ROUTER_REQUIRE_ROUTE_BANK`
 
 These require an IntentMux sidecar restart because routes and vectors are loaded
 at startup. They do not require an image rebuild.
@@ -38,7 +40,8 @@ curl -sS http://127.0.0.1:4001/health
 curl -sS http://127.0.0.1:4001/ready
 uv run python scripts/intentmux_daily_health.py \
   --repo /path/to/IntentMux \
-  --log-dir /path/to/intentmux-home/logs
+  --log-dir /path/to/intentmux-home/logs \
+  --min-route-records 0
 ```
 
 Avoid `docker restart`, `docker compose up`, `docker compose build`, and
@@ -74,6 +77,7 @@ uv run python scripts/intentmux_daily_health.py \
   --repo /path/to/IntentMux \
   --log-dir /path/to/intentmux-home/logs \
   --litellm-env /path/to/litellm.env \
+  --min-route-records 1 \
   --run-e2e
 ```
 
@@ -87,6 +91,8 @@ The gate passes only when:
 - `/ready` is true;
 - strict E2E passes;
 - latest health report has `not_ok=0` for today's logs;
+- latest health report has `traffic_evidence.ok=true` when a positive
+  `--min-route-records` threshold is used;
 - any route-bank change has source attribution and no raw production prompt.
 - production-log-driven changes use only human-reviewed, redacted review
   samples.
@@ -101,6 +107,11 @@ For config or route-bank changes:
 4. Run `/ready`, preflight, and strict daily health with E2E.
 5. Watch the next health report for route distribution drift and
    `embedding_error`.
+
+When `require_route_bank: true` or `ROUTER_REQUIRE_ROUTE_BANK=true` is used, a
+missing route bank or a bank that provides no utterances for configured
+routes is a startup failure by design. This should be enabled only after the
+runtime mount contains the reviewed route bank.
 
 For code/image changes:
 

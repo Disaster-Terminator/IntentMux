@@ -188,6 +188,115 @@ routes:
     assert settings.routes["cheap-router"].utterances == ["seed cheap utterance"]
 
 
+def test_load_settings_requires_route_bank_when_enabled(tmp_path: Path):
+    routes_path = tmp_path / "routes.yaml"
+    routes_path.write_text(
+        """
+route_model: smart-router
+default_route: cheap-router
+require_route_bank: true
+route_bank_path: missing.yaml
+routes:
+  cheap-router:
+    description: seed cheap
+    utterances:
+      - seed cheap utterance
+""",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(FileNotFoundError, match="required route bank not found"):
+        load_settings(routes_path)
+
+
+def test_load_settings_requires_route_bank_to_provide_declared_route_utterances(tmp_path: Path):
+    routes_path = tmp_path / "routes.yaml"
+    bank_path = tmp_path / "route_bank.yaml"
+    routes_path.write_text(
+        """
+route_model: smart-router
+default_route: cheap-router
+require_route_bank: true
+route_bank_path: route_bank.yaml
+routes:
+  cheap-router:
+    description: seed cheap
+    utterances:
+      - seed cheap utterance
+""",
+        encoding="utf-8",
+    )
+    bank_path.write_text(
+        """
+version: 1
+routes:
+  unknown:
+    utterances:
+      - text: generated unknown utterance
+""",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="required route bank did not provide utterances"):
+        load_settings(routes_path)
+
+
+def test_load_settings_required_route_bank_accepts_duplicate_utterances(tmp_path: Path):
+    routes_path = tmp_path / "routes.yaml"
+    bank_path = tmp_path / "route_bank.yaml"
+    routes_path.write_text(
+        """
+route_model: smart-router
+default_route: cheap-router
+require_route_bank: true
+route_bank_path: route_bank.yaml
+routes:
+  cheap-router:
+    description: seed cheap
+    utterances:
+      - seed cheap utterance
+""",
+        encoding="utf-8",
+    )
+    bank_path.write_text(
+        """
+version: 1
+routes:
+  cheap-router:
+    utterances:
+      - text: seed cheap utterance
+        source: duplicate
+""",
+        encoding="utf-8",
+    )
+
+    settings = load_settings(routes_path)
+
+    assert settings.route_bank_loaded is True
+    assert settings.routes["cheap-router"].utterances == ["seed cheap utterance"]
+
+
+def test_load_settings_requires_route_bank_via_environment(monkeypatch, tmp_path: Path):
+    routes_path = tmp_path / "routes.yaml"
+    routes_path.write_text(
+        """
+route_model: smart-router
+default_route: cheap-router
+route_bank_path: missing.yaml
+routes:
+  cheap-router:
+    description: seed cheap
+    utterances:
+      - seed cheap utterance
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("ROUTER_REQUIRE_ROUTE_BANK", "true")
+
+    with pytest.raises(FileNotFoundError, match="required route bank not found"):
+        load_settings(routes_path)
+
+
 def test_load_settings_resolves_route_bank_from_cwd_when_not_next_to_config(
     tmp_path: Path,
     monkeypatch,
@@ -229,6 +338,76 @@ routes:
         "seed cheap utterance",
         "generated cheap utterance",
     ]
+    assert settings.route_bank_loaded is True
+
+
+def test_embedding_api_key_and_headers_can_come_from_environment(
+    monkeypatch, tmp_path: Path
+):
+    routes_path = tmp_path / "routes.yaml"
+    routes_path.write_text(
+        """
+route_model: semantic-router
+default_route: cheap-router
+routes:
+  cheap-router:
+    description: seed cheap
+    utterances:
+      - seed cheap utterance
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("ROUTER_EMBEDDING_API_KEY", "sk-embed")
+    monkeypatch.setenv("ROUTER_EMBEDDING_HEADERS_JSON", '{"X-Provider": "local"}')
+
+    settings = load_settings(routes_path)
+
+    assert settings.embedding_api_key == "sk-embed"
+    assert settings.embedding_headers == {"X-Provider": "local"}
+
+
+def test_empty_embedding_api_key_env_does_not_clear_configured_key(
+    monkeypatch, tmp_path: Path
+):
+    routes_path = tmp_path / "routes.yaml"
+    routes_path.write_text(
+        """
+route_model: semantic-router
+default_route: cheap-router
+embedding_api_key: sk-configured
+routes:
+  cheap-router:
+    description: seed cheap
+    utterances:
+      - seed cheap utterance
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("ROUTER_EMBEDDING_API_KEY", "")
+
+    settings = load_settings(routes_path)
+
+    assert settings.embedding_api_key == "sk-configured"
+
+
+def test_invalid_embedding_headers_json_env_fails_loudly(monkeypatch, tmp_path: Path):
+    routes_path = tmp_path / "routes.yaml"
+    routes_path.write_text(
+        """
+route_model: semantic-router
+default_route: cheap-router
+routes:
+  cheap-router:
+    description: seed cheap
+    utterances:
+      - seed cheap utterance
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("ROUTER_EMBEDDING_HEADERS_JSON", "not-json")
+
+    with pytest.raises(ValueError, match="ROUTER_EMBEDDING_HEADERS_JSON"):
+        load_settings(routes_path)
 
 
 def test_default_hard_rules_keep_only_high_precision_strong_escalations():

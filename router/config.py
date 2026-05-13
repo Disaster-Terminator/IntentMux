@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
+from typing import Any
 
 import yaml
 from pydantic import AliasChoices, BaseModel, Field, model_validator
@@ -35,9 +37,16 @@ class RouterSettings(BaseModel):
     margin: float = 0.04
     routes: dict[str, RouteSpec]
     route_bank_path: str | None = None
+    require_route_bank: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("require_route_bank", "route_bank_required"),
+    )
+    route_bank_loaded: bool = False
     hard_rules: list[HardRuleSpec] = Field(default_factory=list)
     embedding_url: str = "http://127.0.0.1:1234/v1/embeddings"
     embedding_model: str = "text-embedding-jina-embeddings-v5-text-small-retrieval@q8_0"
+    embedding_api_key: str | None = None
+    embedding_headers: dict[str, str] = Field(default_factory=dict)
     litellm_base_url: str = "http://127.0.0.1:4000"
     litellm_api_key: str | None = None
     inbound_api_key: str | None = None
@@ -84,12 +93,23 @@ def load_settings(path: str | Path | None = None) -> RouterSettings:
     if not config_path.exists():
         raise FileNotFoundError(f"router config not found: {config_path}")
     raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-    raw = merge_route_bank(raw, config_path.parent)
+    require_route_bank = bool_from_env(
+        "ROUTER_REQUIRE_ROUTE_BANK",
+        bool_from_value(raw.get("require_route_bank", raw.get("route_bank_required", False))),
+    )
+    raw["require_route_bank"] = require_route_bank
+    raw = merge_route_bank(raw, config_path.parent, require_route_bank=require_route_bank)
     settings = RouterSettings.model_validate(raw)
     return settings.model_copy(
         update={
             "embedding_url": os.getenv("ROUTER_EMBEDDING_URL", settings.embedding_url),
             "embedding_model": os.getenv("ROUTER_EMBEDDING_MODEL", settings.embedding_model),
+            "embedding_api_key": os.getenv("ROUTER_EMBEDDING_API_KEY")
+            or settings.embedding_api_key,
+            "embedding_headers": headers_from_json_env(
+                "ROUTER_EMBEDDING_HEADERS_JSON",
+                settings.embedding_headers,
+            ),
             "litellm_base_url": os.getenv("ROUTER_LITELLM_BASE_URL", settings.litellm_base_url),
             "litellm_api_key": os.getenv("ROUTER_LITELLM_API_KEY") or settings.litellm_api_key,
             "inbound_api_key": os.getenv("ROUTER_INBOUND_API_KEY") or settings.inbound_api_key,
@@ -110,6 +130,12 @@ def load_settings(path: str | Path | None = None) -> RouterSettings:
     )
 
 
+def bool_from_value(value: Any) -> bool:
+    if isinstance(value, str):
+        return value.lower() in {"1", "true", "yes", "on"}
+    return bool(value)
+
+
 def bool_from_env(name: str, default: bool) -> bool:
     value = os.getenv(name)
     if value is None:
@@ -117,29 +143,67 @@ def bool_from_env(name: str, default: bool) -> bool:
     return value.lower() in {"1", "true", "yes", "on"}
 
 
-def merge_route_bank(raw: dict, base_dir: Path) -> dict:
+def headers_from_json_env(name: str, default: dict[str, str]) -> dict[str, str]:
+    value = os.getenv(name)
+    if value is None or value == "":
+        return dict(default)
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{name} must be a JSON object of string headers") from exc
+    if not isinstance(parsed, dict) or not all(
+        isinstance(key, str) and isinstance(header_value, str)
+        for key, header_value in parsed.items()
+    ):
+        raise ValueError(f"{name} must be a JSON object of string headers")
+    return dict(parsed)
+
+
+def merge_route_bank(raw: dict, base_dir: Path, *, require_route_bank: bool = False) -> dict:
     route_bank_path = raw.get("route_bank_path")
     if not route_bank_path:
+        if require_route_bank:
+            raise ValueError("require_route_bank is true but route_bank_path is not set")
         return raw
 
     bank_path = resolve_route_bank_path(route_bank_path, base_dir)
     if not bank_path.exists():
+        if require_route_bank:
+            raise FileNotFoundError(f"required route bank not found: {bank_path}")
         return raw
 
     bank = yaml.safe_load(bank_path.read_text(encoding="utf-8"))
+    if not isinstance(bank, dict):
+        if require_route_bank:
+            raise ValueError("required route bank did not add utterances")
+        return raw
     raw_routes = raw.setdefault("routes", {})
-    for route_name, route_bank in bank.get("routes", {}).items():
+    bank_routes = bank.get("routes", {})
+    if not isinstance(bank_routes, dict):
+        if require_route_bank:
+            raise ValueError("required route bank did not add utterances")
+        return raw
+    matched_utterances = 0
+    for route_name, route_bank in bank_routes.items():
         if route_name not in raw_routes:
+            continue
+        if not isinstance(route_bank, dict):
             continue
         route_config = raw_routes[route_name]
         existing = list(route_config.get("utterances", []))
         seen = set(existing)
         for item in route_bank.get("utterances", []):
             text = item.get("text") if isinstance(item, dict) else item
-            if text and text not in seen:
+            if not text:
+                continue
+            matched_utterances += 1
+            if text not in seen:
                 existing.append(text)
                 seen.add(text)
         route_config["utterances"] = existing
+    if require_route_bank and matched_utterances == 0:
+        raise ValueError("required route bank did not provide utterances")
+    raw["route_bank_loaded"] = matched_utterances > 0
     return raw
 
 

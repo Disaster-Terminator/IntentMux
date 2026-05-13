@@ -45,7 +45,12 @@ def create_app(
     if router is None:
         router = Router(
             settings,
-            OpenAIEmbeddingClient(settings.embedding_url, settings.embedding_model),
+            OpenAIEmbeddingClient(
+                settings.embedding_url,
+                settings.embedding_model,
+                api_key=settings.embedding_api_key,
+                headers=settings.embedding_headers,
+            ),
         )
     if proxy is None:
         proxy = LiteLLMProxy(

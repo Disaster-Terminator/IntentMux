@@ -3,6 +3,9 @@ fallback_route_id: fast
 threshold: 0.55
 margin: 0.04
 route_bank_path: ../semantic_sets/route_bank.yaml
+# Set require_route_bank: true in production when the external route bank is
+# part of the rollout contract and a missing/empty bank should fail startup.
+require_route_bank: false
 embedding_url: http://127.0.0.1:1234/v1/embeddings
 embedding_model: text-embedding-jina-embeddings-v5-text-small-retrieval@q8_0
 litellm_base_url: http://127.0.0.1:4000

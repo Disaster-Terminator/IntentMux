@@ -34,6 +34,7 @@ INTENTMUX_ROUTER_BASE_URL=http://127.0.0.1:4001
 INTENTMUX_LITELLM_BASE_URL=http://127.0.0.1:4000
 INTENTMUX_LITELLM_ENV=/path/to/litellm.env
 INTENTMUX_LOG_CONTAINER=intentmux
+INTENTMUX_MIN_ROUTE_RECORDS=0
 ```
 
 `INTENTMUX_LOG_DIR` is the directory that contains:
@@ -57,11 +58,14 @@ uv --directory "$INTENTMUX_REPO" run python scripts/intentmux_daily_health.py \
   --log-dir "$INTENTMUX_LOG_DIR" \
   --router-base-url "$INTENTMUX_ROUTER_BASE_URL" \
   --litellm-base-url "$INTENTMUX_LITELLM_BASE_URL" \
+  --min-route-records "$INTENTMUX_MIN_ROUTE_RECORDS" \
   --log-container "$INTENTMUX_LOG_CONTAINER"
 ```
 
 By default this does not send real chat requests. It writes daily JSON and
 Markdown reports under `$INTENTMUX_LOG_DIR/health/`.
+Set `INTENTMUX_MIN_ROUTE_RECORDS` to a positive integer when the patrol should
+distinguish "healthy with traffic" from "no evidence yet".
 
 For low-frequency deep checks or post-change validation, add strict E2E:
 
@@ -72,6 +76,7 @@ uv --directory "$INTENTMUX_REPO" run python scripts/intentmux_daily_health.py \
   --router-base-url "$INTENTMUX_ROUTER_BASE_URL" \
   --litellm-base-url "$INTENTMUX_LITELLM_BASE_URL" \
   --litellm-env "$INTENTMUX_LITELLM_ENV" \
+  --min-route-records "$INTENTMUX_MIN_ROUTE_RECORDS" \
   --log-container "$INTENTMUX_LOG_CONTAINER" \
   --run-e2e
 ```
@@ -83,13 +88,15 @@ The daily health report includes:
 - `ready`
 - `route_summary_today`
 - `route_summary_all_logs`
+- `traffic_evidence`
 - `strict_budget`
 - `tolerant_budget`
 - `e2e`
 - `paths`
 
-`route_summary_today` is the main daily signal. `route_summary_all_logs` is only
-historical context.
+`route_summary_today` is the main daily signal. `traffic_evidence` reports the
+number of non-empty records in today's route log and compares it with
+`--min-route-records`. `route_summary_all_logs` is only historical context.
 
 Slow request rows include:
 
@@ -151,4 +158,3 @@ uv run python scripts/eval_routes.py --mock-embeddings
 
 Changes touching runtime route behavior or LiteLLM integration also require
 preflight and strict E2E against the target stack.
-

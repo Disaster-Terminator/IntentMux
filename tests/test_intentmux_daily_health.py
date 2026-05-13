@@ -4,6 +4,7 @@ from pathlib import Path
 
 from scripts.intentmux_daily_health import (
     build_e2e_cmd,
+    traffic_evidence_from_day_log,
     keep,
     parse_ready,
     path_from_arg_or_env,
@@ -78,6 +79,12 @@ def test_render_md_nests_slow_request_rows():
             ],
         },
         "route_summary_all_logs": {"exit_code": 0, "highlights": []},
+        "traffic_evidence": {
+            "ok": False,
+            "today_records": 0,
+            "min_records": 10,
+            "detail": "insufficient_samples: today_records=0 min_records=10",
+        },
         "strict_budget": {"exit_code": 1, "reasons": []},
         "tolerant_budget": {"exit_code": 0, "reasons": []},
         "e2e": {"mode": "skipped", "exit_code": 0, "highlights": []},
@@ -87,6 +94,50 @@ def test_render_md_nests_slow_request_rows():
     md = render_md(report)
 
     assert "- slow_requests:\n  - duration_ms=117919.39 request_id=req-1 route=fast" in md
+    assert "## traffic_evidence" in md
+    assert "- ok: False" in md
+    assert "- detail: insufficient_samples: today_records=0 min_records=10" in md
+
+
+def test_traffic_evidence_passes_when_min_records_is_met(tmp_path: Path):
+    day_log = tmp_path / "2026-05-13.jsonl"
+    day_log.write_text("{}\n{}\n", encoding="utf-8")
+
+    evidence = traffic_evidence_from_day_log(day_log, min_records=2)
+
+    assert evidence == {
+        "ok": True,
+        "today_records": 2,
+        "min_records": 2,
+        "detail": "sufficient_samples: today_records=2 min_records=2",
+    }
+
+
+def test_traffic_evidence_fails_when_min_records_is_not_met(tmp_path: Path):
+    day_log = tmp_path / "2026-05-13.jsonl"
+    day_log.write_text("{}\n", encoding="utf-8")
+
+    evidence = traffic_evidence_from_day_log(day_log, min_records=2)
+
+    assert evidence == {
+        "ok": False,
+        "today_records": 1,
+        "min_records": 2,
+        "detail": "insufficient_samples: today_records=1 min_records=2",
+    }
+
+
+def test_traffic_evidence_is_not_required_by_default(tmp_path: Path):
+    day_log = tmp_path / "missing.jsonl"
+
+    evidence = traffic_evidence_from_day_log(day_log, min_records=0)
+
+    assert evidence == {
+        "ok": True,
+        "today_records": 0,
+        "min_records": 0,
+        "detail": "not_required",
+    }
 
 
 def test_path_from_arg_or_env_prefers_cli_value(monkeypatch):

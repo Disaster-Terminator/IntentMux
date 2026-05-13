@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import httpx
 
 from router.config import RouterSettings
+from router.embedding import build_embedding_headers
 
 
 @dataclass(frozen=True)
@@ -63,6 +64,10 @@ class ReadinessChecker:
                         "model": self.settings.embedding_model,
                         "input": ["ping"],
                     },
+                    headers=build_embedding_headers(
+                        api_key=self.settings.embedding_api_key,
+                        custom_headers=self.settings.embedding_headers,
+                    ),
                 )
         except Exception as exc:
             return ComponentStatus(ok=False, detail=type(exc).__name__)

@@ -147,6 +147,9 @@ docker compose -f examples/docker-compose.yml up -d --build
 - `ROUTER_INBOUND_API_KEY`：可选的 IntentMux 入站 key，用于保护直连 sidecar 的 `/v1/chat/completions` 和 `/v1/semantic-router/decision`；不影响 `/health` 和 `/ready`。
 - `ROUTER_EMBEDDING_URL`：embedding 上游地址，默认 `http://host.docker.internal:1234/v1/embeddings`。
 - `ROUTER_EMBEDDING_MODEL`：embedding 模型名。
+- `ROUTER_EMBEDDING_API_KEY`：可选的 embedding 上游 key，设置后按 OpenAI-compatible `Authorization: Bearer ...` 发送。
+- `ROUTER_EMBEDDING_HEADERS_JSON`：可选的 embedding 自定义 headers JSON，例如 `{"X-Provider":"local"}`。只允许字符串键值。
+- `ROUTER_REQUIRE_ROUTE_BANK`：可选严格门禁。设为 `true` 后，`route_bank_path` 缺失、文件不存在、或没有为已声明 route 提供任何有效 utterance 时启动失败。
 
 LiteLLM 入口模型示例见 [examples/litellm-model-entry.yaml](examples/litellm-model-entry.yaml)。如果 IntentMux 和 LiteLLM 在同一个 compose network 中，`api_base` 可以使用 `http://intentmux:4001/v1`；如果 LiteLLM 在宿主机或另一个网络里，请改成它能访问到的 IntentMux 地址。
 
@@ -155,6 +158,7 @@ LiteLLM 入口模型示例见 [examples/litellm-model-entry.yaml](examples/litel
 - LiteLLM 模型入口里的 `api_key` 用于 `LiteLLM -> IntentMux`。
 - `ROUTER_INBOUND_API_KEY` 用于保护 `IntentMux` 的入站请求，适合直连 sidecar 或不完全信任的内部网络。
 - `ROUTER_LITELLM_API_KEY` 用于 `IntentMux -> LiteLLM`，不要依赖入站 `Authorization` 透传给上游。
+- `ROUTER_EMBEDDING_API_KEY` 和 `ROUTER_EMBEDDING_HEADERS_JSON` 只用于 `IntentMux -> embedding upstream`。`/ready` 探测和实际 embedding 请求使用同一套 headers。
 
 更新同步规则：
 
@@ -185,6 +189,10 @@ IntentMux 暂未实现热重载，生产变更按“配置重启、代码重建�
 仓库提供一个可跟踪的精简示例：[examples/route_bank.sample.yaml](examples/route_bank.sample.yaml)。
 它只用于展示 source/license 元数据和 route bank 形状；真实部署应离线生成或维护自己的
 `/data/semantic_sets/route_bank.yaml`。
+
+生产环境如果把 route bank 视为路由质量资产，应在 `routes.yaml` 中设置
+`require_route_bank: true`，或通过 `ROUTER_REQUIRE_ROUTE_BANK=true` 开启。
+这样可以避免 route bank 路径写错时服务静默回退到 seed utterances，导致灰度验证误判。
 
 ## LiteLLM 接入方式
 
@@ -334,6 +342,16 @@ uv run python scripts/check_route_error_budget.py /data/logs/routes/*.jsonl \
 ```
 
 `embedding_error` 不一定会导致请求失败，它表示 embedding 不可用后按配置降级到 fast 路由；生产巡检应给它独立预算。若要放宽预算，可以用 `--max-embedding-error-rate 0.02` 这类阈值保留告警能力。
+
+日常巡检还可以要求今天的审计日志达到最低样本量，避免“没有真实流量”被误读为健康：
+
+```bash
+uv run python scripts/intentmux_daily_health.py \
+  --log-dir /data/logs \
+  --min-route-records 100
+```
+
+低于阈值时报告中的 `traffic_evidence.ok` 会是 `false`，脚本返回码为 `4`。
 
 日志驱动质量闭环见 [docs/log_driven_quality_loop.md](docs/log_driven_quality_loop.md)。
 IntentMux 不记录 raw prompt；audit log 只负责发现低置信、异常状态码、慢请求和分布漂移。

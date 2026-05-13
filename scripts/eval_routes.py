@@ -64,7 +64,12 @@ async def run_eval(
     embedding_client = (
         MockEmbeddingClient()
         if mock_embeddings
-        else OpenAIEmbeddingClient(settings.embedding_url, settings.embedding_model)
+        else OpenAIEmbeddingClient(
+            settings.embedding_url,
+            settings.embedding_model,
+            api_key=settings.embedding_api_key,
+            headers=settings.embedding_headers,
+        )
     )
     router = Router(settings, embedding_client)
     failures: list[str] = []

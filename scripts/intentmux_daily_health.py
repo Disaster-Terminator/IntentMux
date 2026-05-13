@@ -111,6 +111,39 @@ def budget_no_samples(day_log: Path) -> bool:
     return (not day_log.exists()) or day_log.stat().st_size == 0
 
 
+def count_route_records(day_log: Path) -> int:
+    if not day_log.exists():
+        return 0
+    with day_log.open("r", encoding="utf-8") as fh:
+        return sum(1 for line in fh if line.strip())
+
+
+def traffic_evidence_from_day_log(day_log: Path, *, min_records: int) -> dict[str, Any]:
+    today_records = count_route_records(day_log)
+    if min_records <= 0:
+        return {
+            "ok": True,
+            "today_records": today_records,
+            "min_records": min_records,
+            "detail": "not_required",
+        }
+    if today_records >= min_records:
+        detail = f"sufficient_samples: today_records={today_records} min_records={min_records}"
+        return {
+            "ok": True,
+            "today_records": today_records,
+            "min_records": min_records,
+            "detail": detail,
+        }
+    detail = f"insufficient_samples: today_records={today_records} min_records={min_records}"
+    return {
+        "ok": False,
+        "today_records": today_records,
+        "min_records": min_records,
+        "detail": detail,
+    }
+
+
 def path_from_arg_or_env(value: str | None, env_name: str, default: Path) -> Path:
     raw = value or os.getenv(env_name)
     return Path(raw).expanduser() if raw else default
@@ -161,6 +194,17 @@ def render_md(report: dict[str, Any]) -> str:
     for ln in r["route_summary_all_logs"].get("highlights", []):
         append_md_highlight(lines, ln)
 
+    traffic = r.get("traffic_evidence")
+    if traffic:
+        lines += [
+            "",
+            "## traffic_evidence",
+            f"- ok: {traffic['ok']}",
+            f"- today_records: {traffic['today_records']}",
+            f"- min_records: {traffic['min_records']}",
+            f"- detail: {traffic['detail']}",
+        ]
+
     lines += [
         "",
         "## strict_budget",
@@ -207,6 +251,15 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--run-e2e", action="store_true", help="Run strict LiteLLM-entry e2e (real requests)")
     ap.add_argument("--slow-request-limit", type=int, default=10)
+    ap.add_argument(
+        "--min-route-records",
+        type=int,
+        default=int(os.getenv("INTENTMUX_MIN_ROUTE_RECORDS", "0")),
+        help=(
+            "Minimum non-empty records required in today's route log before the "
+            "report can claim traffic evidence. Defaults to INTENTMUX_MIN_ROUTE_RECORDS or 0."
+        ),
+    )
     ap.add_argument(
         "--repo",
         help="IntentMux repository path. Defaults to this script's repository, or INTENTMUX_REPO.",
@@ -296,6 +349,11 @@ def main() -> int:
     )
 
     # 3/4) budget (today only)
+    traffic_evidence = traffic_evidence_from_day_log(
+        day_log,
+        min_records=args.min_route_records,
+    )
+
     if budget_no_samples(day_log):
         strict = {"ok": True, "exit_code": 0, "stdout": "no_samples", "stderr": ""}
         tolerant = {"ok": True, "exit_code": 0, "stdout": "no_samples", "stderr": ""}
@@ -365,6 +423,7 @@ def main() -> int:
             "highlights": summary_all_highlights,
             "glob": route_all_glob,
         },
+        "traffic_evidence": traffic_evidence,
         "strict_budget": {
             "exit_code": strict["exit_code"],
             "reasons": strict_reasons,
@@ -408,6 +467,8 @@ def main() -> int:
                 "ready_ok": report["ready"]["ok"],
                 "strict_exit": report["strict_budget"]["exit_code"],
                 "tolerant_exit": report["tolerant_budget"]["exit_code"],
+                "traffic_evidence_ok": report["traffic_evidence"]["ok"],
+                "today_records": report["traffic_evidence"]["today_records"],
                 "e2e_mode": report["e2e"]["mode"],
                 "e2e_exit": report["e2e"]["exit_code"],
                 "json": str(json_path),
@@ -420,6 +481,8 @@ def main() -> int:
     # non-zero when core checks fail (ready or both budgets fail)
     if not report["ready"]["ok"]:
         return 2
+    if not report["traffic_evidence"]["ok"]:
+        return 4
     if report["strict_budget"]["exit_code"] != 0 and report["tolerant_budget"]["exit_code"] != 0:
         return 3
     return 0
