@@ -77,9 +77,6 @@ def request_identity_from_request(
     metadata_request_id = None
     if isinstance(metadata, dict):
         metadata_request_id = metadata.get("semantic_router_request_id")
-    user_request_id = payload.get("user")
-    if not isinstance(user_request_id, str):
-        user_request_id = None
     if headers.get("x-request-id"):
         return RequestIdentity(headers["x-request-id"], "x-request-id")
     if headers.get("x-correlation-id"):
@@ -89,8 +86,6 @@ def request_identity_from_request(
         return RequestIdentity(trace_id, "traceparent")
     if metadata_request_id:
         return RequestIdentity(metadata_request_id, "metadata.semantic_router_request_id")
-    if user_request_id:
-        return RequestIdentity(user_request_id, "user")
     return RequestIdentity(str(uuid.uuid4()), "generated")
 
 

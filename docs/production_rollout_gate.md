@@ -94,7 +94,8 @@ The gate passes only when:
 - strict E2E passes;
 - latest health report has `not_ok=0` for today's logs;
 - latest health report has `traffic_evidence.ok=true` when a positive
-  `--min-route-records` threshold is used;
+  `--min-route-records` threshold is used; this counts valid route records, not
+  non-empty log lines;
 - daily health uses the same day boundary as `ROUTER_AUDIT_LOG_TIMEZONE`
   unless `--date` is intentionally used;
 - any route-bank change has source attribution and no raw production prompt.

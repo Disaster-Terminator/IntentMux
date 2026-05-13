@@ -38,13 +38,24 @@ class ReadinessChecker:
 
     async def check(self) -> ReadinessReport:
         components = {
-            "router": ComponentStatus(ok=True),
+            "router": self.check_router(),
             "litellm": await self.check_litellm(),
             "embedding": await self.check_embedding(),
         }
         return ReadinessReport(
             ready=all(component.ok for component in components.values()),
             components=components,
+        )
+
+    def check_router(self) -> ComponentStatus:
+        route_counts = ",".join(
+            f"{route_id}:{len(route.utterances)}"
+            for route_id, route in sorted(self.settings.routes.items())
+        )
+        route_bank_loaded = "true" if self.settings.route_bank_loaded else "false"
+        return ComponentStatus(
+            ok=True,
+            detail=f"route_bank_loaded={route_bank_loaded} route_utterances={route_counts}",
         )
 
     async def check_litellm(self) -> ComponentStatus:

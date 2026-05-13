@@ -920,7 +920,7 @@ def test_chat_completion_strips_router_private_metadata_before_forwarding():
     assert proxy.payloads[0]["metadata"] == {"tenant": "kept"}
 
 
-def test_chat_completion_uses_user_request_id_when_proxy_drops_metadata(caplog):
+def test_chat_completion_does_not_use_user_field_as_request_id(caplog):
     proxy = FakeProxy()
     app = create_app(
         router=FakeRouter(
@@ -944,12 +944,12 @@ def test_chat_completion_uses_user_request_id_when_proxy_drops_metadata(caplog):
             },
         )
 
-    assert response.headers["x-router-request-id"] == "user-request-1"
-    assert proxy.headers[0]["x-request-id"] == "user-request-1"
+    assert response.headers["x-router-request-id"] != "user-request-1"
+    assert proxy.headers[0]["x-request-id"] != "user-request-1"
     records = [json.loads(record.message) for record in caplog.records]
     route_logs = [record for record in records if record["event"] == "route_complete"]
-    assert route_logs[0]["request_id"] == "user-request-1"
-    assert route_logs[0]["request_id_source"] == "user"
+    assert route_logs[0]["request_id"] == response.headers["x-router-request-id"]
+    assert route_logs[0]["request_id_source"] == "generated"
 
 
 def test_chat_completion_uses_traceparent_when_request_id_headers_are_absent(caplog):

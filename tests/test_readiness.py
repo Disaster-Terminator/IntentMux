@@ -114,6 +114,23 @@ def test_litellm_status_rejects_non_auth_client_errors():
     )
 
 
+def test_router_readiness_reports_route_bank_and_utterance_counts():
+    settings = RouterSettings(
+        routes={
+            "fast": RouteSpec(description="low risk", utterances=["a", "b"]),
+            "strong": RouteSpec(description="high risk", utterances=["c"]),
+        },
+        route_bank_loaded=True,
+    )
+
+    status = ReadinessChecker(settings).check_router()
+
+    assert status == ComponentStatus(
+        ok=True,
+        detail="route_bank_loaded=true route_utterances=fast:2,strong:1",
+    )
+
+
 @pytest.mark.asyncio
 async def test_embedding_readiness_sends_auth_headers(monkeypatch):
     captured: dict[str, object] = {}

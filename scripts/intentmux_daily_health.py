@@ -14,6 +14,11 @@ from urllib.request import Request, urlopen
 
 from router.observability import DEFAULT_AUDIT_LOG_TIMEZONE, zoneinfo_for
 
+try:
+    from scripts.router_log_summary import parse_route_records
+except ModuleNotFoundError:
+    from router_log_summary import parse_route_records
+
 DEFAULT_REPO = Path(__file__).resolve().parents[1]
 DEFAULT_LOG_DIR = Path(os.getenv("INTENTMUX_LOG_DIR", "logs"))
 DEFAULT_ROUTER_BASE_URL = os.getenv("INTENTMUX_ROUTER_BASE_URL", "http://127.0.0.1:4001")
@@ -118,7 +123,7 @@ def count_route_records(day_log: Path) -> int:
     if not day_log.exists():
         return 0
     with day_log.open("r", encoding="utf-8") as fh:
-        return sum(1 for line in fh if line.strip())
+        return sum(1 for _ in parse_route_records(fh))
 
 
 def traffic_evidence_from_day_log(day_log: Path, *, min_records: int) -> dict[str, Any]:

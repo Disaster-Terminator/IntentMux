@@ -101,9 +101,19 @@ def test_render_md_nests_slow_request_rows():
     assert "- detail: insufficient_samples: today_records=0 min_records=10" in md
 
 
-def test_traffic_evidence_passes_when_min_records_is_met(tmp_path: Path):
+def test_traffic_evidence_passes_when_min_valid_route_records_is_met(tmp_path: Path):
     day_log = tmp_path / "2026-05-13.jsonl"
-    day_log.write_text("{}\n{}\n", encoding="utf-8")
+    day_log.write_text(
+        "\n".join(
+            [
+                '{"event":"route_complete","route_id":"fast"}',
+                "not-json",
+                '{"event":"unrelated"}',
+                '{"event":"route_error","route_id":"strong"}',
+            ]
+        ),
+        encoding="utf-8",
+    )
 
     evidence = traffic_evidence_from_day_log(day_log, min_records=2)
 
@@ -117,15 +127,15 @@ def test_traffic_evidence_passes_when_min_records_is_met(tmp_path: Path):
 
 def test_traffic_evidence_fails_when_min_records_is_not_met(tmp_path: Path):
     day_log = tmp_path / "2026-05-13.jsonl"
-    day_log.write_text("{}\n", encoding="utf-8")
+    day_log.write_text('{"event":"unrelated"}\nnot-json\n', encoding="utf-8")
 
-    evidence = traffic_evidence_from_day_log(day_log, min_records=2)
+    evidence = traffic_evidence_from_day_log(day_log, min_records=1)
 
     assert evidence == {
         "ok": False,
-        "today_records": 1,
-        "min_records": 2,
-        "detail": "insufficient_samples: today_records=1 min_records=2",
+        "today_records": 0,
+        "min_records": 1,
+        "detail": "insufficient_samples: today_records=0 min_records=1",
     }
 
 

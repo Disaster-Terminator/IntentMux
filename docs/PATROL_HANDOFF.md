@@ -98,8 +98,9 @@ The daily health report includes:
 - `paths`
 
 `route_summary_today` is the main daily signal. `traffic_evidence` reports the
-number of non-empty records in today's route log and compares it with
-`--min-route-records`. "Today" defaults to `Asia/Shanghai`, matching the
+number of valid `route_complete` / `route_error` records in today's route log
+and compares it with `--min-route-records`. Malformed JSON, missing events, and
+unknown events do not count as traffic evidence. "Today" defaults to `Asia/Shanghai`, matching the
 default audit-log partition timezone. Use `--date YYYY-MM-DD` for an explicit
 file date. `route_summary_all_logs` is only historical context.
 

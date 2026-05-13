@@ -150,7 +150,7 @@ docker compose -f examples/docker-compose.yml up -d --build
 - `ROUTER_EMBEDDING_MODEL`：embedding 模型名。
 - `ROUTER_EMBEDDING_API_KEY`：可选的 embedding 上游 key，设置后按 OpenAI-compatible `Authorization: Bearer ...` 发送。
 - `ROUTER_EMBEDDING_HEADERS_JSON`：可选的 embedding 自定义 headers JSON，例如 `{"X-Provider":"local"}`。只允许字符串键值。
-- `ROUTER_REQUIRE_ROUTE_BANK`：可选严格门禁。设为 `true` 后，`route_bank_path` 缺失、文件不存在、或没有为已声明 route 提供任何有效 utterance 时启动失败。
+- `ROUTER_REQUIRE_ROUTE_BANK`：可选严格门禁。示例 compose 默认 `true`；设为 `true` 后，`route_bank_path` 缺失、文件不存在、或没有为已声明 route 提供任何有效 utterance 时启动失败。
 
 LiteLLM 入口模型示例见 [examples/litellm-model-entry.yaml](examples/litellm-model-entry.yaml)。如果 IntentMux 和 LiteLLM 在同一个 compose network 中，`api_base` 可以使用 `http://intentmux:4001/v1`；如果 LiteLLM 在宿主机或另一个网络里，请改成它能访问到的 IntentMux 地址。
 
@@ -194,6 +194,8 @@ IntentMux 暂未实现热重载，生产变更按“配置重启、代码重建�
 生产环境如果把 route bank 视为路由质量资产，应在 `routes.yaml` 中设置
 `require_route_bank: true`，或通过 `ROUTER_REQUIRE_ROUTE_BANK=true` 开启。
 这样可以避免 route bank 路径写错时服务静默回退到 seed utterances，导致灰度验证误判。
+`/ready` 的 `components.router.detail` 会暴露 `route_bank_loaded` 和每个 route 的
+utterance 数量，用来快速确认运行时实际加载的路由资产规模。
 
 ## LiteLLM 接入方式
 
@@ -354,8 +356,12 @@ uv run python scripts/intentmux_daily_health.py \
 ```
 
 低于阈值时报告中的 `traffic_evidence.ok` 会是 `false`，脚本返回码为 `4`。
+这里的样本数只统计有效 `route_complete` / `route_error` 记录，不把坏 JSON、非路由事件或其他混入日志计入流量证据。
 `--timezone` 默认读取 `INTENTMUX_TIMEZONE`，未设置时使用 `Asia/Shanghai`；也可以用
 `--date YYYY-MM-DD` 明确指定要巡检的审计日志日期。
+
+审计 `request_id` 来源只使用 `x-request-id`、`x-correlation-id`、`traceparent` 或
+`metadata.semantic_router_request_id`。OpenAI `user` 字段可能包含真实用户标识，IntentMux 不会把它写入 audit log 的 `request_id`。
 
 日志驱动质量闭环见 [docs/log_driven_quality_loop.md](docs/log_driven_quality_loop.md)。
 IntentMux 不记录 raw prompt；audit log 只负责发现低置信、异常状态码、慢请求和分布漂移。
