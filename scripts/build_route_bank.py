@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
+import subprocess
 import tarfile
 import urllib.request
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -68,9 +71,43 @@ def build_route_bank(
 
     return {
         "version": 1,
+        "generated": generated_metadata(sources, source_rows),
         "sources": [source_metadata(source) for source in sources],
         "routes": routes,
     }
+
+
+def generated_metadata(
+    sources: list[RouteSource],
+    source_rows: dict[str, list[dict[str, Any]]],
+) -> dict[str, Any]:
+    source_manifest = [source_metadata(source) for source in sources]
+    source_manifest_text = json.dumps(source_manifest, sort_keys=True, ensure_ascii=False)
+    return {
+        "tool": "scripts/build_route_bank.py",
+        "generated_at": datetime.now(UTC).isoformat(),
+        "commit": git_commit(),
+        "source_manifest_sha256": hashlib.sha256(
+            source_manifest_text.encode("utf-8")
+        ).hexdigest(),
+        "source_row_counts": {
+            source.name: len(source_rows.get(source.name, [])) for source in sources
+        },
+    }
+
+
+def git_commit() -> str:
+    try:
+        completed = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except Exception:
+        return "unknown"
+    return completed.stdout.strip() or "unknown"
 
 
 def source_metadata(source: RouteSource) -> dict[str, str | int | None]:

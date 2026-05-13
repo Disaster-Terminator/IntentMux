@@ -386,7 +386,7 @@ def main() -> None:
     args = parser.parse_args()
 
     diagnostics = ParseDiagnostics()
-    records = list(parse_route_records(iter_lines(args.paths), diagnostics=diagnostics))
+    records = parse_route_records(iter_lines(args.paths), diagnostics=diagnostics)
     summary = summarize_records(
         records,
         parse_diagnostics=diagnostics,
@@ -401,7 +401,8 @@ def iter_lines(paths: list[str]) -> Iterable[str]:
         yield from sys.stdin
         return
     for raw_path in paths:
-        yield from Path(raw_path).read_text(encoding="utf-8").splitlines()
+        with Path(raw_path).open("r", encoding="utf-8") as file:
+            yield from file
 
 
 if __name__ == "__main__":

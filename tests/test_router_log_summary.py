@@ -9,6 +9,7 @@ from scripts.router_log_summary import (
     ParseDiagnostics,
     format_summary,
     format_summary_json,
+    iter_lines,
     parse_route_records,
     summarize_records,
 )
@@ -26,6 +27,25 @@ INFO:     127.0.0.1:53210 - \"GET /metrics HTTP/1.1\" 404 Not Found
 
     assert records == []
     assert diagnostics == ParseDiagnostics()
+
+
+def test_iter_lines_streams_files_without_preloading(monkeypatch, tmp_path: Path):
+    log_path = tmp_path / "routes.jsonl"
+    log_path.write_text("first\nsecond\n", encoding="utf-8")
+    opened: list[str] = []
+    real_open = Path.open
+
+    def tracking_open(self: Path, *args, **kwargs):
+        opened.append(str(self))
+        return real_open(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", tracking_open)
+    lines = iter_lines([str(log_path)])
+
+    assert opened == []
+    assert next(lines) == "first\n"
+    assert opened == [str(log_path)]
+    assert list(lines) == ["second\n"]
 
 
 def test_parse_route_records_ignores_access_logs_and_non_route_json():

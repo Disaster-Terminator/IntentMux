@@ -1,4 +1,13 @@
 version: 1
+generated:
+  tool: scripts/build_route_bank.py
+  generated_at: '2026-05-13T00:00:00+00:00'
+  commit: example
+  source_manifest_sha256: example
+  source_row_counts:
+    massive_zh_cn_general: 4
+    swebench_issue_resolution: 3
+    humaneval_codegen: 1
 sources:
   - name: massive_zh_cn_general
     kind: remote_tar_jsonl

@@ -18,6 +18,7 @@ from scripts.router_log_summary import iter_lines, number_or_none, parse_route_r
 
 
 REVIEW_REASON_PRIORITY = {
+    "hard_rule": 110,
     "low_confidence": 100,
     "embedding_error": 90,
     "route_error": 85,
@@ -115,6 +116,8 @@ def review_reasons_for_record(
         reasons.append("upstream_non_2xx")
     if duration_ms is not None and duration_ms >= slow_duration_ms:
         reasons.append("slow_request")
+    if isinstance(reason, str) and reason.startswith("hard_rule:"):
+        reasons.append("hard_rule")
     if score is not None and abs(score - threshold) <= threshold_window:
         reasons.append("near_threshold")
     if score is not None and second_score is not None:
@@ -179,6 +182,13 @@ def build_review_candidate_report(
         for candidate in candidates
         for review_reason in candidate.get("review_reasons", [])
     )
+    hard_rules = Counter(
+        str(candidate.get("reason", "")).split(":", 1)[1]
+        for candidate in candidates
+        if isinstance(candidate.get("reason"), str)
+        and str(candidate["reason"]).startswith("hard_rule:")
+        and ":" in str(candidate["reason"])
+    )
     return {
         "summary": {
             "input_records": len(record_list),
@@ -186,6 +196,7 @@ def build_review_candidate_report(
             "review_reasons": dict(sorted(review_reasons.items())),
             "routes": dict(sorted(Counter(candidate.get("route_id") for candidate in candidates if candidate.get("route_id")).items())),
             "targets": dict(sorted(Counter(candidate.get("target_model") for candidate in candidates if candidate.get("target_model")).items())),
+            "hard_rules": dict(sorted(hard_rules.items())),
             "log_paths": log_paths or [],
         },
         "candidates": candidates,
@@ -203,6 +214,7 @@ def render_markdown(report: dict[str, Any]) -> str:
         f"- review_reasons: {format_counts(summary.get('review_reasons', {}))}",
         f"- routes: {format_counts(summary.get('routes', {}))}",
         f"- targets: {format_counts(summary.get('targets', {}))}",
+        f"- hard_rules: {format_counts(summary.get('hard_rules', {}))}",
         "",
         "## Candidates",
         "",

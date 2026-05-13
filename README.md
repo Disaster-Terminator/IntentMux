@@ -190,6 +190,8 @@ IntentMux 暂未实现热重载，生产变更按“配置重启、代码重建�
 仓库提供一个可跟踪的精简示例：[examples/route_bank.sample.yaml](examples/route_bank.sample.yaml)。
 它只用于展示 source/license 元数据和 route bank 形状；真实部署应离线生成或维护自己的
 `/data/semantic_sets/route_bank.yaml`。
+`scripts/build_route_bank.py` 生成的 route bank 会写入 `generated` 元数据，包括生成工具、
+git commit、生成时间、source manifest hash 和每个 source 的原始行数，便于后续追溯资产来源。
 
 生产环境如果把 route bank 视为路由质量资产，应在 `routes.yaml` 中设置
 `require_route_bank: true`，或通过 `ROUTER_REQUIRE_ROUTE_BANK=true` 开启。
@@ -375,6 +377,7 @@ uv run python scripts/select_review_candidates.py /data/logs/routes/*.jsonl \
 ```
 
 候选报告只包含 `request_id`、`route_id`、`target_model`、`reason`、分数、状态码和耗时等元数据。
+`hard_rule:*` 命中会优先进入候选报告，用来复核 `token`、`安全`、`权限` 等宽词是否过度升级。
 人工复核后，只有脱敏且设置 `redacted: true` 的样本才能进入 eval 或 route bank。
 
 配置 + 日志诊断摘要：

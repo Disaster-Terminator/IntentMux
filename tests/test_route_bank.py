@@ -62,6 +62,14 @@ def test_build_route_bank_maps_rows_to_routes_and_keeps_sources():
 
     bank = build_route_bank(sources, rows)
 
+    assert bank["generated"]["tool"] == "scripts/build_route_bank.py"
+    assert bank["generated"]["commit"]
+    assert bank["generated"]["generated_at"]
+    assert bank["generated"]["source_manifest_sha256"]
+    assert bank["generated"]["source_row_counts"] == {
+        "massive_zh_cn_general": 3,
+        "swebench_issue_resolution": 2,
+    }
     assert bank["sources"][0] == {
         "name": "massive_zh_cn_general",
         "kind": "local_rows",
@@ -113,6 +121,9 @@ def test_tracked_example_route_bank_is_small_and_auditable():
     payload = yaml.safe_load(sample_path.read_text(encoding="utf-8"))
 
     assert payload["version"] == 1
+    assert payload["generated"]["tool"] == "scripts/build_route_bank.py"
+    assert payload["generated"]["commit"]
+    assert payload["generated"]["source_manifest_sha256"]
     assert payload["sources"]
     assert set(payload["routes"]) == {"fast", "strong"}
     for source in payload["sources"]:

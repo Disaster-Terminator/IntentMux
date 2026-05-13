@@ -75,6 +75,15 @@ def test_select_review_candidates_prioritizes_reviewable_metadata_only():
         {
             "event": "route_complete",
             "timestamp": "2026-05-13T00:00:05Z",
+            "request_id": "req-hard-rule",
+            "route_id": "strong",
+            "target_model": "pro-router",
+            "reason": "hard_rule:token",
+            "duration_ms": 500,
+        },
+        {
+            "event": "route_complete",
+            "timestamp": "2026-05-13T00:00:06Z",
             "request_id": "req-slow",
             "route_id": "fast",
             "target_model": "cheap-router",
@@ -85,7 +94,7 @@ def test_select_review_candidates_prioritizes_reviewable_metadata_only():
         },
         {
             "event": "route_complete",
-            "timestamp": "2026-05-13T00:00:06Z",
+            "timestamp": "2026-05-13T00:00:07Z",
             "request_id": "req-normal",
             "route_id": "fast",
             "target_model": "cheap-router",
@@ -108,6 +117,7 @@ def test_select_review_candidates_prioritizes_reviewable_metadata_only():
 
     request_ids = [candidate["request_id"] for candidate in candidates]
     assert request_ids == [
+        "req-hard-rule",
         "req-low",
         "req-err",
         "req-400",
@@ -115,12 +125,13 @@ def test_select_review_candidates_prioritizes_reviewable_metadata_only():
         "req-near-threshold",
         "req-near-margin",
     ]
-    assert candidates[0]["review_reasons"] == ["low_confidence", "near_margin"]
-    assert candidates[1]["review_reasons"] == ["embedding_error"]
-    assert candidates[2]["review_reasons"] == ["upstream_non_2xx"]
-    assert candidates[3]["review_reasons"] == ["slow_request"]
-    assert candidates[4]["review_reasons"] == ["near_threshold"]
-    assert candidates[5]["review_reasons"] == ["near_margin"]
+    assert candidates[0]["review_reasons"] == ["hard_rule"]
+    assert candidates[1]["review_reasons"] == ["low_confidence", "near_margin"]
+    assert candidates[2]["review_reasons"] == ["embedding_error"]
+    assert candidates[3]["review_reasons"] == ["upstream_non_2xx"]
+    assert candidates[4]["review_reasons"] == ["slow_request"]
+    assert candidates[5]["review_reasons"] == ["near_threshold"]
+    assert candidates[6]["review_reasons"] == ["near_margin"]
 
     encoded = json.dumps(candidates, ensure_ascii=False)
     assert "must not leak" not in encoded
@@ -159,9 +170,36 @@ def test_build_review_candidate_report_counts_reasons_and_inputs():
         "review_reasons": {"low_confidence": 1},
         "routes": {"fast": 1},
         "targets": {"cheap-router": 1},
+        "hard_rules": {},
         "log_paths": ["routes.jsonl"],
     }
     assert report["candidates"][0]["request_id"] == "req-low"
+
+
+def test_build_review_candidate_report_counts_hard_rule_keywords():
+    report = build_review_candidate_report(
+        [
+            {
+                "event": "route_complete",
+                "request_id": "req-token",
+                "route_id": "strong",
+                "target_model": "pro-router",
+                "reason": "hard_rule:token",
+                "duration_ms": 100,
+            },
+            {
+                "event": "route_complete",
+                "request_id": "req-security",
+                "route_id": "strong",
+                "target_model": "pro-router",
+                "reason": "hard_rule:安全",
+                "duration_ms": 100,
+            },
+        ],
+    )
+
+    assert report["summary"]["review_reasons"] == {"hard_rule": 2}
+    assert report["summary"]["hard_rules"] == {"安全": 1, "token": 1}
 
 
 def test_load_route_thresholds_reads_routes_config(tmp_path: Path):
@@ -190,6 +228,7 @@ def test_render_markdown_is_audit_friendly():
                 "review_reasons": {"low_confidence": 1},
                 "routes": {"fast": 1},
                 "targets": {"cheap-router": 1},
+                "hard_rules": {},
                 "log_paths": ["routes.jsonl"],
             },
             "candidates": [
