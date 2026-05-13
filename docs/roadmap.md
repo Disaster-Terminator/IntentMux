@@ -36,6 +36,8 @@ Next hardening targets:
   `scripts/import_review_samples.py`
 - route quality review through `/v1/semantic-router/decision`, which returns
   the would-route decision without forwarding to LiteLLM or a model backend
+- agent workload routing policy for tool-call and code-editing frameworks,
+  including when callers should use `metadata.route_id=strong`
 - public-readiness work after the configurable route abstraction and
   observability contract have both been audited; the current repository should
   not be treated as public-release frozen

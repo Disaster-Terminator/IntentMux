@@ -195,6 +195,36 @@ curl http://127.0.0.1:4001/v1/semantic-router/decision \
 
 This returns the selected `route_id`, resolved `target_model`, `policy_id`, reason, rewrite flag, and scores without forwarding to LiteLLM.
 
+## Semantic Assets
+
+Runtime dependencies stay small. Larger route banks are built offline from the
+sources declared in `config/route_sources.yaml`; Hugging Face and dataset tools
+are not runtime dependencies.
+
+The repository includes a small tracked example at
+[examples/route_bank.sample.yaml](examples/route_bank.sample.yaml). It is for
+showing source/license metadata and route-bank shape. Real deployments should
+generate or maintain their own `/data/semantic_sets/route_bank.yaml`.
+
+Recommended quality-report flow:
+
+```bash
+uv run python scripts/eval_routes.py --mock-embeddings > /tmp/intentmux-eval.txt
+uv run python scripts/router_log_summary.py /data/logs/routes/*.jsonl --json > /tmp/intentmux-routes.json
+uv run python scripts/route_quality_report.py \
+  --eval-output /tmp/intentmux-eval.txt \
+  --route-summary-json /tmp/intentmux-routes.json \
+  --route-bank examples/route_bank.sample.yaml \
+  --json-output /tmp/intentmux-quality.json \
+  --markdown-output /tmp/intentmux-quality.md
+```
+
+For agent frameworks, see
+[docs/agent_framework_integration.md](docs/agent_framework_integration.md).
+Code-editing agents, tool-call loops, PR review, production incidents, and
+security analysis should usually send `metadata.route_id=strong` explicitly
+instead of relying only on low-confidence fallback.
+
 ## Runtime Behavior
 
 Run IntentMux as a sidecar in the same deployment boundary as LiteLLM.

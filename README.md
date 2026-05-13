@@ -172,6 +172,10 @@ IntentMux 暂未实现热重载，生产变更按“配置重启、代码重建�
 `fast`、`strong`，不能使用 `cheap-router`、`pro-router`
 这类部署侧 target model 名称作为 key。
 
+仓库提供一个可跟踪的精简示例：[examples/route_bank.sample.yaml](examples/route_bank.sample.yaml)。
+它只用于展示 source/license 元数据和 route bank 形状；真实部署应离线生成或维护自己的
+`/data/semantic_sets/route_bank.yaml`。
+
 ## LiteLLM 接入方式
 
 低侵入接入方式是：客户端继续请求 LiteLLM `:4000`，只把模型名切到 `semantic-router`。
@@ -357,7 +361,22 @@ uv run python scripts/import_review_samples.py \
 
 每条 JSONL 必须设置 `redacted: true`，并用 route id 作为 `expect`。
 
+生成质量报告的推荐流程：
+
+```bash
+uv run python scripts/eval_routes.py --mock-embeddings > /tmp/intentmux-eval.txt
+uv run python scripts/router_log_summary.py /data/logs/routes/*.jsonl --json > /tmp/intentmux-routes.json
+uv run python scripts/route_quality_report.py \
+  --eval-output /tmp/intentmux-eval.txt \
+  --route-summary-json /tmp/intentmux-routes.json \
+  --route-bank examples/route_bank.sample.yaml \
+  --json-output /tmp/intentmux-quality.json \
+  --markdown-output /tmp/intentmux-quality.md
+```
+
 生产变更必须先通过 [docs/production_rollout_gate.md](docs/production_rollout_gate.md)，不要在探索阶段直接重启或重建生产 sidecar。
+
+Agent 框架接入建议见 [docs/agent_framework_integration.md](docs/agent_framework_integration.md)。代码编辑、工具调用、PR review、生产事故和安全分析等高风险负载建议显式发送 `metadata.route_id=strong`，不要完全依赖低置信 fallback。
 
 ## 运行行为
 

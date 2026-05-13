@@ -1,0 +1,53 @@
+version: 1
+sources:
+  - name: massive_zh_cn_general
+    kind: remote_tar_jsonl
+    route: fast
+    limit: 4
+    url: https://amazon-massive-nlu-dataset.s3.amazonaws.com/amazon-massive-dataset-1.0.tar.gz
+    dataset: null
+    split: null
+    homepage: https://www.amazon.science/code-and-datasets/massive
+    license: CC BY 4.0
+    license_url: https://github.com/alexa/massive/blob/master/LICENSE
+  - name: swebench_issue_resolution
+    kind: huggingface
+    route: strong
+    limit: 4
+    url: null
+    dataset: princeton-nlp/SWE-bench
+    split: test
+    homepage: https://github.com/SWE-bench/SWE-bench
+    license: MIT
+    license_url: https://github.com/SWE-bench/SWE-bench/blob/main/LICENSE.md
+  - name: humaneval_codegen
+    kind: huggingface
+    route: strong
+    limit: 2
+    url: null
+    dataset: openai/openai_humaneval
+    split: test
+    homepage: https://github.com/openai/human-eval
+    license: MIT
+    license_url: https://github.com/openai/human-eval/blob/master/LICENSE
+routes:
+  fast:
+    utterances:
+      - text: 翻译成中文
+        source: massive_zh_cn_general
+      - text: 总结这篇文章
+        source: massive_zh_cn_general
+      - text: 写一个简短说明
+        source: massive_zh_cn_general
+      - text: 这个命令是什么意思
+        source: massive_zh_cn_general
+  strong:
+    utterances:
+      - text: Fix crash when parsing config files.
+        source: swebench_issue_resolution
+      - text: Analyze why this bug only happens in production.
+        source: swebench_issue_resolution
+      - text: Write a function that validates nested input.
+        source: humaneval_codegen
+      - text: Review this pull request for race conditions.
+        source: swebench_issue_resolution

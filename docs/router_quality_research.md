@@ -76,3 +76,12 @@ The goal is to reduce excessive `low_confidence` routing with sourced examples,
 while preserving conservative fallback to `fast` when IntentMux cannot make a
 defensible decision.
 
+## Public Example
+
+`examples/route_bank.sample.yaml` is the tracked public example. It is
+deliberately small and should not be treated as a production route bank. Its job
+is to show the shape of `sources`, source/license metadata, and route utterance
+records without committing local generated assets under `data/semantic_sets/`.
+
+Generated route banks and eval banks remain deployment assets unless a sample is
+explicitly curated for public use.
