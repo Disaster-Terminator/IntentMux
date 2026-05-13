@@ -60,7 +60,11 @@ def create_app(
         )
     if readiness_checker is None:
         readiness_checker = ReadinessChecker(settings)
-    audit_logger = AuditLogger(settings.audit_log_dir, enabled=settings.audit_log_enabled)
+    audit_logger = AuditLogger(
+        settings.audit_log_dir,
+        enabled=settings.audit_log_enabled,
+        timezone_name=settings.audit_log_timezone,
+    )
 
     app = FastAPI(title="IntentMux")
 

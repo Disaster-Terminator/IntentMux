@@ -6,16 +6,19 @@ import json
 import os
 import shlex
 import subprocess
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
+from router.observability import DEFAULT_AUDIT_LOG_TIMEZONE, zoneinfo_for
+
 DEFAULT_REPO = Path(__file__).resolve().parents[1]
 DEFAULT_LOG_DIR = Path(os.getenv("INTENTMUX_LOG_DIR", "logs"))
 DEFAULT_ROUTER_BASE_URL = os.getenv("INTENTMUX_ROUTER_BASE_URL", "http://127.0.0.1:4001")
 DEFAULT_LITELLM_BASE_URL = os.getenv("INTENTMUX_LITELLM_BASE_URL", "http://127.0.0.1:4000")
+DEFAULT_TIMEZONE = os.getenv("INTENTMUX_TIMEZONE", DEFAULT_AUDIT_LOG_TIMEZONE)
 
 
 def run(cmd: str, *, cwd: Path, timeout: int = 120) -> dict[str, Any]:
@@ -144,6 +147,19 @@ def traffic_evidence_from_day_log(day_log: Path, *, min_records: int) -> dict[st
     }
 
 
+def report_now_and_day(
+    *,
+    now: datetime | None = None,
+    timezone_name: str = DEFAULT_TIMEZONE,
+    explicit_date: str | None = None,
+) -> tuple[datetime, str]:
+    current = now or datetime.now(UTC)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=UTC)
+    localized = current.astimezone(zoneinfo_for(timezone_name))
+    return localized, explicit_date or localized.strftime("%Y-%m-%d")
+
+
 def path_from_arg_or_env(value: str | None, env_name: str, default: Path) -> Path:
     raw = value or os.getenv(env_name)
     return Path(raw).expanduser() if raw else default
@@ -252,6 +268,18 @@ def main() -> int:
     ap.add_argument("--run-e2e", action="store_true", help="Run strict LiteLLM-entry e2e (real requests)")
     ap.add_argument("--slow-request-limit", type=int, default=10)
     ap.add_argument(
+        "--timezone",
+        default=DEFAULT_TIMEZONE,
+        help=(
+            "Timezone used for report timestamps and today's route-log filename. "
+            "Defaults to INTENTMUX_TIMEZONE or Asia/Shanghai."
+        ),
+    )
+    ap.add_argument(
+        "--date",
+        help="Explicit route-log date in YYYY-MM-DD. Overrides --timezone for file selection.",
+    )
+    ap.add_argument(
         "--min-route-records",
         type=int,
         default=int(os.getenv("INTENTMUX_MIN_ROUTE_RECORDS", "0")),
@@ -304,8 +332,7 @@ def main() -> int:
     litellm_env_raw = args.litellm_env or os.getenv("INTENTMUX_LITELLM_ENV")
     litellm_env = Path(litellm_env_raw).expanduser() if litellm_env_raw else None
 
-    now = datetime.now().astimezone()
-    day = now.strftime("%Y-%m-%d")
+    now, day = report_now_and_day(timezone_name=args.timezone, explicit_date=args.date)
     health_dir.mkdir(parents=True, exist_ok=True)
 
     commit = run("git rev-parse --short HEAD", cwd=repo, timeout=10)

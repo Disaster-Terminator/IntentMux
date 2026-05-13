@@ -54,6 +54,7 @@ class RouterSettings(BaseModel):
     access_log: bool = False
     audit_log_enabled: bool = False
     audit_log_dir: str | None = None
+    audit_log_timezone: str = "Asia/Shanghai"
     readiness_timeout: float = 2.0
     listen_host: str = "127.0.0.1"
     listen_port: int = 4001
@@ -121,6 +122,10 @@ def load_settings(path: str | Path | None = None) -> RouterSettings:
                 "ROUTER_AUDIT_LOG_ENABLED", settings.audit_log_enabled
             ),
             "audit_log_dir": os.getenv("ROUTER_AUDIT_LOG_DIR", settings.audit_log_dir or ""),
+            "audit_log_timezone": os.getenv(
+                "ROUTER_AUDIT_LOG_TIMEZONE",
+                settings.audit_log_timezone,
+            ),
             "readiness_timeout": float(
                 os.getenv("ROUTER_READINESS_TIMEOUT", str(settings.readiness_timeout))
             ),

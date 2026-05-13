@@ -15,6 +15,7 @@ services:
       ROUTER_CONFIG: "/data/config/routes.yaml"
       ROUTER_AUDIT_LOG_ENABLED: "${ROUTER_AUDIT_LOG_ENABLED:-true}"
       ROUTER_AUDIT_LOG_DIR: "/data/logs/routes"
+      ROUTER_AUDIT_LOG_TIMEZONE: "${ROUTER_AUDIT_LOG_TIMEZONE:-Asia/Shanghai}"
       ROUTER_INBOUND_API_KEY: "${ROUTER_INBOUND_API_KEY:-}"
       ROUTER_LITELLM_BASE_URL: "${ROUTER_LITELLM_BASE_URL:-http://host.docker.internal:4000}"
       ROUTER_LITELLM_API_KEY: "${ROUTER_LITELLM_API_KEY:-}"

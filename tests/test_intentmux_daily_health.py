@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 
 from scripts.intentmux_daily_health import (
@@ -9,6 +10,7 @@ from scripts.intentmux_daily_health import (
     parse_ready,
     path_from_arg_or_env,
     render_md,
+    report_now_and_day,
 )
 
 
@@ -138,6 +140,27 @@ def test_traffic_evidence_is_not_required_by_default(tmp_path: Path):
         "min_records": 0,
         "detail": "not_required",
     }
+
+
+def test_report_day_defaults_to_beijing_time():
+    now, day = report_now_and_day(
+        now=datetime(2026, 5, 13, 16, 30, tzinfo=UTC),
+        timezone_name="Asia/Shanghai",
+        explicit_date=None,
+    )
+
+    assert day == "2026-05-14"
+    assert now.isoformat() == "2026-05-14T00:30:00+08:00"
+
+
+def test_report_day_accepts_explicit_date_override():
+    _, day = report_now_and_day(
+        now=datetime(2026, 5, 13, 16, 30, tzinfo=UTC),
+        timezone_name="Asia/Shanghai",
+        explicit_date="2026-05-10",
+    )
+
+    assert day == "2026-05-10"
 
 
 def test_path_from_arg_or_env_prefers_cli_value(monkeypatch):

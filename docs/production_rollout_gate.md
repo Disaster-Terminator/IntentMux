@@ -13,7 +13,7 @@ Config or asset changes:
 - environment variables such as `ROUTER_LITELLM_BASE_URL`,
   `ROUTER_LITELLM_API_KEY`, `ROUTER_INBOUND_API_KEY`,
   `ROUTER_EMBEDDING_API_KEY`, `ROUTER_EMBEDDING_HEADERS_JSON`, or
-  `ROUTER_REQUIRE_ROUTE_BANK`
+  `ROUTER_REQUIRE_ROUTE_BANK`, or `ROUTER_AUDIT_LOG_TIMEZONE`
 
 These require an IntentMux sidecar restart because routes and vectors are loaded
 at startup. They do not require an image rebuild.
@@ -41,6 +41,7 @@ curl -sS http://127.0.0.1:4001/ready
 uv run python scripts/intentmux_daily_health.py \
   --repo /path/to/IntentMux \
   --log-dir /path/to/intentmux-home/logs \
+  --timezone Asia/Shanghai \
   --min-route-records 0
 ```
 
@@ -77,6 +78,7 @@ uv run python scripts/intentmux_daily_health.py \
   --repo /path/to/IntentMux \
   --log-dir /path/to/intentmux-home/logs \
   --litellm-env /path/to/litellm.env \
+  --timezone Asia/Shanghai \
   --min-route-records 1 \
   --run-e2e
 ```
@@ -93,6 +95,8 @@ The gate passes only when:
 - latest health report has `not_ok=0` for today's logs;
 - latest health report has `traffic_evidence.ok=true` when a positive
   `--min-route-records` threshold is used;
+- daily health uses the same day boundary as `ROUTER_AUDIT_LOG_TIMEZONE`
+  unless `--date` is intentionally used;
 - any route-bank change has source attribution and no raw production prompt.
 - production-log-driven changes use only human-reviewed, redacted review
   samples.

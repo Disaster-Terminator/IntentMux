@@ -520,11 +520,13 @@ routes:
     )
     monkeypatch.setenv("ROUTER_AUDIT_LOG_DIR", str(audit_dir))
     monkeypatch.setenv("ROUTER_AUDIT_LOG_ENABLED", "true")
+    monkeypatch.setenv("ROUTER_AUDIT_LOG_TIMEZONE", "UTC")
 
     settings = load_settings(routes_path)
 
     assert settings.audit_log_dir == str(audit_dir)
     assert settings.audit_log_enabled is True
+    assert settings.audit_log_timezone == "UTC"
 
 
 def test_load_settings_disables_access_log_by_default(tmp_path: Path):

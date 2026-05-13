@@ -35,6 +35,7 @@ INTENTMUX_LITELLM_BASE_URL=http://127.0.0.1:4000
 INTENTMUX_LITELLM_ENV=/path/to/litellm.env
 INTENTMUX_LOG_CONTAINER=intentmux
 INTENTMUX_MIN_ROUTE_RECORDS=0
+INTENTMUX_TIMEZONE=Asia/Shanghai
 ```
 
 `INTENTMUX_LOG_DIR` is the directory that contains:
@@ -58,6 +59,7 @@ uv --directory "$INTENTMUX_REPO" run python scripts/intentmux_daily_health.py \
   --log-dir "$INTENTMUX_LOG_DIR" \
   --router-base-url "$INTENTMUX_ROUTER_BASE_URL" \
   --litellm-base-url "$INTENTMUX_LITELLM_BASE_URL" \
+  --timezone "$INTENTMUX_TIMEZONE" \
   --min-route-records "$INTENTMUX_MIN_ROUTE_RECORDS" \
   --log-container "$INTENTMUX_LOG_CONTAINER"
 ```
@@ -76,6 +78,7 @@ uv --directory "$INTENTMUX_REPO" run python scripts/intentmux_daily_health.py \
   --router-base-url "$INTENTMUX_ROUTER_BASE_URL" \
   --litellm-base-url "$INTENTMUX_LITELLM_BASE_URL" \
   --litellm-env "$INTENTMUX_LITELLM_ENV" \
+  --timezone "$INTENTMUX_TIMEZONE" \
   --min-route-records "$INTENTMUX_MIN_ROUTE_RECORDS" \
   --log-container "$INTENTMUX_LOG_CONTAINER" \
   --run-e2e
@@ -96,7 +99,9 @@ The daily health report includes:
 
 `route_summary_today` is the main daily signal. `traffic_evidence` reports the
 number of non-empty records in today's route log and compares it with
-`--min-route-records`. `route_summary_all_logs` is only historical context.
+`--min-route-records`. "Today" defaults to `Asia/Shanghai`, matching the
+default audit-log partition timezone. Use `--date YYYY-MM-DD` for an explicit
+file date. `route_summary_all_logs` is only historical context.
 
 Slow request rows include:
 

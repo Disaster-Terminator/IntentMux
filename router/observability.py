@@ -8,11 +8,13 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from router.routing import RoutingDecision
 
 
 LOGGER_NAME = "intentmux"
+DEFAULT_AUDIT_LOG_TIMEZONE = "Asia/Shanghai"
 
 
 @dataclass(frozen=True)
@@ -22,9 +24,16 @@ class RequestIdentity:
 
 
 class AuditLogger:
-    def __init__(self, log_dir: str | None, *, enabled: bool = False):
+    def __init__(
+        self,
+        log_dir: str | None,
+        *,
+        enabled: bool = False,
+        timezone_name: str = DEFAULT_AUDIT_LOG_TIMEZONE,
+    ):
         self.enabled = enabled
         self.log_dir = Path(log_dir) if log_dir else None
+        self.timezone_name = timezone_name
         if self.enabled:
             if self.log_dir is None:
                 raise ValueError("audit_log_dir is required when audit logging is enabled")
@@ -33,10 +42,28 @@ class AuditLogger:
     def write(self, record: dict[str, Any]) -> None:
         if not self.enabled or self.log_dir is None:
             return
-        path = self.log_dir / f"{datetime.now(UTC).date().isoformat()}.jsonl"
+        path = self.log_dir / f"{audit_log_day(timezone_name=self.timezone_name)}.jsonl"
         with path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(record, ensure_ascii=False, sort_keys=True))
             handle.write("\n")
+
+
+def audit_log_day(
+    now: datetime | None = None,
+    *,
+    timezone_name: str = DEFAULT_AUDIT_LOG_TIMEZONE,
+) -> str:
+    now = now or datetime.now(UTC)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=UTC)
+    return now.astimezone(zoneinfo_for(timezone_name)).date().isoformat()
+
+
+def zoneinfo_for(timezone_name: str) -> ZoneInfo:
+    try:
+        return ZoneInfo(timezone_name)
+    except ZoneInfoNotFoundError as exc:
+        raise ValueError(f"unknown timezone: {timezone_name}") from exc
 
 
 def request_id_from_request(headers: dict[str, str], payload: dict[str, Any]) -> str:

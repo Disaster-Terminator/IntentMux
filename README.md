@@ -145,6 +145,7 @@ docker compose -f examples/docker-compose.yml up -d --build
 - `ROUTER_LITELLM_BASE_URL`：LiteLLM 上游地址，默认 `http://host.docker.internal:4000`。
 - `ROUTER_LITELLM_API_KEY`：IntentMux 调用上游 LiteLLM 使用的专用 key。设置后，IntentMux 不会把入站 `Authorization` 原样转发给上游。
 - `ROUTER_INBOUND_API_KEY`：可选的 IntentMux 入站 key，用于保护直连 sidecar 的 `/v1/chat/completions` 和 `/v1/semantic-router/decision`；不影响 `/health` 和 `/ready`。
+- `ROUTER_AUDIT_LOG_TIMEZONE`：审计日志按天分区的时区，默认 `Asia/Shanghai`。
 - `ROUTER_EMBEDDING_URL`：embedding 上游地址，默认 `http://host.docker.internal:1234/v1/embeddings`。
 - `ROUTER_EMBEDDING_MODEL`：embedding 模型名。
 - `ROUTER_EMBEDDING_API_KEY`：可选的 embedding 上游 key，设置后按 OpenAI-compatible `Authorization: Bearer ...` 发送。
@@ -348,10 +349,13 @@ uv run python scripts/check_route_error_budget.py /data/logs/routes/*.jsonl \
 ```bash
 uv run python scripts/intentmux_daily_health.py \
   --log-dir /data/logs \
+  --timezone Asia/Shanghai \
   --min-route-records 100
 ```
 
 低于阈值时报告中的 `traffic_evidence.ok` 会是 `false`，脚本返回码为 `4`。
+`--timezone` 默认读取 `INTENTMUX_TIMEZONE`，未设置时使用 `Asia/Shanghai`；也可以用
+`--date YYYY-MM-DD` 明确指定要巡检的审计日志日期。
 
 日志驱动质量闭环见 [docs/log_driven_quality_loop.md](docs/log_driven_quality_loop.md)。
 IntentMux 不记录 raw prompt；audit log 只负责发现低置信、异常状态码、慢请求和分布漂移。
