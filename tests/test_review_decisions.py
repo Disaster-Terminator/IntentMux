@@ -9,9 +9,11 @@ from scripts.review_decisions import (
     DEFAULT_ROUTE_MODEL,
     format_result_row,
     load_cases,
+    main,
     run_review,
     validate_expected_routes,
 )
+from scripts.import_review_samples import convert_review_samples
 
 
 def test_load_cases_from_yaml_supports_text_and_messages(tmp_path):
@@ -73,6 +75,50 @@ def test_load_cases_from_jsonl(tmp_path):
         "messages": [{"role": "user", "content": "hi"}],
         "model": "custom-router",
     }
+
+
+def test_load_cases_accepts_imported_review_samples_without_name(tmp_path):
+    imported = convert_review_samples(
+        [
+            json.dumps(
+                {
+                    "redacted": True,
+                    "text": "帮我分析这个 PR 的回归风险",
+                    "expect": "strong",
+                    "source": "manual_review",
+                },
+                ensure_ascii=False,
+            )
+        ],
+        allowed_route_ids={"fast", "strong"},
+    )
+    path = tmp_path / "imported.yaml"
+    import yaml
+
+    path.write_text(yaml.safe_dump(imported, allow_unicode=True, sort_keys=False), encoding="utf-8")
+
+    cases = load_cases(path)
+
+    assert cases[0].name == "production_review:manual_review#0001"
+    assert cases[0].payload == {
+        "model": DEFAULT_ROUTE_MODEL,
+        "messages": [{"role": "user", "content": "帮我分析这个 PR 的回归风险"}],
+    }
+    assert cases[0].expected_route == "strong"
+
+
+def test_review_decisions_default_endpoint_matches_project_port(monkeypatch):
+    captured: dict[str, object] = {}
+
+    def fake_run_review(endpoint, cases_path, timeout_s, *, routes_path=None, output="table"):
+        captured["endpoint"] = endpoint
+        captured["cases_path"] = cases_path
+        return 0
+
+    monkeypatch.setattr(review_decisions, "run_review", fake_run_review)
+
+    assert main(["--cases", "tests/samples/review_decisions.yaml"]) == 0
+    assert captured["endpoint"] == "http://127.0.0.1:4001/v1/semantic-router/decision"
 
 
 def test_format_result_row_supports_pass_fail_and_na():

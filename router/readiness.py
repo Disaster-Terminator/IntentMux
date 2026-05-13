@@ -76,6 +76,6 @@ def litellm_status_from_code(status_code: int) -> ComponentStatus:
     if status_code in {401, 403}:
         return ComponentStatus(ok=True, detail=f"status={status_code} auth_required")
     return ComponentStatus(
-        ok=200 <= status_code < 500,
+        ok=200 <= status_code < 300,
         detail=f"status={status_code}",
     )

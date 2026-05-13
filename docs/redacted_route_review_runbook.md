@@ -33,7 +33,7 @@ If a sample is not redacted or `expect` is not a configured route_id, import fai
 
 ```bash
 uv run python scripts/review_decisions.py \
-  --endpoint http://127.0.0.1:8080/v1/semantic-router/decision \
+  --endpoint http://127.0.0.1:4001/v1/semantic-router/decision \
   --cases /tmp/redacted_review_cases.yaml \
   --routes config/routes.yaml
 ```

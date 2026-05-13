@@ -66,8 +66,7 @@ def create_app(
             status_code=200 if report.ready else 503,
         )
 
-    @app.post("/v1/semantic-router/decision")
-    async def route_decision(request: Request) -> dict[str, Any]:
+    async def parse_json_object(request: Request) -> Any:
         try:
             payload = await request.json()
         except json.JSONDecodeError:
@@ -80,6 +79,13 @@ def create_app(
                 status_code=400,
                 content={"error": {"message": "JSON body must be an object"}},
             )
+        return payload
+
+    @app.post("/v1/semantic-router/decision")
+    async def route_decision(request: Request) -> Any:
+        payload = await parse_json_object(request)
+        if isinstance(payload, JSONResponse):
+            return payload
         decision = await router.decide(payload)
         return {
             "source_model": decision.source_model,
@@ -96,7 +102,9 @@ def create_app(
     async def chat_completions(request: Request) -> Response:
         started_ms = now_ms()
         request_headers = dict(request.headers)
-        payload: dict[str, Any] = await request.json()
+        payload = await parse_json_object(request)
+        if isinstance(payload, JSONResponse):
+            return payload
         request_identity = request_identity_from_request(request_headers, payload)
         request_id = request_identity.value
         request_headers["x-request-id"] = request_id

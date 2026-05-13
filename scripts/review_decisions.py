@@ -20,10 +20,7 @@ class ReviewCase:
     expected_route: str | None
 
 
-def _normalize_case(raw: dict[str, Any], source: str) -> ReviewCase:
-    if "name" not in raw:
-        raise ValueError(f"{source}: missing required field 'name'")
-
+def _normalize_case(raw: dict[str, Any], source: str, index: int) -> ReviewCase:
     has_text = "text" in raw
     has_messages = "messages" in raw
     if has_text == has_messages:
@@ -35,12 +32,22 @@ def _normalize_case(raw: dict[str, Any], source: str) -> ReviewCase:
         payload = {"messages": raw["messages"]}
 
     payload["model"] = raw.get("model", DEFAULT_ROUTE_MODEL)
+    expected_route = raw.get("expected_route", raw.get("expect"))
 
     return ReviewCase(
-        name=str(raw["name"]),
+        name=case_name(raw, index),
         payload=payload,
-        expected_route=raw.get("expected_route"),
+        expected_route=expected_route,
     )
+
+
+def case_name(raw: dict[str, Any], index: int) -> str:
+    name = raw.get("name")
+    if isinstance(name, str) and name.strip():
+        return name.strip()
+    source = raw.get("source")
+    prefix = source.strip() if isinstance(source, str) and source.strip() else "case"
+    return f"{prefix}#{index:04d}"
 
 
 def load_cases(path: Path) -> list[ReviewCase]:
@@ -50,7 +57,7 @@ def load_cases(path: Path) -> list[ReviewCase]:
         for idx, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
             if not line.strip():
                 continue
-            cases.append(_normalize_case(json.loads(line), f"{path}:{idx}"))
+            cases.append(_normalize_case(json.loads(line), f"{path}:{idx}", idx))
         return cases
 
     if suffix in {".yaml", ".yml"}:
@@ -59,7 +66,7 @@ def load_cases(path: Path) -> list[ReviewCase]:
             items = raw.get("cases", [])
         else:
             items = raw
-        return [_normalize_case(item, str(path)) for item in items]
+    return [_normalize_case(item, str(path), index) for index, item in enumerate(items, start=1)]
 
     raise ValueError("unsupported case format; use .jsonl, .yaml, or .yml")
 
@@ -213,25 +220,23 @@ def run_review(
     return 1 if (mismatch_count or endpoint_error_count) else 0
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--endpoint", default="http://127.0.0.1:8080/v1/semantic-router/decision")
+    parser.add_argument("--endpoint", default="http://127.0.0.1:4001/v1/semantic-router/decision")
     parser.add_argument("--cases", default="tests/samples/review_decisions.yaml")
     parser.add_argument("--timeout", type=float, default=10.0)
     parser.add_argument("--output", choices=["table", "json"], default="table")
     parser.add_argument("--routes")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
-    raise SystemExit(
-        run_review(
-            args.endpoint,
-            Path(args.cases),
-            args.timeout,
-            output=args.output,
-            routes_path=Path(args.routes) if args.routes else None,
-        )
+    return run_review(
+        args.endpoint,
+        Path(args.cases),
+        args.timeout,
+        output=args.output,
+        routes_path=Path(args.routes) if args.routes else None,
     )
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

@@ -443,6 +443,53 @@ def test_decision_endpoint_returns_400_for_invalid_json_without_leaking_input():
     assert proxy.stream_called is False
 
 
+def test_chat_completion_returns_400_for_invalid_json_without_leaking_input():
+    proxy = NoUpstreamProxy()
+    app = create_app(
+        router=FakeRouter(RoutingDecision("cheap-router", "passthrough", rewrite=False)),
+        proxy=proxy,
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/v1/chat/completions",
+        data='{"model":"semantic-router","messages":[{"role":"user","content":"secret"',
+        headers={
+            "content-type": "application/json",
+            "authorization": "Bearer super-secret-token",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {"error": {"message": "Invalid JSON request body"}}
+    assert "secret" not in response.text
+    assert "super-secret-token" not in response.text
+    assert proxy.forward_called is False
+    assert proxy.stream_called is False
+
+
+def test_chat_completion_returns_400_for_non_object_payload_without_leaking_input():
+    proxy = NoUpstreamProxy()
+    app = create_app(
+        router=FakeRouter(RoutingDecision("cheap-router", "passthrough", rewrite=False)),
+        proxy=proxy,
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/v1/chat/completions",
+        headers={"authorization": "Bearer super-secret-token"},
+        json=["super", "sensitive", {"prompt": "do not leak"}],
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {"error": {"message": "JSON body must be an object"}}
+    assert "sensitive" not in response.text
+    assert "super-secret-token" not in response.text
+    assert proxy.forward_called is False
+    assert proxy.stream_called is False
+
+
 def test_decision_endpoint_returns_400_for_non_object_payload_without_leaking_input():
     proxy = NoUpstreamProxy()
     app = create_app(

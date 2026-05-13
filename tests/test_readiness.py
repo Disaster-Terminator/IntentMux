@@ -94,3 +94,14 @@ def test_litellm_status_treats_auth_required_as_reachable():
         ok=False,
         detail="status=503",
     )
+
+
+def test_litellm_status_rejects_non_auth_client_errors():
+    assert litellm_status_from_code(400) == ComponentStatus(
+        ok=False,
+        detail="status=400",
+    )
+    assert litellm_status_from_code(404) == ComponentStatus(
+        ok=False,
+        detail="status=404",
+    )
