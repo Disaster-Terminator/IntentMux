@@ -118,6 +118,7 @@ def log_route_complete(
     stream: bool,
     upstream_status: int,
     started_ms: float,
+    timings_ms: dict[str, float] | None = None,
     audit_logger: AuditLogger | None = None,
 ) -> None:
     ok = 200 <= upstream_status <= 299
@@ -131,6 +132,7 @@ def log_route_complete(
         ok=ok,
         outcome="success" if ok else "upstream_non_200",
         upstream_status=upstream_status,
+        timings_ms=timings_ms,
     )
     emit_route_record(logger, record, audit_logger)
 
@@ -145,6 +147,7 @@ def log_route_error(
     error: BaseException,
     started_ms: float,
     upstream_status: int | None = None,
+    timings_ms: dict[str, float] | None = None,
     audit_logger: AuditLogger | None = None,
 ) -> None:
     record = route_record(
@@ -161,6 +164,7 @@ def log_route_error(
             else "route_error"
         ),
         upstream_status=upstream_status,
+        timings_ms=timings_ms,
     )
     record.update(
         {"error_type": type(error).__name__}
@@ -179,6 +183,7 @@ def route_record(
     ok: bool,
     outcome: str,
     upstream_status: int | None = None,
+    timings_ms: dict[str, float] | None = None,
 ) -> dict[str, Any]:
     record: dict[str, Any] = {
         "duration_ms": round(now_ms() - started_ms, 2),
@@ -200,6 +205,9 @@ def route_record(
     }
     if upstream_status is not None:
         record["upstream_status"] = upstream_status
+    if timings_ms:
+        for name, duration_ms in timings_ms.items():
+            record[name] = round(duration_ms, 2)
     return record
 
 

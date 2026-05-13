@@ -100,7 +100,9 @@ def create_app(
         request_identity = request_identity_from_request(request_headers, payload)
         request_id = request_identity.value
         request_headers["x-request-id"] = request_id
+        decision_started_ms = now_ms()
         decision = await router.decide(payload)
+        decision_ms = now_ms() - decision_started_ms
         forwarded_payload = dict(payload)
         forwarded_payload["model"] = decision.target_model
         router_headers = route_headers(
@@ -111,9 +113,11 @@ def create_app(
             policy_id=decision.policy_id,
         )
         if forwarded_payload.get("stream") is True:
+            upstream_started_ms = now_ms()
             stream_context = proxy.stream_chat(forwarded_payload, request_headers)
             try:
                 upstream = await stream_context.__aenter__()
+                upstream_headers_ms = now_ms() - upstream_started_ms
             except Exception as exc:
                 log_route_error(
                     logger,
@@ -123,6 +127,10 @@ def create_app(
                     stream=True,
                     error=exc,
                     started_ms=started_ms,
+                    timings_ms={
+                        "decision_ms": decision_ms,
+                        "upstream_ms": now_ms() - upstream_started_ms,
+                    },
                     audit_logger=audit_logger,
                 )
                 return upstream_error_response(
@@ -141,6 +149,11 @@ def create_app(
                     error=error,
                     started_ms=started_ms,
                     upstream_status=upstream.status_code,
+                    timings_ms={
+                        "decision_ms": decision_ms,
+                        "upstream_ms": now_ms() - upstream_started_ms,
+                        "upstream_headers_ms": upstream_headers_ms,
+                    },
                     audit_logger=audit_logger,
                 )
                 await stream_context.__aexit__(None, None, None)
@@ -160,6 +173,9 @@ def create_app(
                     decision=decision,
                     upstream_status=upstream.status_code,
                     started_ms=started_ms,
+                    decision_ms=decision_ms,
+                    upstream_started_ms=upstream_started_ms,
+                    upstream_headers_ms=upstream_headers_ms,
                     audit_logger=audit_logger,
                 ),
                 status_code=upstream.status_code,
@@ -167,8 +183,10 @@ def create_app(
                 media_type=headers.get("content-type", "text/event-stream"),
             )
 
+        upstream_started_ms = now_ms()
         try:
             upstream = await proxy.forward_chat(forwarded_payload, request_headers)
+            upstream_ms = now_ms() - upstream_started_ms
         except Exception as exc:
             log_route_error(
                 logger,
@@ -178,6 +196,10 @@ def create_app(
                 stream=False,
                 error=exc,
                 started_ms=started_ms,
+                timings_ms={
+                    "decision_ms": decision_ms,
+                    "upstream_ms": now_ms() - upstream_started_ms,
+                },
                 audit_logger=audit_logger,
             )
             return upstream_error_response(
@@ -196,6 +218,10 @@ def create_app(
                 error=error,
                 started_ms=started_ms,
                 upstream_status=upstream.status_code,
+                timings_ms={
+                    "decision_ms": decision_ms,
+                    "upstream_ms": upstream_ms,
+                },
                 audit_logger=audit_logger,
             )
             return upstream_error_response(
@@ -213,6 +239,10 @@ def create_app(
             stream=False,
             upstream_status=upstream.status_code,
             started_ms=started_ms,
+            timings_ms={
+                "decision_ms": decision_ms,
+                "upstream_ms": upstream_ms,
+            },
             audit_logger=audit_logger,
         )
         return Response(
@@ -234,8 +264,14 @@ async def stream_with_context(
     decision,
     upstream_status: int,
     started_ms: float,
+    decision_ms: float = 0.0,
+    upstream_started_ms: float | None = None,
+    upstream_headers_ms: float | None = None,
     audit_logger: AuditLogger | None = None,
 ):
+    if upstream_started_ms is None:
+        upstream_started_ms = started_ms
+    body_started_ms = now_ms()
     exc_info = (None, None, None)
     route_error: Exception | None = None
     try:
@@ -252,6 +288,12 @@ async def stream_with_context(
             stream=True,
             error=exc,
             started_ms=started_ms,
+            timings_ms={
+                "decision_ms": decision_ms,
+                "upstream_ms": now_ms() - upstream_started_ms,
+                "upstream_headers_ms": upstream_headers_ms or 0.0,
+                "upstream_body_ms": now_ms() - body_started_ms,
+            },
             audit_logger=audit_logger,
         )
         return
@@ -269,6 +311,12 @@ async def stream_with_context(
                 stream=True,
                 upstream_status=upstream_status,
                 started_ms=started_ms,
+                timings_ms={
+                    "decision_ms": decision_ms,
+                    "upstream_ms": now_ms() - upstream_started_ms,
+                    "upstream_headers_ms": upstream_headers_ms or 0.0,
+                    "upstream_body_ms": now_ms() - body_started_ms,
+                },
                 audit_logger=audit_logger,
             )
 

@@ -259,10 +259,16 @@ IntentMux 只统计结构化 JSON 路由日志：
 - `upstream_status`
 - `ok`
 - `outcome`
+- `decision_ms`
+- `upstream_ms`
+- `upstream_headers_ms`（流式请求）
+- `upstream_body_ms`（流式请求）
 
 不会记录 prompt、completion、token usage 或 bearer token。`request_id` 只用于跨层关联，可能来自请求头、`metadata.semantic_router_request_id`、`user` 字段，或由 IntentMux 生成。
 
 `event` 表示请求处理生命周期，`ok/outcome` 表示路由健康。上游非 2xx 会记录 `ok=false` 与 `outcome=upstream_non_200`，即使响应仍按代理语义返回给客户端。
+
+阶段耗时字段用于定位慢请求：`decision_ms` 表示路由决策耗时，包含 hard rule / embedding 路径；`upstream_ms` 表示等待 LiteLLM / 下游模型的总耗时；流式请求额外记录 `upstream_headers_ms` 和 `upstream_body_ms`，用于区分首包慢还是响应体生成慢。
 
 12 小时窗口 summary：
 

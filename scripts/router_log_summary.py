@@ -29,6 +29,10 @@ class SlowRequest:
     target_model: str | None
     reason: str | None
     upstream_status: int | None
+    decision_ms: float | None
+    upstream_ms: float | None
+    upstream_headers_ms: float | None
+    upstream_body_ms: float | None
 
 
 @dataclass(frozen=True)
@@ -206,11 +210,19 @@ def slow_request_from_record(record: dict[str, Any], duration_ms: float) -> Slow
         target_model=string_or_none(record.get("target_model")),
         reason=string_or_none(record.get("reason")),
         upstream_status=upstream_status if isinstance(upstream_status, int) else None,
+        decision_ms=number_or_none(record.get("decision_ms")),
+        upstream_ms=number_or_none(record.get("upstream_ms")),
+        upstream_headers_ms=number_or_none(record.get("upstream_headers_ms")),
+        upstream_body_ms=number_or_none(record.get("upstream_body_ms")),
     )
 
 
 def string_or_none(value: Any) -> str | None:
     return value if isinstance(value, str) else None
+
+
+def number_or_none(value: Any) -> float | None:
+    return float(value) if isinstance(value, int | float) else None
 
 
 def ok_from_record(record: dict[str, Any]) -> bool:
@@ -330,7 +342,7 @@ def format_float_counts(counts: dict[str, float]) -> str:
 
 
 def format_slow_request(sample: SlowRequest) -> str:
-    return (
+    line = (
         f"- duration_ms={sample.duration_ms:.2f} "
         f"timestamp={sample.timestamp or 'unknown'} "
         f"request_id={sample.request_id or 'unknown'} "
@@ -339,6 +351,16 @@ def format_slow_request(sample: SlowRequest) -> str:
         f"reason={sample.reason or 'unknown'} "
         f"upstream_status={sample.upstream_status if sample.upstream_status is not None else 'unknown'}"
     )
+    timing_fields = {
+        "decision_ms": sample.decision_ms,
+        "upstream_ms": sample.upstream_ms,
+        "upstream_headers_ms": sample.upstream_headers_ms,
+        "upstream_body_ms": sample.upstream_body_ms,
+    }
+    for name, value in timing_fields.items():
+        if value is not None:
+            line += f" {name}={value:.2f}"
+    return line
 
 
 def main() -> None:

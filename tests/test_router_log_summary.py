@@ -173,6 +173,8 @@ def test_summarize_records_limits_slow_request_samples_and_preserves_context():
             "stream": True,
             "upstream_status": 200,
             "duration_ms": 100,
+            "decision_ms": 1.5,
+            "upstream_ms": 98.5,
         },
         {
             "event": "route_complete",
@@ -184,6 +186,10 @@ def test_summarize_records_limits_slow_request_samples_and_preserves_context():
             "stream": True,
             "upstream_status": 400,
             "duration_ms": 2500,
+            "decision_ms": 2.5,
+            "upstream_ms": 2490.5,
+            "upstream_headers_ms": 50.0,
+            "upstream_body_ms": 2440.5,
         },
         {
             "event": "route_complete",
@@ -215,6 +221,10 @@ def test_summarize_records_limits_slow_request_samples_and_preserves_context():
             sample.target_model,
             sample.reason,
             sample.upstream_status,
+            sample.decision_ms,
+            sample.upstream_ms,
+            sample.upstream_headers_ms,
+            sample.upstream_body_ms,
         )
         for sample in summary.slow_requests
     ] == [
@@ -226,6 +236,10 @@ def test_summarize_records_limits_slow_request_samples_and_preserves_context():
             "pro-router",
             "hard_rule:安全",
             400,
+            2.5,
+            2490.5,
+            50.0,
+            2440.5,
         ),
         (
             "2026-05-12T00:00:02Z",
@@ -235,6 +249,10 @@ def test_summarize_records_limits_slow_request_samples_and_preserves_context():
             "cheap-router",
             "embedding_error",
             200,
+            None,
+            None,
+            None,
+            None,
         ),
     ]
 
@@ -344,11 +362,15 @@ def test_format_summary_json_is_deterministic_and_includes_diagnostics():
         "slow_requests": [
             {
                 "duration_ms": 42.0,
+                "decision_ms": None,
                 "reason": "hard_rule",
                 "request_id": None,
                 "route_id": None,
                 "target_model": "pro-router",
                 "timestamp": None,
+                "upstream_body_ms": None,
+                "upstream_headers_ms": None,
+                "upstream_ms": None,
                 "upstream_status": 503,
             }
         ],
@@ -439,20 +461,28 @@ INFO:     127.0.0.1:53000 - \"POST /v1/chat/completions HTTP/1.1\" 200 OK
         "slow_requests": [
             {
                 "duration_ms": 40.0,
+                "decision_ms": None,
                 "reason": "embedding_error",
                 "request_id": None,
                 "route_id": None,
                 "target_model": "fallback-model",
                 "timestamp": None,
+                "upstream_body_ms": None,
+                "upstream_headers_ms": None,
+                "upstream_ms": None,
                 "upstream_status": 503,
             },
             {
                 "duration_ms": 12.5,
+                "decision_ms": None,
                 "reason": "hard_rule",
                 "request_id": None,
                 "route_id": None,
                 "target_model": "safe-model",
                 "timestamp": None,
+                "upstream_body_ms": None,
+                "upstream_headers_ms": None,
+                "upstream_ms": None,
                 "upstream_status": 200,
             },
         ],

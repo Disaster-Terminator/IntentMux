@@ -91,6 +91,15 @@ uv run python scripts/intentmux_daily_health.py
 
 其中 `route_summary_today` 是日常判断主口径，`route_summary_all_logs` 只作历史上下文。报告会保留 `slow_requests` top N 明细，方便 Codex 直接看尾延迟样本。
 
+慢请求明细会自动带出阶段耗时字段，不需要 Hermes 额外解析或拼接：
+
+- `decision_ms`：路由决策耗时，包含 hard rule / embedding 路径。
+- `upstream_ms`：LiteLLM / 下游模型总耗时。
+- `upstream_headers_ms`：流式请求拿到上游响应头的耗时。
+- `upstream_body_ms`：流式请求响应体迭代耗时。
+
+如果后续要让 Hermes 基于这些字段做阈值告警，再由 Codex 先写清楚阈值建议和报告字段变更，用户确认后再改 Hermes cron。
+
 变更后或低频深巡检可手动加真实 E2E：
 
 ```bash
@@ -224,7 +233,7 @@ route_summary:
   upstream_statuses: ...
   duration_percentiles_ms: ...
   slow_requests_top:
-    - duration_ms=... request_id=... route=... target=... reason=... upstream_status=...
+    - duration_ms=... request_id=... route=... target=... reason=... upstream_status=... decision_ms=... upstream_ms=...
 
 strict_budget:
   exit_code: ...

@@ -571,7 +571,8 @@ def test_chat_completion_emits_structured_log_without_sensitive_payload(caplog):
     records = [json.loads(record.message) for record in caplog.records]
     route_logs = [record for record in records if record["event"] == "route_complete"]
     assert route_logs == [
-            {
+        {
+                "decision_ms": route_logs[0]["decision_ms"],
                 "duration_ms": route_logs[0]["duration_ms"],
                 "event": "route_complete",
                 "ok": True,
@@ -588,9 +589,12 @@ def test_chat_completion_emits_structured_log_without_sensitive_payload(caplog):
                 "stream": False,
                 "target_model": "pro-router",
                 "ts": route_logs[0]["ts"],
+                "upstream_ms": route_logs[0]["upstream_ms"],
                 "upstream_status": 200,
             }
         ]
+    assert route_logs[0]["decision_ms"] >= 0
+    assert route_logs[0]["upstream_ms"] >= 0
     serialized = "\n".join(record.message for record in caplog.records)
     assert "敏感 prompt" not in serialized
     assert "Bearer litellm-test" not in serialized
@@ -644,6 +648,7 @@ def test_chat_completion_writes_redacted_audit_log(tmp_path):
     records = [json.loads(line) for line in audit_files[0].read_text().splitlines()]
     assert records == [
         {
+            "decision_ms": records[0]["decision_ms"],
             "duration_ms": records[0]["duration_ms"],
             "event": "route_complete",
             "ok": True,
@@ -660,9 +665,12 @@ def test_chat_completion_writes_redacted_audit_log(tmp_path):
             "stream": False,
             "target_model": "cheap-router",
             "ts": records[0]["ts"],
+            "upstream_ms": records[0]["upstream_ms"],
             "upstream_status": 200,
         }
     ]
+    assert records[0]["decision_ms"] >= 0
+    assert records[0]["upstream_ms"] >= 0
     serialized = audit_files[0].read_text()
     assert "敏感 prompt" not in serialized
     assert "Bearer litellm-test" not in serialized
