@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -162,11 +163,19 @@ def _build_error_json_result(case: ReviewCase, exc: Exception) -> dict[str, Any]
     }
 
 
-def call_decision_endpoint(endpoint: str, payload: dict[str, Any], timeout_s: float) -> dict[str, Any]:
+def call_decision_endpoint(
+    endpoint: str,
+    payload: dict[str, Any],
+    timeout_s: float,
+    intentmux_api_key: str | None = None,
+) -> dict[str, Any]:
+    headers = {"content-type": "application/json"}
+    if intentmux_api_key:
+        headers["Authorization"] = f"Bearer {intentmux_api_key}"
     req = request.Request(
         endpoint,
         data=json.dumps(payload).encode("utf-8"),
-        headers={"content-type": "application/json"},
+        headers=headers,
         method="POST",
     )
     with request.urlopen(req, timeout=timeout_s) as resp:
@@ -179,6 +188,7 @@ def run_review(
     timeout_s: float,
     output: str = "table",
     routes_path: Path | None = None,
+    intentmux_api_key: str | None = None,
 ) -> int:
     rows: list[list[str]] = []
     json_rows: list[dict[str, Any]] = []
@@ -191,7 +201,15 @@ def run_review(
 
     for case in cases:
         try:
-            result = call_decision_endpoint(endpoint, case.payload, timeout_s)
+            if intentmux_api_key:
+                result = call_decision_endpoint(
+                    endpoint,
+                    case.payload,
+                    timeout_s,
+                    intentmux_api_key=intentmux_api_key,
+                )
+            else:
+                result = call_decision_endpoint(endpoint, case.payload, timeout_s)
         except Exception as exc:
             endpoint_error_count += 1
             _, error_message = _safe_error_message(exc)
@@ -227,6 +245,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--timeout", type=float, default=10.0)
     parser.add_argument("--output", choices=["table", "json"], default="table")
     parser.add_argument("--routes")
+    parser.add_argument(
+        "--intentmux-api-key",
+        default=os.getenv("ROUTER_INBOUND_API_KEY"),
+        help="Optional IntentMux inbound API key for the decision endpoint.",
+    )
     args = parser.parse_args(argv)
 
     return run_review(
@@ -235,6 +258,7 @@ def main(argv: list[str] | None = None) -> int:
         args.timeout,
         output=args.output,
         routes_path=Path(args.routes) if args.routes else None,
+        intentmux_api_key=args.intentmux_api_key,
     )
 
 

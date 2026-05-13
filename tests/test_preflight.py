@@ -4,6 +4,7 @@ import pytest
 
 from scripts.preflight import (
     CheckResult,
+    main,
     require_header,
     require_json_field,
     run_preflight,
@@ -43,6 +44,7 @@ class FakeResponse:
 class FakeClient:
     def __init__(self):
         self.urls: list[str] = []
+        self.post_headers: list[dict[str, str]] = []
 
     def __enter__(self):
         return self
@@ -58,12 +60,14 @@ class FakeClient:
 
     def post(self, url: str, *, headers: dict, json: dict) -> FakeResponse:
         self.urls.append(url)
+        self.post_headers.append(headers)
         return FakeResponse(
             headers={"x-router-target-model": "pro-router"},
         )
 
     def stream(self, method: str, url: str, *, headers: dict, json: dict) -> FakeResponse:
         self.urls.append(url)
+        self.post_headers.append(headers)
         return FakeResponse(
             headers={"x-router-target-model": "pro-router"},
             body=b"data: first\n\n",
@@ -167,13 +171,17 @@ def test_run_preflight_checks_layered_readiness(monkeypatch):
 
     results = run_preflight(
         "http://router.local",
-        api_key="test-key",
+        intentmux_api_key="test-key",
         timeout=5,
         ready_attempts=1,
         ready_interval=0,
     )
 
     assert "http://router.local/ready" in fake_client.urls
+    assert fake_client.post_headers == [
+        {"Authorization": "Bearer test-key"},
+        {"Authorization": "Bearer test-key"},
+    ]
     assert CheckResult("ready_status", True, "status=200") in results
     assert CheckResult("ready_payload", True, "ready=True") in results
 
@@ -188,7 +196,7 @@ def test_run_preflight_reports_degraded_readiness_components(monkeypatch):
 
     results = run_preflight(
         "http://router.local",
-        api_key="test-key",
+        intentmux_api_key="test-key",
         timeout=5,
         ready_attempts=1,
         ready_interval=0,
@@ -212,7 +220,7 @@ def test_run_preflight_retries_transient_readiness_failure(monkeypatch):
 
     results = run_preflight(
         "http://router.local",
-        api_key="test-key",
+        intentmux_api_key="test-key",
         timeout=5,
         ready_attempts=2,
         ready_interval=0,
@@ -221,6 +229,53 @@ def test_run_preflight_retries_transient_readiness_failure(monkeypatch):
     assert fake_client.ready_calls == 2
     assert CheckResult("ready_status", True, "status=200") in results
     assert CheckResult("ready_payload", True, "ready=True") in results
+
+
+def test_run_preflight_omits_authorization_when_intentmux_api_key_is_unset(monkeypatch):
+    fake_client = FakeClient()
+
+    monkeypatch.setattr(
+        "scripts.preflight.httpx.Client",
+        lambda timeout: fake_client,
+    )
+
+    run_preflight(
+        "http://router.local",
+        intentmux_api_key=None,
+        timeout=5,
+        ready_attempts=1,
+        ready_interval=0,
+    )
+
+    assert fake_client.post_headers == [{}, {}]
+
+
+def test_preflight_accepts_deprecated_api_key_alias(monkeypatch, capsys):
+    fake_client = FakeClient()
+
+    monkeypatch.setattr(
+        "scripts.preflight.httpx.Client",
+        lambda timeout: fake_client,
+    )
+
+    main(
+        [
+            "--router-base-url",
+            "http://router.local",
+            "--api-key",
+            "legacy-key",
+            "--ready-attempts",
+            "1",
+            "--ready-interval",
+            "0",
+        ]
+    )
+
+    assert fake_client.post_headers == [
+        {"Authorization": "Bearer legacy-key"},
+        {"Authorization": "Bearer legacy-key"},
+    ]
+    assert "deprecated" in capsys.readouterr().err
 
 
 def test_validate_nonstream_chat_response_fixture_pass_and_fail():

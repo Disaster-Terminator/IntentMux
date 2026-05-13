@@ -10,7 +10,8 @@ Config or asset changes:
 
 - `/data/config/routes.yaml`
 - `/data/semantic_sets/route_bank.yaml`
-- environment variables such as `ROUTER_LITELLM_BASE_URL`
+- environment variables such as `ROUTER_LITELLM_BASE_URL`,
+  `ROUTER_LITELLM_API_KEY`, or `ROUTER_INBOUND_API_KEY`
 
 These require an IntentMux sidecar restart because routes and vectors are loaded
 at startup. They do not require an image rebuild.
@@ -65,6 +66,10 @@ For the local production stack, run:
 ```bash
 set -a; . /path/to/litellm.env; set +a
 uv run python scripts/preflight.py --router-base-url http://127.0.0.1:4001
+# If ROUTER_INBOUND_API_KEY is configured:
+uv run python scripts/preflight.py \
+  --router-base-url http://127.0.0.1:4001 \
+  --intentmux-api-key "$ROUTER_INBOUND_API_KEY"
 uv run python scripts/intentmux_daily_health.py \
   --repo /path/to/IntentMux \
   --log-dir /path/to/intentmux-home/logs \

@@ -88,6 +88,7 @@ uv run python -m router.app
 - `ROUTER_PORT`
 - `ROUTER_LITELLM_BASE_URL`
 - `ROUTER_LITELLM_API_KEY`
+- `ROUTER_INBOUND_API_KEY`
 - `ROUTER_LITELLM_TIMEOUT`
 - `ROUTER_EMBEDDING_URL`
 - `ROUTER_EMBEDDING_MODEL`
@@ -139,14 +140,21 @@ docker compose -f examples/docker-compose.yml up -d --build
 
 可覆盖变量：
 
-- `INTENTMUX_PORT`：宿主机暴露端口，默认 `4001`。
+- `INTENTMUX_PORT`：宿主机暴露端口，默认 `4001`，示例 compose 默认只绑定 `127.0.0.1`。
 - `INTENTMUX_HOME`：宿主机上的 IntentMux home，默认 `../.intentmux-home`（相对 `examples/docker-compose.yml`）。
 - `ROUTER_LITELLM_BASE_URL`：LiteLLM 上游地址，默认 `http://host.docker.internal:4000`。
 - `ROUTER_LITELLM_API_KEY`：IntentMux 调用上游 LiteLLM 使用的专用 key。设置后，IntentMux 不会把入站 `Authorization` 原样转发给上游。
+- `ROUTER_INBOUND_API_KEY`：可选的 IntentMux 入站 key，用于保护直连 sidecar 的 `/v1/chat/completions` 和 `/v1/semantic-router/decision`；不影响 `/health` 和 `/ready`。
 - `ROUTER_EMBEDDING_URL`：embedding 上游地址，默认 `http://host.docker.internal:1234/v1/embeddings`。
 - `ROUTER_EMBEDDING_MODEL`：embedding 模型名。
 
 LiteLLM 入口模型示例见 [examples/litellm-model-entry.yaml](examples/litellm-model-entry.yaml)。如果 IntentMux 和 LiteLLM 在同一个 compose network 中，`api_base` 可以使用 `http://intentmux:4001/v1`；如果 LiteLLM 在宿主机或另一个网络里，请改成它能访问到的 IntentMux 地址。
+
+鉴权边界：
+
+- LiteLLM 模型入口里的 `api_key` 用于 `LiteLLM -> IntentMux`。
+- `ROUTER_INBOUND_API_KEY` 用于保护 `IntentMux` 的入站请求，适合直连 sidecar 或不完全信任的内部网络。
+- `ROUTER_LITELLM_API_KEY` 用于 `IntentMux -> LiteLLM`，不要依赖入站 `Authorization` 透传给上游。
 
 更新同步规则：
 
@@ -232,6 +240,10 @@ uv run python scripts/verify_route_contract.py
 
 ```bash
 uv run python scripts/preflight.py --router-base-url http://127.0.0.1:4001
+# 如果配置了 ROUTER_INBOUND_API_KEY:
+uv run python scripts/preflight.py \
+  --router-base-url http://127.0.0.1:4001 \
+  --intentmux-api-key "$ROUTER_INBOUND_API_KEY"
 ```
 
 LiteLLM 入口 E2E：
@@ -240,7 +252,9 @@ LiteLLM 入口 E2E：
 uv run python scripts/e2e_litellm_entry.py --litellm-base-url http://127.0.0.1:4000
 ```
 
-这两个脚本需要 `LITELLM_MASTER_KEY` 或 `--api-key`，不会打印密钥或 prompt。
+`preflight.py` 直连 IntentMux，只在配置了 `ROUTER_INBOUND_API_KEY` 时需要 `--intentmux-api-key`。
+`e2e_litellm_entry.py` 通过 LiteLLM 入口验证完整链路，需要 `LITELLM_MASTER_KEY` 或 `--api-key`。
+两个脚本都不会打印密钥或 prompt。
 
 ## 日志审计
 
@@ -349,6 +363,15 @@ uv run python scripts/diagnose_router_state.py \
 
 ```bash
 curl http://127.0.0.1:4001/v1/semantic-router/decision \
+  -H "Content-Type: application/json" \
+  -d '{"model":"semantic-router","messages":[{"role":"user","content":"这个线上 bug 为什么偶发？"}]}'
+```
+
+如果启用了 `ROUTER_INBOUND_API_KEY`，加上入站鉴权头：
+
+```bash
+curl http://127.0.0.1:4001/v1/semantic-router/decision \
+  -H "Authorization: Bearer $ROUTER_INBOUND_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"model":"semantic-router","messages":[{"role":"user","content":"这个线上 bug 为什么偶发？"}]}'
 ```

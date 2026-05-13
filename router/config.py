@@ -40,6 +40,7 @@ class RouterSettings(BaseModel):
     embedding_model: str = "text-embedding-jina-embeddings-v5-text-small-retrieval@q8_0"
     litellm_base_url: str = "http://127.0.0.1:4000"
     litellm_api_key: str | None = None
+    inbound_api_key: str | None = None
     litellm_timeout: float = 120.0
     access_log: bool = False
     audit_log_enabled: bool = False
@@ -91,6 +92,7 @@ def load_settings(path: str | Path | None = None) -> RouterSettings:
             "embedding_model": os.getenv("ROUTER_EMBEDDING_MODEL", settings.embedding_model),
             "litellm_base_url": os.getenv("ROUTER_LITELLM_BASE_URL", settings.litellm_base_url),
             "litellm_api_key": os.getenv("ROUTER_LITELLM_API_KEY") or settings.litellm_api_key,
+            "inbound_api_key": os.getenv("ROUTER_INBOUND_API_KEY") or settings.inbound_api_key,
             "litellm_timeout": float(
                 os.getenv("ROUTER_LITELLM_TIMEOUT", str(settings.litellm_timeout))
             ),

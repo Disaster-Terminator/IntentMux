@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
 import time
 from dataclasses import dataclass
 
@@ -157,13 +158,17 @@ def chat_payload(stream: bool) -> dict:
 
 def run_preflight(
     router_base_url: str,
-    api_key: str,
+    intentmux_api_key: str | None,
     timeout: float,
     ready_attempts: int = 3,
     ready_interval: float = 1.0,
 ) -> list[CheckResult]:
     base_url = router_base_url.rstrip("/")
-    headers = {"Authorization": f"Bearer {api_key}"}
+    headers = (
+        {"Authorization": f"Bearer {intentmux_api_key}"}
+        if intentmux_api_key
+        else {}
+    )
     results: list[CheckResult] = []
 
     with httpx.Client(timeout=timeout) as client:
@@ -209,24 +214,40 @@ def run_preflight(
     return results
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--router-base-url",
         default=os.getenv("ROUTER_BASE_URL", "http://127.0.0.1:4001"),
     )
-    parser.add_argument("--api-key", default=os.getenv("LITELLM_MASTER_KEY"))
+    parser.add_argument(
+        "--intentmux-api-key",
+        default=os.getenv("ROUTER_INBOUND_API_KEY"),
+        help="Optional IntentMux inbound API key for direct sidecar preflight.",
+    )
+    parser.add_argument(
+        "--api-key",
+        dest="legacy_api_key",
+        help=(
+            "Deprecated alias for --intentmux-api-key. "
+            "This is not the upstream LiteLLM key."
+        ),
+    )
     parser.add_argument("--timeout", type=float, default=45.0)
     parser.add_argument("--ready-attempts", type=int, default=3)
     parser.add_argument("--ready-interval", type=float, default=1.0)
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
+    intentmux_api_key = args.intentmux_api_key or args.legacy_api_key
+    if args.legacy_api_key and not args.intentmux_api_key:
+        print(
+            "warning: --api-key is deprecated for preflight; use --intentmux-api-key",
+            file=sys.stderr,
+        )
 
-    if not args.api_key:
-        raise SystemExit("LITELLM_MASTER_KEY or --api-key is required")
     summarize_results(
         run_preflight(
             args.router_base_url,
-            args.api_key,
+            intentmux_api_key,
             args.timeout,
             ready_attempts=args.ready_attempts,
             ready_interval=args.ready_interval,

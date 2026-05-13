@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import secrets
 from typing import Any
 
 import uvicorn
@@ -85,8 +86,24 @@ def create_app(
             )
         return payload
 
+    def require_inbound_auth(request: Request) -> JSONResponse | None:
+        if not settings.inbound_api_key:
+            return None
+        expected = f"Bearer {settings.inbound_api_key}"
+        actual = request.headers.get("authorization", "")
+        if secrets.compare_digest(actual, expected):
+            return None
+        return JSONResponse(
+            status_code=401,
+            content={"error": {"message": "Invalid or missing IntentMux API key"}},
+            headers={"www-authenticate": "Bearer"},
+        )
+
     @app.post("/v1/semantic-router/decision")
     async def route_decision(request: Request) -> Any:
+        auth_error = require_inbound_auth(request)
+        if auth_error is not None:
+            return auth_error
         payload = await parse_json_object(request)
         if isinstance(payload, JSONResponse):
             return payload
@@ -106,6 +123,9 @@ def create_app(
     async def chat_completions(request: Request) -> Response:
         started_ms = now_ms()
         request_headers = dict(request.headers)
+        auth_error = require_inbound_auth(request)
+        if auth_error is not None:
+            return auth_error
         payload = await parse_json_object(request)
         if isinstance(payload, JSONResponse):
             return payload

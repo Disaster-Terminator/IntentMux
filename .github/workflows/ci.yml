@@ -39,6 +39,11 @@ jobs:
           set -o pipefail
           uv run python scripts/verify_route_contract.py 2>&1 | tee route-contract.log
 
+      - name: Build Docker image
+        run: |
+          set -o pipefail
+          docker build . 2>&1 | tee docker-build.log
+
       - name: Verify redacted review import
         run: |
           set -o pipefail
@@ -55,6 +60,16 @@ jobs:
           uv run python scripts/router_log_summary.py --output json < tests/samples/router_logs.ndjson 2>&1 | tee router-log-summary.json
           uv run python -c "import json; payload=json.load(open('router-log-summary.json')); assert payload['total']==3; assert payload['route_complete']==2; assert payload['route_error']==1"
 
+      - name: Run route budget fixture check
+        run: |
+          set -o pipefail
+          uv run python scripts/check_route_error_budget.py tests/samples/router_logs.ndjson \
+            --max-error-rate 0.4 \
+            --max-target-error-rate 1.0 \
+            --max-route-error-rate 1.0 \
+            --max-not-ok-rate 0.5 \
+            --max-upstream-status-rate 503=0.5 2>&1 | tee route-budget.log
+
       - name: Upload CI diagnostics (failure only)
         if: failure()
         uses: actions/upload-artifact@v4
@@ -64,6 +79,8 @@ jobs:
             pytest.log
             mock-route-eval.log
             route-contract.log
+            docker-build.log
             review-import.log
             review-decisions.log
             router-log-summary.json
+            route-budget.log

@@ -110,7 +110,15 @@ def test_load_cases_accepts_imported_review_samples_without_name(tmp_path):
 def test_review_decisions_default_endpoint_matches_project_port(monkeypatch):
     captured: dict[str, object] = {}
 
-    def fake_run_review(endpoint, cases_path, timeout_s, *, routes_path=None, output="table"):
+    def fake_run_review(
+        endpoint,
+        cases_path,
+        timeout_s,
+        *,
+        routes_path=None,
+        output="table",
+        intentmux_api_key=None,
+    ):
         captured["endpoint"] = endpoint
         captured["cases_path"] = cases_path
         return 0
@@ -119,6 +127,27 @@ def test_review_decisions_default_endpoint_matches_project_port(monkeypatch):
 
     assert main(["--cases", "tests/samples/review_decisions.yaml"]) == 0
     assert captured["endpoint"] == "http://127.0.0.1:4001/v1/semantic-router/decision"
+
+
+def test_review_decisions_cli_passes_intentmux_api_key(monkeypatch):
+    captured: dict[str, object] = {}
+
+    def fake_run_review(
+        endpoint,
+        cases_path,
+        timeout_s,
+        *,
+        routes_path=None,
+        output="table",
+        intentmux_api_key=None,
+    ):
+        captured["intentmux_api_key"] = intentmux_api_key
+        return 0
+
+    monkeypatch.setattr(review_decisions, "run_review", fake_run_review)
+
+    assert main(["--cases", "tests/samples/review_decisions.yaml", "--intentmux-api-key", "sk-intentmux"]) == 0
+    assert captured["intentmux_api_key"] == "sk-intentmux"
 
 
 def test_format_result_row_supports_pass_fail_and_na():
@@ -150,6 +179,37 @@ def test_validate_expected_routes_rejects_target_model_name():
     ]
     with pytest.raises(ValueError, match="pro-router"):
         validate_expected_routes(cases, {"fast", "strong"})
+
+
+def test_call_decision_endpoint_sets_intentmux_authorization(monkeypatch):
+    captured: dict[str, object] = {}
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return None
+
+        def read(self):
+            return b'{"route_id":"fast"}'
+
+    def fake_urlopen(req, timeout):
+        captured["authorization"] = req.get_header("Authorization")
+        captured["timeout"] = timeout
+        return FakeResponse()
+
+    monkeypatch.setattr(review_decisions.request, "urlopen", fake_urlopen)
+
+    result = review_decisions.call_decision_endpoint(
+        "http://localhost",
+        {"model": DEFAULT_ROUTE_MODEL},
+        3.0,
+        intentmux_api_key="sk-intentmux",
+    )
+
+    assert result == {"route_id": "fast"}
+    assert captured == {"authorization": "Bearer sk-intentmux", "timeout": 3.0}
 
 
 def test_run_review_default_table_output_and_success_exit(monkeypatch, tmp_path, capsys):

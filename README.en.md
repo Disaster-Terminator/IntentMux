@@ -102,14 +102,21 @@ By default, the example mounts `.intentmux-home/` from the repository root to `/
 
 Common overrides:
 
-- `INTENTMUX_PORT`: host port, default `4001`.
+- `INTENTMUX_PORT`: host port, default `4001`; the example compose binds it to `127.0.0.1` by default.
 - `INTENTMUX_HOME`: host-side IntentMux home, default `../.intentmux-home` relative to `examples/docker-compose.yml`.
 - `ROUTER_LITELLM_BASE_URL`: LiteLLM upstream URL, default `http://host.docker.internal:4000`.
 - `ROUTER_LITELLM_API_KEY`: dedicated key used by IntentMux when calling upstream LiteLLM. When set, inbound `Authorization` is not forwarded upstream.
+- `ROUTER_INBOUND_API_KEY`: optional IntentMux inbound key for `/v1/chat/completions` and `/v1/semantic-router/decision`; `/health` and `/ready` remain unauthenticated.
 - `ROUTER_EMBEDDING_URL`: embedding upstream URL, default `http://host.docker.internal:1234/v1/embeddings`.
 - `ROUTER_EMBEDDING_MODEL`: embedding model name.
 
 See [examples/litellm-model-entry.yaml](examples/litellm-model-entry.yaml) for a LiteLLM entry-model snippet. If IntentMux and LiteLLM share one compose network, `api_base` can be `http://intentmux:4001/v1`; otherwise, set it to the IntentMux URL reachable from LiteLLM.
+
+Auth boundaries:
+
+- The LiteLLM model-entry `api_key` authenticates `LiteLLM -> IntentMux`.
+- `ROUTER_INBOUND_API_KEY` protects direct IntentMux sidecar requests.
+- `ROUTER_LITELLM_API_KEY` authenticates `IntentMux -> LiteLLM`; inbound `Authorization` is not reused upstream.
 
 Update rules:
 
@@ -154,6 +161,10 @@ Production preflight:
 
 ```bash
 uv run python scripts/preflight.py --router-base-url http://127.0.0.1:4001
+# If ROUTER_INBOUND_API_KEY is configured:
+uv run python scripts/preflight.py \
+  --router-base-url http://127.0.0.1:4001 \
+  --intentmux-api-key "$ROUTER_INBOUND_API_KEY"
 ```
 
 LiteLLM-entry E2E:
@@ -202,6 +213,15 @@ Real production review JSONL files are ignored by git by default; commit only cu
 
 ```bash
 curl http://127.0.0.1:4001/v1/semantic-router/decision \
+  -H "Content-Type: application/json" \
+  -d '{"model":"semantic-router","messages":[{"role":"user","content":"Why is this production bug intermittent?"}]}'
+```
+
+If `ROUTER_INBOUND_API_KEY` is enabled, include the inbound auth header:
+
+```bash
+curl http://127.0.0.1:4001/v1/semantic-router/decision \
+  -H "Authorization: Bearer $ROUTER_INBOUND_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"model":"semantic-router","messages":[{"role":"user","content":"Why is this production bug intermittent?"}]}'
 ```

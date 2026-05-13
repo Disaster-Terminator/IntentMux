@@ -344,6 +344,96 @@ def test_decision_endpoint_explicit_route_override_returns_explicit_policy():
     assert proxy.stream_called is False
 
 
+def test_decision_endpoint_requires_inbound_api_key_when_configured():
+    app = create_app(
+        settings=RouterSettings(
+            route_model="semantic-router",
+            fallback_route_id="fast",
+            inbound_api_key="sk-intentmux",
+            routes={"fast": RouteSpec(target_model="cheap-router", description="fast", utterances=["hi"])},
+        ),
+        router=FakeRouter(RoutingDecision("cheap-router", "test", rewrite=True, route_id="fast")),
+        proxy=FakeProxy(),
+    )
+    client = TestClient(app)
+
+    missing = client.post("/v1/semantic-router/decision", json={"model": "semantic-router"})
+    wrong = client.post(
+        "/v1/semantic-router/decision",
+        headers={"Authorization": "Bearer wrong"},
+        json={"model": "semantic-router"},
+    )
+    ok = client.post(
+        "/v1/semantic-router/decision",
+        headers={"Authorization": "Bearer sk-intentmux"},
+        json={"model": "semantic-router"},
+    )
+
+    assert missing.status_code == 401
+    assert wrong.status_code == 401
+    assert ok.status_code == 200
+
+
+def test_chat_completion_requires_inbound_api_key_when_configured():
+    app = create_app(
+        settings=RouterSettings(
+            route_model="semantic-router",
+            fallback_route_id="fast",
+            inbound_api_key="sk-intentmux",
+            routes={"fast": RouteSpec(target_model="cheap-router", description="fast", utterances=["hi"])},
+        ),
+        router=FakeRouter(RoutingDecision("cheap-router", "test", rewrite=True, route_id="fast")),
+        proxy=FakeProxy(),
+    )
+    client = TestClient(app)
+
+    missing = client.post(
+        "/v1/chat/completions",
+        json={"model": "semantic-router", "messages": [{"role": "user", "content": "hi"}]},
+    )
+    wrong = client.post(
+        "/v1/chat/completions",
+        headers={"Authorization": "Bearer wrong"},
+        json={"model": "semantic-router", "messages": [{"role": "user", "content": "hi"}]},
+    )
+    ok = client.post(
+        "/v1/chat/completions",
+        headers={"Authorization": "Bearer sk-intentmux"},
+        json={"model": "semantic-router", "messages": [{"role": "user", "content": "hi"}]},
+    )
+
+    assert missing.status_code == 401
+    assert wrong.status_code == 401
+    assert ok.status_code == 200
+
+
+def test_health_and_ready_do_not_require_inbound_api_key():
+    app = create_app(
+        settings=RouterSettings(
+            route_model="semantic-router",
+            fallback_route_id="fast",
+            inbound_api_key="sk-intentmux",
+            routes={"fast": RouteSpec(target_model="cheap-router", description="fast", utterances=["hi"])},
+        ),
+        router=FakeRouter(RoutingDecision("cheap-router", "test", rewrite=True, route_id="fast")),
+        proxy=FakeProxy(),
+        readiness_checker=FakeReadinessChecker(
+            ReadinessReport(
+                ready=True,
+                components={
+                    "router": ComponentStatus(ok=True),
+                    "litellm": ComponentStatus(ok=True),
+                    "embedding": ComponentStatus(ok=True),
+                },
+            )
+        ),
+    )
+    client = TestClient(app)
+
+    assert client.get("/health").status_code == 200
+    assert client.get("/ready").status_code == 200
+
+
 def test_decision_endpoint_low_confidence_uses_fallback_route_id():
     proxy = NoUpstreamProxy()
     vectors = {"翻译": [1.0, 0.0], "总结": [1.0, 0.0], "线上": [0.0, 1.0], "PR审查": [0.0, 1.0], "天气怎么样": [0.3, 0.3]}
