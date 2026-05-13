@@ -421,8 +421,12 @@ def test_default_hard_rules_keep_only_high_precision_strong_escalations():
     assert "索引" not in keywords
     assert "异常" not in keywords
     assert "报错" not in keywords
+    assert "token" not in keywords
+    assert "安全" not in keywords
     assert "线上事故" in keywords
     assert "密钥" in keywords
+    assert "bearer token" in keywords
+    assert "安全漏洞" in keywords
     assert settings.hard_rules[0].route_id == "strong"
 
 

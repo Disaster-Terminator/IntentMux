@@ -20,14 +20,25 @@ hard_rules:
       - 回滚
       - 数据丢失
       - 数据损坏
-      - 安全
       - 漏洞
+      - 安全漏洞
+      - 安全审计
       - 泄露
-      - token
+      - 泄漏
       - 密钥
-      - 认证
-      - 鉴权
-      - 权限
+      - 凭据
+      - bearer token
+      - access token
+      - refresh token
+      - api token
+      - API key
+      - api key
+      - token 泄露
+      - token 泄漏
+      - 认证漏洞
+      - 鉴权绕过
+      - 权限绕过
+      - 越权
 
 routes:
   fast:
