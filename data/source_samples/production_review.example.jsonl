@@ -1,0 +1,2 @@
+{"redacted":true,"text":"帮我分析这个 PR 的并发问题和回归风险","expect":"strong","source":"manual_review","note":"example only; rewritten from a hypothetical review candidate"}
+{"redacted":true,"text":"解释一下 Java 中 File 类的用途","expect":"fast","source":"manual_review","note":"example only; rewritten from a hypothetical overroute candidate"}

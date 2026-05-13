@@ -319,6 +319,19 @@ uv run python scripts/check_route_error_budget.py /data/logs/routes/*.jsonl \
 
 `embedding_error` 不一定会导致请求失败，它表示 embedding 不可用后按配置降级到 fast 路由；生产巡检应给它独立预算。若要放宽预算，可以用 `--max-embedding-error-rate 0.02` 这类阈值保留告警能力。
 
+日志驱动质量闭环见 [docs/log_driven_quality_loop.md](docs/log_driven_quality_loop.md)。
+IntentMux 不记录 raw prompt；audit log 只负责发现低置信、异常状态码、慢请求和分布漂移。
+需要人审的候选可以从审计日志里生成：
+
+```bash
+uv run python scripts/select_review_candidates.py /data/logs/routes/*.jsonl \
+  --json-output /tmp/intentmux-review-candidates.json \
+  --markdown-output /tmp/intentmux-review-candidates.md
+```
+
+候选报告只包含 `request_id`、`route_id`、`target_model`、`reason`、分数、状态码和耗时等元数据。
+人工复核后，只有脱敏且设置 `redacted: true` 的样本才能进入 eval 或 route bank。
+
 配置 + 日志诊断摘要：
 
 ```bash
@@ -360,6 +373,7 @@ uv run python scripts/import_review_samples.py \
 ```
 
 每条 JSONL 必须设置 `redacted: true`，并用 route id 作为 `expect`。
+安全示例见 [data/source_samples/production_review.example.jsonl](data/source_samples/production_review.example.jsonl)。
 
 生成质量报告的推荐流程：
 
@@ -375,6 +389,7 @@ uv run python scripts/route_quality_report.py \
 ```
 
 生产变更必须先通过 [docs/production_rollout_gate.md](docs/production_rollout_gate.md)，不要在探索阶段直接重启或重建生产 sidecar。
+任何 route bank、阈值、margin 或 hard rule 变更，都应附带本报告作为审计证据。
 
 Agent 框架接入建议见 [docs/agent_framework_integration.md](docs/agent_framework_integration.md)。代码编辑、工具调用、PR review、生产事故和安全分析等高风险负载建议显式发送 `metadata.route_id=strong`，不要完全依赖低置信 fallback。
 

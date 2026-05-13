@@ -185,6 +185,16 @@ Summary output includes route/target/reason distributions, `ok/outcome`, upstrea
 
 Structured logs count `route_id`, `target_model`, `policy_id`, `reason`, `request_id`, `request_id_source`, `stream`, `upstream_status`, `ok`, `outcome`, `decision_ms`, and `upstream_ms`, while avoiding prompts, completions, token usage, and bearer tokens. Streaming requests also include `upstream_headers_ms` and `upstream_body_ms`. `event` is lifecycle; `ok/outcome` is route health. Upstream non-2xx responses record `ok=false` and `outcome=upstream_non_200`. `embedding_error` has a dedicated budget shortcut because it can fail open to the configured fast route without making the user request fail.
 
+The log-driven quality loop is documented in [docs/log_driven_quality_loop.md](docs/log_driven_quality_loop.md). IntentMux does not log raw prompts; audit logs identify low confidence, upstream failures, slow requests, and route distribution drift. Generate metadata-only review candidates with:
+
+```bash
+uv run python scripts/select_review_candidates.py /data/logs/routes/*.jsonl \
+  --json-output /tmp/intentmux-review-candidates.json \
+  --markdown-output /tmp/intentmux-review-candidates.md
+```
+
+Only human-reviewed samples with `redacted: true` should be promoted into eval cases or route banks. See [data/source_samples/production_review.example.jsonl](data/source_samples/production_review.example.jsonl) for the public sample format.
+
 ## Decision Preview
 
 ```bash
@@ -218,6 +228,9 @@ uv run python scripts/route_quality_report.py \
   --json-output /tmp/intentmux-quality.json \
   --markdown-output /tmp/intentmux-quality.md
 ```
+
+Route-bank, threshold, margin, and hard-rule changes should include this quality
+report before production rollout.
 
 For agent frameworks, see
 [docs/agent_framework_integration.md](docs/agent_framework_integration.md).

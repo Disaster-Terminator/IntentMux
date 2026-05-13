@@ -50,7 +50,14 @@ Run from the repository before touching production:
 ```bash
 uv run python -m pytest -q
 uv run python scripts/verify_route_contract.py
-uv run python scripts/eval_routes.py --mock-embeddings
+uv run python scripts/eval_routes.py --mock-embeddings > /tmp/intentmux-eval.txt
+uv run python scripts/router_log_summary.py /path/to/intentmux-home/logs/routes/*.jsonl --json > /tmp/intentmux-routes.json
+uv run python scripts/route_quality_report.py \
+  --eval-output /tmp/intentmux-eval.txt \
+  --route-summary-json /tmp/intentmux-routes.json \
+  --route-bank examples/route_bank.sample.yaml \
+  --json-output /tmp/intentmux-quality.json \
+  --markdown-output /tmp/intentmux-quality.md
 ```
 
 For the local production stack, run:
@@ -70,10 +77,14 @@ The gate passes only when:
 - unit tests pass;
 - route contract verification passes;
 - route evals pass;
+- route-bank, threshold, margin, or hard-rule changes include a fresh quality
+  report;
 - `/ready` is true;
 - strict E2E passes;
 - latest health report has `not_ok=0` for today's logs;
 - any route-bank change has source attribution and no raw production prompt.
+- production-log-driven changes use only human-reviewed, redacted review
+  samples.
 
 ## Rollout
 

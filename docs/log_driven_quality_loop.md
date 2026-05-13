@@ -1,0 +1,122 @@
+# Log-Driven Quality Loop
+
+IntentMux improves routing quality from production metadata and redacted review
+samples, not from raw prompt logging. Audit logs identify routing drift,
+low-confidence decisions, failures, and latency regressions; only
+human-reviewed, redacted samples are promoted into eval cases or route banks.
+
+## Boundary
+
+The audit log is metadata only. It may contain `request_id`, `route_id`,
+`target_model`, `reason`, scores, upstream status, and timing fields. It must
+not contain raw prompts, completions, request bodies, token usage, bearer
+credentials, provider keys, or LiteLLM secrets.
+
+`request_id` is an operational correlation key. It helps a human operator find
+the relevant context in systems they already control, but it is not training
+text and should not be copied into public route-bank sources.
+
+## Loop
+
+```text
+audit logs
+  -> daily health / route summary / route-error budget
+  -> review candidate selection
+  -> human request_id review outside IntentMux
+  -> redacted production_review JSONL
+  -> eval bank import
+  -> route bank / threshold / margin change
+  -> route quality report
+  -> production rollout gate
+  -> observe new logs
+```
+
+## Review Candidate Selection
+
+Use `scripts/select_review_candidates.py` to select metadata-only records that
+deserve human review:
+
+```bash
+uv run python scripts/select_review_candidates.py /data/logs/routes/*.jsonl \
+  --json-output /tmp/intentmux-review-candidates.json \
+  --markdown-output /tmp/intentmux-review-candidates.md
+```
+
+The script selects records for signals such as:
+
+- `reason=low_confidence`;
+- `reason=embedding_error`;
+- route errors;
+- upstream non-2xx responses;
+- scores close to the route threshold;
+- score margins close to the configured margin;
+- slow requests above the configured duration threshold.
+
+The output is intentionally limited to route metadata:
+
+```json
+{
+  "request_id": "req-...",
+  "timestamp": "2026-05-13T00:00:00Z",
+  "route_id": "fast",
+  "target_model": "cheap-router",
+  "reason": "low_confidence",
+  "score": 0.53,
+  "second_score": 0.51,
+  "duration_ms": 1234.5,
+  "upstream_status": 200,
+  "review_reasons": ["low_confidence", "near_margin"]
+}
+```
+
+## Promoting Samples
+
+Candidate records do not become eval cases automatically. A human must review
+the request in their own operational context, remove private content, rewrite
+the example into a safe representative prompt, and set `redacted: true`.
+
+Example source file:
+
+```bash
+data/source_samples/production_review.example.jsonl
+```
+
+Import reviewed samples:
+
+```bash
+uv run python scripts/import_review_samples.py \
+  --input data/source_samples/production_review.redacted.jsonl \
+  --output data/semantic_sets/production_review_eval_cases.yaml \
+  --routes config/routes.yaml
+```
+
+Every imported sample must use a product `route_id` such as `fast` or `strong`
+as `expect`; deployment-side target model names such as `cheap-router` and
+`pro-router` must not be used as eval labels.
+
+## Change Gate
+
+Any route bank, threshold, margin, or hard-rule change should include:
+
+- route eval output;
+- route log summary from recent production traffic;
+- `scripts/route_quality_report.py` JSON/Markdown output;
+- candidate review evidence when the change is production-log driven;
+- rollback plan limited to IntentMux config, assets, or image.
+
+Do not change LiteLLM config unless the failure is proven to be in the LiteLLM
+entry model. Normal routing quality work should be contained inside IntentMux.
+
+## 0.1.0 Readiness
+
+IntentMux is ready to call itself log-driven when:
+
+- daily health and strict E2E run reliably against production;
+- review candidates are generated from mounted audit logs;
+- at least one human-redacted production review batch has entered eval;
+- route bank changes require a quality report;
+- production rollout uses the documented gate and observes fresh logs after
+  deployment.
+
+This is a pre-release readiness target. It does not assign or imply a published
+version number.
