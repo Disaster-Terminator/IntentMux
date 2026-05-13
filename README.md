@@ -14,6 +14,7 @@
   <img alt="config YAML" src="https://img.shields.io/badge/config-YAML-CB171E">
   <img alt="tests pytest" src="https://img.shields.io/badge/tests-pytest-0A9EDC">
   <img alt="package uv" src="https://img.shields.io/badge/package-uv-DE5FE9">
+  <img alt="license Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-111827">
 </p>
 
 [English](README.en.md)
