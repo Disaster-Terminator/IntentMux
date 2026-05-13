@@ -38,6 +38,7 @@ deserve human review:
 
 ```bash
 uv run python scripts/select_review_candidates.py /data/logs/routes/*.jsonl \
+  --routes /data/config/routes.yaml \
   --json-output /tmp/intentmux-review-candidates.json \
   --markdown-output /tmp/intentmux-review-candidates.md
 ```
@@ -93,6 +94,10 @@ uv run python scripts/import_review_samples.py \
 Every imported sample must use a product `route_id` such as `fast` or `strong`
 as `expect`; deployment-side target model names such as `cheap-router` and
 `pro-router` must not be used as eval labels.
+
+Local production review JSONL files are deployment artifacts and are ignored by
+git. Keep only curated public examples such as
+`data/source_samples/production_review.example.jsonl` in the repository.
 
 ## Change Gate
 

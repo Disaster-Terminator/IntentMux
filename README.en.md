@@ -105,6 +105,7 @@ Common overrides:
 - `INTENTMUX_PORT`: host port, default `4001`.
 - `INTENTMUX_HOME`: host-side IntentMux home, default `../.intentmux-home` relative to `examples/docker-compose.yml`.
 - `ROUTER_LITELLM_BASE_URL`: LiteLLM upstream URL, default `http://host.docker.internal:4000`.
+- `ROUTER_LITELLM_API_KEY`: dedicated key used by IntentMux when calling upstream LiteLLM. When set, inbound `Authorization` is not forwarded upstream.
 - `ROUTER_EMBEDDING_URL`: embedding upstream URL, default `http://host.docker.internal:1234/v1/embeddings`.
 - `ROUTER_EMBEDDING_MODEL`: embedding model name.
 
@@ -189,11 +190,13 @@ The log-driven quality loop is documented in [docs/log_driven_quality_loop.md](d
 
 ```bash
 uv run python scripts/select_review_candidates.py /data/logs/routes/*.jsonl \
+  --routes /data/config/routes.yaml \
   --json-output /tmp/intentmux-review-candidates.json \
   --markdown-output /tmp/intentmux-review-candidates.md
 ```
 
 Only human-reviewed samples with `redacted: true` should be promoted into eval cases or route banks. See [data/source_samples/production_review.example.jsonl](data/source_samples/production_review.example.jsonl) for the public sample format.
+Real production review JSONL files are ignored by git by default; commit only curated public examples.
 
 ## Decision Preview
 

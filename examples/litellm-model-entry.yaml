@@ -5,4 +5,6 @@ model_list:
     litellm_params:
       model: openai/semantic-router
       api_base: http://intentmux:4001/v1
+      # This key authenticates LiteLLM -> IntentMux only. Configure
+      # ROUTER_LITELLM_API_KEY on IntentMux for IntentMux -> LiteLLM auth.
       api_key: sk-local-placeholder

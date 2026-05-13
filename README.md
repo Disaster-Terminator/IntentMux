@@ -87,6 +87,7 @@ uv run python -m router.app
 - `ROUTER_HOST`
 - `ROUTER_PORT`
 - `ROUTER_LITELLM_BASE_URL`
+- `ROUTER_LITELLM_API_KEY`
 - `ROUTER_LITELLM_TIMEOUT`
 - `ROUTER_EMBEDDING_URL`
 - `ROUTER_EMBEDDING_MODEL`
@@ -141,6 +142,7 @@ docker compose -f examples/docker-compose.yml up -d --build
 - `INTENTMUX_PORT`：宿主机暴露端口，默认 `4001`。
 - `INTENTMUX_HOME`：宿主机上的 IntentMux home，默认 `../.intentmux-home`（相对 `examples/docker-compose.yml`）。
 - `ROUTER_LITELLM_BASE_URL`：LiteLLM 上游地址，默认 `http://host.docker.internal:4000`。
+- `ROUTER_LITELLM_API_KEY`：IntentMux 调用上游 LiteLLM 使用的专用 key。设置后，IntentMux 不会把入站 `Authorization` 原样转发给上游。
 - `ROUTER_EMBEDDING_URL`：embedding 上游地址，默认 `http://host.docker.internal:1234/v1/embeddings`。
 - `ROUTER_EMBEDDING_MODEL`：embedding 模型名。
 
@@ -325,6 +327,7 @@ IntentMux 不记录 raw prompt；audit log 只负责发现低置信、异常状�
 
 ```bash
 uv run python scripts/select_review_candidates.py /data/logs/routes/*.jsonl \
+  --routes /data/config/routes.yaml \
   --json-output /tmp/intentmux-review-candidates.json \
   --markdown-output /tmp/intentmux-review-candidates.md
 ```
@@ -374,6 +377,7 @@ uv run python scripts/import_review_samples.py \
 
 每条 JSONL 必须设置 `redacted: true`，并用 route id 作为 `expect`。
 安全示例见 [data/source_samples/production_review.example.jsonl](data/source_samples/production_review.example.jsonl)。
+真实 review JSONL 默认被 `.gitignore` 排除；只提交公开样例，不提交本地生产复核样本。
 
 生成质量报告的推荐流程：
 

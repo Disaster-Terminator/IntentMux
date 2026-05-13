@@ -7,6 +7,7 @@ from pathlib import Path
 
 from scripts.select_review_candidates import (
     build_review_candidate_report,
+    load_route_thresholds,
     render_markdown,
     select_review_candidates,
 )
@@ -163,6 +164,23 @@ def test_build_review_candidate_report_counts_reasons_and_inputs():
     assert report["candidates"][0]["request_id"] == "req-low"
 
 
+def test_load_route_thresholds_reads_routes_config(tmp_path: Path):
+    routes_path = tmp_path / "routes.yaml"
+    routes_path.write_text(
+        """
+threshold: 0.55
+margin: 0.07
+routes:
+  fast:
+    utterances:
+      - hi
+""",
+        encoding="utf-8",
+    )
+
+    assert load_route_thresholds(routes_path) == (0.55, 0.07)
+
+
 def test_render_markdown_is_audit_friendly():
     markdown = render_markdown(
         {
@@ -234,3 +252,41 @@ def test_main_writes_json_and_markdown(tmp_path: Path):
     payload = json.loads(json_path.read_text(encoding="utf-8"))
     assert payload["summary"]["candidate_count"] == 1
     assert md_path.read_text(encoding="utf-8").startswith("# IntentMux Review Candidates")
+
+
+def test_main_uses_default_routes_threshold(tmp_path: Path):
+    log_path = tmp_path / "routes.jsonl"
+    json_path = tmp_path / "candidates.json"
+    log_path.write_text(
+        json.dumps(
+            {
+                "event": "route_complete",
+                "timestamp": "2026-05-13T00:00:00Z",
+                "request_id": "req-near-config-threshold",
+                "route_id": "fast",
+                "target_model": "cheap-router",
+                "reason": "embedding",
+                "score": 0.535,
+                "duration_ms": 100,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    subprocess.run(
+        [
+            sys.executable,
+            "scripts/select_review_candidates.py",
+            str(log_path),
+            "--json-output",
+            str(json_path),
+        ],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+
+    payload = json.loads(json_path.read_text(encoding="utf-8"))
+    assert payload["summary"]["candidate_count"] == 1
+    assert payload["candidates"][0]["review_reasons"] == ["near_threshold"]

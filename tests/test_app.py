@@ -792,6 +792,42 @@ def test_chat_completion_uses_metadata_request_id_when_header_is_not_forwarded(c
     route_logs = [record for record in records if record["event"] == "route_complete"]
     assert route_logs[0]["request_id"] == "metadata-request-1"
     assert route_logs[0]["request_id_source"] == "metadata.semantic_router_request_id"
+    assert "metadata" not in proxy.payloads[0]
+
+
+def test_chat_completion_strips_router_private_metadata_before_forwarding():
+    proxy = FakeProxy()
+    app = create_app(
+        router=FakeRouter(
+            RoutingDecision(
+                "pro-router",
+                "metadata.route_id",
+                rewrite=True,
+                source_model="semantic-router",
+                route_id="strong",
+                policy_id="explicit_override",
+            )
+        ),
+        proxy=proxy,
+    )
+
+    response = TestClient(app).post(
+        "/v1/chat/completions",
+        json={
+            "model": "semantic-router",
+            "metadata": {
+                "route_id": "strong",
+                "route": "fast",
+                "target_route": "strong",
+                "semantic_router_request_id": "metadata-request-2",
+                "tenant": "kept",
+            },
+            "messages": [{"role": "user", "content": "这个线上 bug 为什么偶发"}],
+        },
+    )
+
+    assert response.status_code == 200
+    assert proxy.payloads[0]["metadata"] == {"tenant": "kept"}
 
 
 def test_chat_completion_uses_user_request_id_when_proxy_drops_metadata(caplog):

@@ -11,6 +11,8 @@ HANDOFF.md
 dist/
 build/
 data/downloads/
+data/source_samples/*.jsonl
+!data/source_samples/production_review.example.jsonl
 data/semantic_sets/*.yaml
 data/semantic_sets/*.jsonl
 logs/

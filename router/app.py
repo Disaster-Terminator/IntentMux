@@ -47,7 +47,11 @@ def create_app(
             OpenAIEmbeddingClient(settings.embedding_url, settings.embedding_model),
         )
     if proxy is None:
-        proxy = LiteLLMProxy(settings.litellm_base_url, timeout=settings.litellm_timeout)
+        proxy = LiteLLMProxy(
+            settings.litellm_base_url,
+            timeout=settings.litellm_timeout,
+            api_key=settings.litellm_api_key,
+        )
     if readiness_checker is None:
         readiness_checker = ReadinessChecker(settings)
     audit_logger = AuditLogger(settings.audit_log_dir, enabled=settings.audit_log_enabled)
@@ -111,8 +115,7 @@ def create_app(
         decision_started_ms = now_ms()
         decision = await router.decide(payload)
         decision_ms = now_ms() - decision_started_ms
-        forwarded_payload = dict(payload)
-        forwarded_payload["model"] = decision.target_model
+        forwarded_payload = sanitize_forwarded_payload(payload, decision.target_model)
         router_headers = route_headers(
             decision.target_model,
             decision.reason,
@@ -261,6 +264,21 @@ def create_app(
         )
 
     return app
+
+
+def sanitize_forwarded_payload(payload: dict[str, Any], target_model: str) -> dict[str, Any]:
+    forwarded = dict(payload)
+    forwarded["model"] = target_model
+    metadata = forwarded.get("metadata")
+    if isinstance(metadata, dict):
+        metadata = dict(metadata)
+        for key in ("route_id", "route", "target_route", "semantic_router_request_id"):
+            metadata.pop(key, None)
+        if metadata:
+            forwarded["metadata"] = metadata
+        else:
+            forwarded.pop("metadata", None)
+    return forwarded
 
 
 async def stream_with_context(

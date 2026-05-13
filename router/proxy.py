@@ -31,9 +31,10 @@ class ProxyResponse:
 
 
 class LiteLLMProxy:
-    def __init__(self, base_url: str, timeout: float = 60.0):
+    def __init__(self, base_url: str, timeout: float = 60.0, api_key: str | None = None):
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
+        self.api_key = api_key
 
     async def forward_chat(
         self, payload: dict, headers: dict[str, str]
@@ -42,7 +43,7 @@ class LiteLLMProxy:
             response = await client.post(
                 f"{self.base_url}/v1/chat/completions",
                 json=payload,
-                headers=forwardable_headers(headers),
+                headers=forwardable_headers(headers, upstream_api_key=self.api_key),
             )
         return ProxyResponse(
             status_code=response.status_code,
@@ -59,7 +60,7 @@ class LiteLLMProxy:
                 "POST",
                 f"{self.base_url}/v1/chat/completions",
                 json=payload,
-                headers=forwardable_headers(headers),
+                headers=forwardable_headers(headers, upstream_api_key=self.api_key),
             ) as response:
                 yield ProxyResponse(
                     status_code=response.status_code,
@@ -68,12 +69,15 @@ class LiteLLMProxy:
                 )
 
 
-def forwardable_headers(headers: dict[str, str]) -> dict[str, str]:
-    return {
+def forwardable_headers(headers: dict[str, str], upstream_api_key: str | None = None) -> dict[str, str]:
+    forwarded = {
         key: value
         for key, value in headers.items()
-        if key.lower() not in HOP_BY_HOP_HEADERS
+        if key.lower() not in HOP_BY_HOP_HEADERS and key.lower() != "authorization"
     }
+    if upstream_api_key:
+        forwarded["authorization"] = f"Bearer {upstream_api_key}"
+    return forwarded
 
 
 def response_headers(headers: httpx.Headers | dict[str, str]) -> dict[str, str]:

@@ -8,6 +8,8 @@ from collections import Counter
 from pathlib import Path
 from typing import Any, Iterable
 
+import yaml
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
@@ -24,6 +26,9 @@ REVIEW_REASON_PRIORITY = {
     "near_threshold": 60,
     "near_margin": 50,
 }
+
+FALLBACK_THRESHOLD = 0.55
+FALLBACK_MARGIN = 0.04
 
 
 SAFE_CANDIDATE_FIELDS = {
@@ -45,9 +50,9 @@ SAFE_CANDIDATE_FIELDS = {
 def select_review_candidates(
     records: Iterable[dict[str, Any]],
     *,
-    threshold: float = 0.58,
+    threshold: float = FALLBACK_THRESHOLD,
     threshold_window: float = 0.03,
-    margin: float = 0.04,
+    margin: float = FALLBACK_MARGIN,
     margin_window: float = 0.02,
     slow_duration_ms: float = 60_000.0,
     limit: int = 50,
@@ -152,9 +157,9 @@ def build_review_candidate_report(
     records: Iterable[dict[str, Any]],
     *,
     log_paths: list[str] | None = None,
-    threshold: float = 0.58,
+    threshold: float = FALLBACK_THRESHOLD,
     threshold_window: float = 0.03,
-    margin: float = 0.04,
+    margin: float = FALLBACK_MARGIN,
     margin_window: float = 0.02,
     slow_duration_ms: float = 60_000.0,
     limit: int = 50,
@@ -254,12 +259,26 @@ def expand_log_paths(paths: list[str]) -> list[str]:
     return expanded
 
 
+def load_route_thresholds(path: Path) -> tuple[float | None, float | None]:
+    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    if not isinstance(raw, dict):
+        return None, None
+    threshold = number_or_none(raw.get("threshold"))
+    margin = number_or_none(raw.get("margin"))
+    return threshold, margin
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Select metadata-only IntentMux route log records for human review.",
     )
     parser.add_argument("paths", nargs="*", help="Route audit JSONL files or globs. Reads stdin when omitted.")
-    parser.add_argument("--threshold", type=float, default=0.58)
+    parser.add_argument(
+        "--routes",
+        default=str(REPO_ROOT / "config/routes.yaml"),
+        help="Routes YAML to read default threshold and margin from.",
+    )
+    parser.add_argument("--threshold", type=float)
     parser.add_argument("--threshold-window", type=float, default=0.03)
     parser.add_argument("--margin", type=float, default=0.04)
     parser.add_argument("--margin-window", type=float, default=0.02)
@@ -269,14 +288,20 @@ def main() -> None:
     parser.add_argument("--markdown-output")
     args = parser.parse_args()
 
+    route_threshold = route_margin = None
+    if args.routes:
+        route_threshold, route_margin = load_route_thresholds(Path(args.routes))
+    threshold = args.threshold if args.threshold is not None else route_threshold
+    margin = args.margin if args.margin is not None else route_margin
+
     log_paths = expand_log_paths(args.paths)
     records = list(parse_route_records(iter_lines(log_paths)))
     report = build_review_candidate_report(
         records,
         log_paths=log_paths,
-        threshold=args.threshold,
+        threshold=FALLBACK_THRESHOLD if threshold is None else threshold,
         threshold_window=args.threshold_window,
-        margin=args.margin,
+        margin=FALLBACK_MARGIN if margin is None else margin,
         margin_window=args.margin_window,
         slow_duration_ms=args.slow_duration_ms,
         limit=args.limit,

@@ -16,6 +16,7 @@ services:
       ROUTER_AUDIT_LOG_ENABLED: "${ROUTER_AUDIT_LOG_ENABLED:-true}"
       ROUTER_AUDIT_LOG_DIR: "/data/logs/routes"
       ROUTER_LITELLM_BASE_URL: "${ROUTER_LITELLM_BASE_URL:-http://host.docker.internal:4000}"
+      ROUTER_LITELLM_API_KEY: "${ROUTER_LITELLM_API_KEY:-}"
       ROUTER_LITELLM_TIMEOUT: "${ROUTER_LITELLM_TIMEOUT:-120}"
       ROUTER_EMBEDDING_URL: "${ROUTER_EMBEDDING_URL:-http://host.docker.internal:1234/v1/embeddings}"
       ROUTER_EMBEDDING_MODEL: "${ROUTER_EMBEDDING_MODEL:-text-embedding-jina-embeddings-v5-text-small-retrieval@q8_0}"

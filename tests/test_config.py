@@ -43,6 +43,51 @@ hard_rules:
     assert settings.hard_rules[0].keywords == ["PR", "线上"]
 
 
+def test_litellm_api_key_can_come_from_environment(monkeypatch, tmp_path: Path):
+    routes_path = tmp_path / "routes.yaml"
+    routes_path.write_text(
+        """
+route_model: semantic-router
+fallback_route_id: fast
+routes:
+  fast:
+    target_model: cheap-router
+    description: low risk
+    utterances:
+      - hi
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("ROUTER_LITELLM_API_KEY", "sk-upstream")
+
+    settings = load_settings(routes_path)
+
+    assert settings.litellm_api_key == "sk-upstream"
+
+
+def test_empty_litellm_api_key_env_does_not_clear_configured_key(monkeypatch, tmp_path: Path):
+    routes_path = tmp_path / "routes.yaml"
+    routes_path.write_text(
+        """
+route_model: semantic-router
+fallback_route_id: fast
+litellm_api_key: sk-configured
+routes:
+  fast:
+    target_model: cheap-router
+    description: low risk
+    utterances:
+      - hi
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("ROUTER_LITELLM_API_KEY", "")
+
+    settings = load_settings(routes_path)
+
+    assert settings.litellm_api_key == "sk-configured"
+
+
 def test_load_settings_merges_seed_utterances_with_route_bank(tmp_path: Path):
     routes_path = tmp_path / "routes.yaml"
     bank_path = tmp_path / "route_bank.yaml"
