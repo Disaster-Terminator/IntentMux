@@ -48,7 +48,18 @@ class MockEmbeddingClient:
 
 def load_cases(path: Path) -> list[EvalCase]:
     raw = yaml.safe_load(path.read_text(encoding="utf-8"))
-    return [EvalCase(**item) for item in raw["cases"]]
+    cases: list[EvalCase] = []
+    for item in raw["cases"]:
+        cases.append(
+            EvalCase(
+                text=item["text"],
+                expect=item["expect"],
+                source=item.get("source", "unknown"),
+                id=item.get("id"),
+                slice=item.get("slice"),
+            )
+        )
+    return cases
 
 
 def validate_case_route_ids(cases: list[EvalCase], route_ids: set[str]) -> None:

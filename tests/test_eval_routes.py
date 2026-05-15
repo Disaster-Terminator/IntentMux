@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts.eval_routes import EvalCase, validate_case_route_ids
+from scripts.eval_routes import EvalCase, load_cases, validate_case_route_ids
 
 
 def test_validate_case_route_ids_accepts_known_route_id():
@@ -17,6 +17,32 @@ def test_validate_case_route_ids_accepts_known_route_id():
 def test_validate_case_route_ids_rejects_target_model_name():
     with pytest.raises(ValueError, match="pro-router"):
         validate_case_route_ids([EvalCase(text="hi", expect="pro-router")], {"fast", "strong"})
+
+
+def test_load_cases_ignores_eval_builder_metadata(tmp_path: Path):
+    cases = tmp_path / "cases.yaml"
+    cases.write_text(
+        """
+cases:
+  - id: fast_001
+    slice: fast_general_zh
+    text: 帮我总结这段话
+    expect: fast
+    source: curated
+    rationale: 普通总结请求低风险，适合 fast。
+""",
+        encoding="utf-8",
+    )
+
+    assert load_cases(cases) == [
+        EvalCase(
+            id="fast_001",
+            slice="fast_general_zh",
+            text="帮我总结这段话",
+            expect="fast",
+            source="curated",
+        )
+    ]
 
 
 def test_eval_routes_json_output_includes_id_slice_and_scores(tmp_path: Path):
