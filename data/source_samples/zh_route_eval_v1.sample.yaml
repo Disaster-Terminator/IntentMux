@@ -1,0 +1,33 @@
+samples:
+  - id: fast_general_001
+    slice: fast_general_zh
+    text: 帮我把这段话润色一下
+    expect: fast
+    source: curated_public_sample
+    rationale: 普通改写请求低风险，适合 fast。
+    redacted: true
+
+  - id: strong_code_001
+    slice: strong_code_zh
+    text: 这个 PR 会不会引入回归
+    expect: strong
+    source: curated_public_sample
+    rationale: PR 回归分析需要代码风险判断，适合 strong。
+    redacted: true
+
+  - id: high_risk_001
+    slice: high_risk_zh
+    text: 线上服务偶发卡死，帮我定位根因
+    expect: strong
+    source: curated_public_sample
+    rationale: 生产事故根因分析属于高风险任务，适合 strong。
+    redacted: true
+
+  - id: borderline_001
+    slice: borderline_zh
+    text: 这个网关方案会不会导致上下文泄漏、路由回归或成本失控？
+    expect: strong
+    source: curated_public_sample
+    label_policy: manual_review_required
+    rationale: 工程风险、隐私和成本回归需要强模型复核。
+    redacted: true

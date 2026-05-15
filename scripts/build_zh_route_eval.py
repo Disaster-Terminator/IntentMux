@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
+
+import yaml
 
 KNOWN_SLICES = {
     "fast_general_zh",
@@ -47,3 +50,32 @@ def validate_source_manifest(manifest: dict[str, Any]) -> None:
                 continue
             if not isinstance(source.get(key), str) or not source[key]:
                 raise ValueError(f"source {name}: missing {key}")
+
+
+def load_curated_samples(path: Path) -> list[dict[str, Any]]:
+    payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    samples = payload.get("samples")
+    if not isinstance(samples, list):
+        raise ValueError("samples must be a list")
+    validated: list[dict[str, Any]] = []
+    for index, sample in enumerate(samples):
+        if not isinstance(sample, dict):
+            raise ValueError(f"sample #{index} must be an object")
+        if sample.get("slice") not in KNOWN_SLICES:
+            raise ValueError(f"sample #{index}: unknown slice {sample.get('slice')!r}")
+        if sample.get("expect") not in KNOWN_ROUTES:
+            raise ValueError(f"sample #{index}: expect must be fast or strong")
+        if sample.get("redacted") is not True:
+            raise ValueError(f"sample #{index}: redacted must be true")
+        for key in ("id", "text", "source", "rationale"):
+            if not isinstance(sample.get(key), str) or not sample[key]:
+                raise ValueError(f"sample #{index}: missing {key}")
+        if (
+            sample.get("slice") == "borderline_zh"
+            and sample.get("label_policy") != "manual_review_required"
+        ):
+            raise ValueError(
+                f"sample #{index}: borderline_zh requires manual_review_required"
+            )
+        validated.append(dict(sample))
+    return validated
