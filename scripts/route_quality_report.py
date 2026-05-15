@@ -93,6 +93,163 @@ def build_quality_report(
     }
 
 
+def build_quality_report_from_eval_json(
+    *,
+    eval_json: dict[str, Any],
+    route_summary: dict[str, Any] | None,
+    route_bank_path: str,
+    margin: float | None = None,
+) -> dict[str, Any]:
+    cases = [case for case in eval_json.get("cases", []) if isinstance(case, dict)]
+    total = len(cases)
+    passed = sum(1 for case in cases if case.get("passed") is True)
+    failed = sum(1 for case in cases if case.get("passed") is False)
+    expected_routes = Counter(str(case.get("expect")) for case in cases if case.get("expect"))
+    actual_routes = Counter(
+        str(case.get("actual_route")) for case in cases if case.get("actual_route")
+    )
+    reasons = Counter(str(case.get("reason")) for case in cases if case.get("reason"))
+    failures = [
+        {
+            "id": str(case.get("id") or ""),
+            "slice": str(case.get("slice") or ""),
+            "expect": str(case.get("expect") or ""),
+            "actual": str(case.get("actual_route") or ""),
+            "target_model": str(case.get("target_model") or ""),
+            "reason": str(case.get("reason") or ""),
+            "text": str(case.get("text") or ""),
+        }
+        for case in cases
+        if case.get("passed") is False
+    ]
+    traffic = traffic_section(route_summary or {})
+    eval_section = {
+        "total": total,
+        "passed": passed,
+        "failed": failed,
+        "pass_rate": round(passed / total, 6) if total else 0.0,
+        "expected_routes": dict(expected_routes),
+        "actual_routes": dict(actual_routes),
+        "reasons": dict(reasons),
+        "failures": failures,
+    }
+    return {
+        "route_bank_path": route_bank_path,
+        "eval": eval_section,
+        "traffic": traffic,
+        "route_distribution_delta": route_distribution_delta(
+            dict(actual_routes),
+            traffic.get("routes", {}),
+        ),
+        "slice_metrics": slice_metrics(cases),
+        "product_metrics": product_metrics(cases, margin=margin),
+        "missing_decision_count": sum(1 for case in cases if not case.get("actual_route")),
+    }
+
+
+def slice_metrics(cases: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for case in cases:
+        slice_name = case.get("slice")
+        if not isinstance(slice_name, str) or not slice_name:
+            slice_name = "unknown"
+        grouped.setdefault(slice_name, []).append(case)
+
+    metrics: dict[str, dict[str, Any]] = {}
+    for slice_name, items in sorted(grouped.items()):
+        total = len(items)
+        passed = sum(1 for item in items if item.get("passed") is True)
+        expected_routes = Counter(
+            str(item.get("expect")) for item in items if item.get("expect")
+        )
+        actual_routes = Counter(
+            str(item.get("actual_route")) for item in items if item.get("actual_route")
+        )
+        metrics[slice_name] = {
+            "total": total,
+            "passed": passed,
+            "failed": sum(1 for item in items if item.get("passed") is False),
+            "pass_rate": round(passed / total, 6) if total else 0.0,
+            "expected_routes": dict(expected_routes),
+            "actual_routes": dict(actual_routes),
+        }
+    return metrics
+
+
+def product_metrics(
+    cases: list[dict[str, Any]],
+    *,
+    margin: float | None,
+) -> dict[str, float | None]:
+    total = len(cases)
+    fast_general = [case for case in cases if case.get("slice") == "fast_general_zh"]
+    actual_fast = [case for case in cases if case.get("actual_route") == "fast"]
+    high_risk = [case for case in cases if case.get("slice") == "high_risk_zh"]
+    code = [case for case in cases if case.get("slice") == "strong_code_zh"]
+    return {
+        "fast_general_keep_rate": route_rate(fast_general, "fast"),
+        "fast_precision": expected_rate(actual_fast, "fast"),
+        "strong_recall_high_risk": route_rate(high_risk, "strong"),
+        "strong_recall_code": route_rate(code, "strong"),
+        "low_confidence_rate": reason_rate(cases, "low_confidence"),
+        "hard_rule_hit_rate": hard_rule_rate(cases),
+        "strong_call_rate": route_rate(cases, "strong"),
+        "near_margin_rate": near_margin_rate(cases, margin),
+    }
+
+
+def route_rate(cases: list[dict[str, Any]], route: str) -> float:
+    if not cases:
+        return 0.0
+    return sum(1 for case in cases if case.get("actual_route") == route) / len(cases)
+
+
+def expected_rate(cases: list[dict[str, Any]], expected: str) -> float:
+    if not cases:
+        return 0.0
+    return sum(1 for case in cases if case.get("expect") == expected) / len(cases)
+
+
+def reason_rate(cases: list[dict[str, Any]], reason: str) -> float:
+    if not cases:
+        return 0.0
+    return sum(1 for case in cases if case.get("reason") == reason) / len(cases)
+
+
+def hard_rule_rate(cases: list[dict[str, Any]]) -> float:
+    if not cases:
+        return 0.0
+    return sum(
+        1
+        for case in cases
+        if isinstance(case.get("reason"), str)
+        and str(case.get("reason")).startswith("hard_rule:")
+    ) / len(cases)
+
+
+def near_margin_rate(
+    cases: list[dict[str, Any]],
+    margin: float | None,
+) -> float | None:
+    if margin is None:
+        return None
+    if not cases:
+        return 0.0
+    near = 0
+    measured = False
+    for case in cases:
+        score = case.get("score")
+        second_score = case.get("second_score")
+        if not isinstance(score, int | float) or not isinstance(second_score, int | float):
+            continue
+        measured = True
+        if abs(float(score) - float(second_score)) <= margin:
+            near += 1
+    if not measured:
+        return None
+    return near / len(cases)
+
+
 def route_distribution_delta(
     eval_routes: dict[str, int],
     traffic_routes: dict[str, Any],
@@ -171,6 +328,22 @@ def render_markdown(report: dict[str, Any]) -> str:
         f"- low_confidence_rate: {traffic['low_confidence_rate']:.2%}",
         f"- not_ok_rate: {traffic['not_ok_rate']:.2%}",
     ]
+    product = report.get("product_metrics", {})
+    if product:
+        lines.extend(["", "## Product Metrics"])
+        for key, value in sorted(product.items()):
+            formatted = "n/a" if value is None else f"{float(value):.2%}"
+            lines.append(f"- {key}: {formatted}")
+    slice_section = report.get("slice_metrics", {})
+    if slice_section:
+        lines.extend(["", "## Slice Metrics"])
+        for slice_name, values in sorted(slice_section.items()):
+            lines.append(
+                "- "
+                f"{slice_name}: total={values['total']} "
+                f"pass_rate={values['pass_rate']:.2%} "
+                f"actual={format_counts(values.get('actual_routes', {}))}"
+            )
     delta = report.get("route_distribution_delta", {})
     if delta:
         lines.extend(["", "## Route Distribution Delta"])
@@ -203,22 +376,34 @@ def format_counts(counts: dict[str, Any]) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--eval-output", required=True, help="Text output from scripts/eval_routes.py")
+    parser.add_argument("--eval-output", help="Text output from scripts/eval_routes.py")
+    parser.add_argument("--eval-json", help="JSON output from scripts/eval_routes.py --json-output")
     parser.add_argument("--route-summary-json", help="JSON output from scripts/router_log_summary.py --json")
     parser.add_argument("--route-bank", default="examples/route_bank.sample.yaml")
+    parser.add_argument("--margin", type=float, default=None)
     parser.add_argument("--json-output", required=True)
     parser.add_argument("--markdown-output", required=True)
     args = parser.parse_args()
 
-    eval_output = Path(args.eval_output).read_text(encoding="utf-8")
     route_summary = None
     if args.route_summary_json:
         route_summary = json.loads(Path(args.route_summary_json).read_text(encoding="utf-8"))
-    report = build_quality_report(
-        eval_output=eval_output,
-        route_summary=route_summary,
-        route_bank_path=args.route_bank,
-    )
+    if args.eval_json:
+        report = build_quality_report_from_eval_json(
+            eval_json=json.loads(Path(args.eval_json).read_text(encoding="utf-8")),
+            route_summary=route_summary,
+            route_bank_path=args.route_bank,
+            margin=args.margin,
+        )
+    elif args.eval_output:
+        eval_output = Path(args.eval_output).read_text(encoding="utf-8")
+        report = build_quality_report(
+            eval_output=eval_output,
+            route_summary=route_summary,
+            route_bank_path=args.route_bank,
+        )
+    else:
+        raise SystemExit("--eval-output or --eval-json is required")
     Path(args.json_output).write_text(
         json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",

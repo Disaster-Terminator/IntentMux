@@ -7,6 +7,7 @@ from pathlib import Path
 
 from scripts.route_quality_report import (
     build_quality_report,
+    build_quality_report_from_eval_json,
     parse_eval_output,
     render_markdown,
 )
@@ -72,6 +73,56 @@ def test_build_quality_report_combines_eval_and_route_summary():
         "strong": {"eval_rate": 0.5, "traffic_rate": 0.2, "delta": -0.3},
     }
     assert report["route_bank_path"] == "examples/route_bank.sample.yaml"
+
+
+def test_quality_report_reads_eval_json_and_reports_slice_metrics():
+    eval_json = {
+        "schema": "intentmux-route-eval-v1",
+        "cases": [
+            {
+                "id": "fast1",
+                "slice": "fast_general_zh",
+                "expect": "fast",
+                "actual_route": "fast",
+                "reason": "embedding",
+                "passed": True,
+            },
+            {
+                "id": "risk1",
+                "slice": "high_risk_zh",
+                "expect": "strong",
+                "actual_route": "strong",
+                "reason": "hard_rule:越权",
+                "passed": True,
+            },
+            {
+                "id": "code1",
+                "slice": "strong_code_zh",
+                "expect": "strong",
+                "actual_route": "fast",
+                "reason": "low_confidence",
+                "passed": False,
+                "score": 0.54,
+                "second_score": 0.52,
+            },
+        ],
+    }
+
+    report = build_quality_report_from_eval_json(
+        eval_json=eval_json,
+        route_summary=None,
+        route_bank_path="sample",
+        margin=0.04,
+    )
+
+    assert report["product_metrics"]["fast_general_keep_rate"] == 1.0
+    assert report["product_metrics"]["fast_precision"] == 0.5
+    assert report["product_metrics"]["strong_recall_high_risk"] == 1.0
+    assert report["product_metrics"]["strong_recall_code"] == 0.0
+    assert report["product_metrics"]["low_confidence_rate"] == 1 / 3
+    assert report["product_metrics"]["hard_rule_hit_rate"] == 1 / 3
+    assert report["product_metrics"]["strong_call_rate"] == 1 / 3
+    assert report["product_metrics"]["near_margin_rate"] == 1 / 3
 
 
 def test_render_markdown_includes_actionable_quality_signals():
