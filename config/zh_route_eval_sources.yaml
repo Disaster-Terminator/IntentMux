@@ -8,7 +8,7 @@ sources:
     license_url: https://github.com/alexa/massive/blob/master/LICENSE
     redistributable: true
     commercial_use: true
-    derived_prompt_allowed: yes
+    derived_prompt_allowed: allowed
     commit_policy: sample_only
     notes: Chinese-native general assistant utterances.
 
@@ -86,7 +86,7 @@ sources:
     license_url: https://www.apache.org/licenses/LICENSE-2.0
     redistributable: true
     commercial_use: true
-    derived_prompt_allowed: yes
+    derived_prompt_allowed: allowed
     commit_policy: sample_only
     notes: Public/manual and redacted production-review prompts only.
 
@@ -100,6 +100,6 @@ sources:
     license_url: https://www.apache.org/licenses/LICENSE-2.0
     redistributable: true
     commercial_use: true
-    derived_prompt_allowed: yes
+    derived_prompt_allowed: allowed
     commit_policy: sample_only
     notes: Human-reviewed boundary prompts with explicit expected route.

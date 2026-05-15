@@ -1,5 +1,37 @@
 # zh-route-eval v1 Implementation Plan
 
+Status: partially implemented as the current eval scaffold.
+
+Do not execute this document as a fresh greenfield plan. The current baseline
+already includes:
+
+- `docs/zh_route_eval_plan.md`;
+- `config/zh_route_eval_sources.yaml`;
+- `data/source_samples/zh_route_eval_v1.sample.yaml`;
+- `scripts/build_zh_route_eval.py`;
+- `scripts/eval_routes.py --json-output`;
+- `scripts/route_quality_report.py --eval-json`.
+
+The remaining work is hardening and dataset growth, not replacing the current
+implementation. Keep these constraints:
+
+- Do not introduce `manual` as a route. Executable eval cases must use
+  `expect: fast` or `expect: strong`; `borderline_zh` uses
+  `label_policy: manual_review_required` only.
+- Do not change `config/routes.yaml`, production route banks, LiteLLM config, or
+  runtime routing from this plan.
+- Do not commit generated full eval banks or local production review data.
+- Validate the real `config/zh_route_eval_sources.yaml`, not only synthetic
+  test fixtures.
+
+Remaining hardening before calling this a real Chinese route benchmark:
+
+- grow the public/sample and private eval sets beyond smoke coverage;
+- keep source license and commit policies explicit;
+- preserve long-context evidence with `input_chars`, `message_count`, and
+  `context_policy`;
+- keep route reports tied to JSON eval output with slice/product metrics.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build IntentMux's first Chinese-first fast/strong routing quality baseline so route-bank changes can be judged by reproducible evals instead of local traffic guesses.
@@ -340,7 +372,7 @@ sources:
     license_url: https://github.com/alexa/massive/blob/master/LICENSE
     redistributable: true
     commercial_use: true
-    derived_prompt_allowed: yes
+    derived_prompt_allowed: allowed
     commit_policy: sample_only
     notes: Chinese-native general assistant utterances.
 
@@ -418,7 +450,7 @@ sources:
     license_url: https://www.apache.org/licenses/LICENSE-2.0
     redistributable: true
     commercial_use: true
-    derived_prompt_allowed: yes
+    derived_prompt_allowed: allowed
     commit_policy: sample_only
     notes: Public/manual and redacted production-review prompts only.
 
@@ -432,7 +464,7 @@ sources:
     license_url: https://www.apache.org/licenses/LICENSE-2.0
     redistributable: true
     commercial_use: true
-    derived_prompt_allowed: yes
+    derived_prompt_allowed: allowed
     commit_policy: sample_only
     notes: Human-reviewed boundary prompts with explicit expected route.
 ```

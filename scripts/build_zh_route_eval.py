@@ -17,6 +17,18 @@ KNOWN_SLICES = {
 }
 
 KNOWN_ROUTES = {"fast", "strong"}
+DERIVED_PROMPT_POLICIES = {"allowed", "review_required", "forbidden"}
+COMMIT_POLICIES = {"sample_only", "manifest_only", "never"}
+EXPECTED_ROUTES_BY_SLICE = {
+    "fast_general_zh": {"fast"},
+    "fast_intent_zh": {"fast"},
+    "strong_code_zh": {"strong"},
+    "strong_reasoning_zh": {"strong"},
+    "strong_long_context_zh": {"strong"},
+    "high_risk_zh": {"strong"},
+    "borderline_zh": {"fast", "strong"},
+}
+LONG_CONTEXT_POLICIES = {"preserved_length", "summarized", "schema_reserved"}
 
 
 def validate_source_manifest(manifest: dict[str, Any]) -> None:
@@ -51,6 +63,15 @@ def validate_source_manifest(manifest: dict[str, Any]) -> None:
                 continue
             if not isinstance(source.get(key), str) or not source[key]:
                 raise ValueError(f"source {name}: missing {key}")
+        if source["derived_prompt_allowed"] not in DERIVED_PROMPT_POLICIES:
+            raise ValueError(
+                f"source {name}: derived_prompt_allowed must be one of "
+                f"{sorted(DERIVED_PROMPT_POLICIES)}"
+            )
+        if source["commit_policy"] not in COMMIT_POLICIES:
+            raise ValueError(
+                f"source {name}: commit_policy must be one of {sorted(COMMIT_POLICIES)}"
+            )
 
 
 def load_curated_samples(path: Path) -> list[dict[str, Any]]:
@@ -66,6 +87,12 @@ def load_curated_samples(path: Path) -> list[dict[str, Any]]:
             raise ValueError(f"sample #{index}: unknown slice {sample.get('slice')!r}")
         if sample.get("expect") not in KNOWN_ROUTES:
             raise ValueError(f"sample #{index}: expect must be fast or strong")
+        allowed_routes = EXPECTED_ROUTES_BY_SLICE[str(sample["slice"])]
+        if sample["expect"] not in allowed_routes:
+            raise ValueError(
+                f"sample #{index}: expected route for {sample['slice']} must be "
+                f"one of {sorted(allowed_routes)}"
+            )
         if sample.get("redacted") is not True:
             raise ValueError(f"sample #{index}: redacted must be true")
         for key in ("id", "text", "source", "rationale"):
@@ -78,24 +105,55 @@ def load_curated_samples(path: Path) -> list[dict[str, Any]]:
             raise ValueError(
                 f"sample #{index}: borderline_zh requires manual_review_required"
             )
+        if sample["slice"] == "strong_long_context_zh":
+            validate_long_context_metadata(sample, index)
         validated.append(dict(sample))
     return validated
 
 
+def validate_long_context_metadata(sample: dict[str, Any], index: int) -> None:
+    context_policy = sample.get("context_policy")
+    if context_policy not in LONG_CONTEXT_POLICIES:
+        raise ValueError(
+            f"sample #{index}: strong_long_context_zh requires context_policy"
+        )
+    if context_policy == "preserved_length":
+        if not isinstance(sample.get("input_chars"), int) or sample["input_chars"] <= 0:
+            raise ValueError(
+                f"sample #{index}: preserved_length requires positive input_chars"
+            )
+        if (
+            not isinstance(sample.get("message_count"), int)
+            or sample["message_count"] <= 0
+        ):
+            raise ValueError(
+                f"sample #{index}: preserved_length requires positive message_count"
+            )
+
+
 def build_eval_payload(samples: list[dict[str, Any]]) -> dict[str, Any]:
+    seen_ids: set[str] = set()
+    cases: list[dict[str, Any]] = []
+    for sample in samples:
+        sample_id = sample["id"]
+        if sample_id in seen_ids:
+            raise ValueError(f"duplicate case id: {sample_id}")
+        seen_ids.add(sample_id)
+        case = {
+            "id": sample_id,
+            "slice": sample["slice"],
+            "text": sample["text"],
+            "expect": sample["expect"],
+            "source": sample["source"],
+            "rationale": sample["rationale"],
+        }
+        for key in ("input_chars", "message_count", "context_policy"):
+            if key in sample:
+                case[key] = sample[key]
+        cases.append(case)
     return {
         "schema": "zh-intentmux-router-eval-v1",
-        "cases": [
-            {
-                "id": sample["id"],
-                "slice": sample["slice"],
-                "text": sample["text"],
-                "expect": sample["expect"],
-                "source": sample["source"],
-                "rationale": sample["rationale"],
-            }
-            for sample in samples
-        ],
+        "cases": cases,
     }
 
 

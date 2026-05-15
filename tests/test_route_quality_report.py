@@ -122,7 +122,9 @@ def test_quality_report_reads_eval_json_and_reports_slice_metrics():
     assert report["product_metrics"]["low_confidence_rate"] == 1 / 3
     assert report["product_metrics"]["hard_rule_hit_rate"] == 1 / 3
     assert report["product_metrics"]["strong_call_rate"] == 1 / 3
-    assert report["product_metrics"]["near_margin_rate"] == 1 / 3
+    assert report["product_metrics"]["near_margin_rate"] == 1.0
+    assert report["product_metrics"]["near_margin_measured_count"] == 1
+    assert report["product_metrics"]["near_margin_total_count"] == 3
 
 
 def test_render_markdown_includes_actionable_quality_signals():
@@ -152,6 +154,11 @@ def test_render_markdown_includes_actionable_quality_signals():
             "not_ok": 1,
             "not_ok_rate": 0.1,
         },
+        "product_metrics": {
+            "near_margin_rate": 0.5,
+            "near_margin_measured_count": 3,
+            "near_margin_total_count": 4,
+        },
     }
 
     markdown = render_markdown(report)
@@ -159,6 +166,8 @@ def test_render_markdown_includes_actionable_quality_signals():
     assert "# IntentMux Route Quality Report" in markdown
     assert "- pass_rate: 50.00%" in markdown
     assert "- low_confidence_rate: 70.00%" in markdown
+    assert "- near_margin_measured_count: 3" in markdown
+    assert "- near_margin_total_count: 4" in markdown
     assert "分析这个 PR" in markdown
 
 

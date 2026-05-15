@@ -180,12 +180,13 @@ def product_metrics(
     cases: list[dict[str, Any]],
     *,
     margin: float | None,
-) -> dict[str, float | None]:
+) -> dict[str, float | int | None]:
     total = len(cases)
     fast_general = [case for case in cases if case.get("slice") == "fast_general_zh"]
     actual_fast = [case for case in cases if case.get("actual_route") == "fast"]
     high_risk = [case for case in cases if case.get("slice") == "high_risk_zh"]
     code = [case for case in cases if case.get("slice") == "strong_code_zh"]
+    near_margin = near_margin_metrics(cases, margin)
     return {
         "fast_general_keep_rate": route_rate(fast_general, "fast"),
         "fast_precision": expected_rate(actual_fast, "fast"),
@@ -194,7 +195,9 @@ def product_metrics(
         "low_confidence_rate": reason_rate(cases, "low_confidence"),
         "hard_rule_hit_rate": hard_rule_rate(cases),
         "strong_call_rate": route_rate(cases, "strong"),
-        "near_margin_rate": near_margin_rate(cases, margin),
+        "near_margin_rate": near_margin["near_margin_rate"],
+        "near_margin_measured_count": near_margin["near_margin_measured_count"],
+        "near_margin_total_count": total,
     }
 
 
@@ -231,23 +234,33 @@ def near_margin_rate(
     cases: list[dict[str, Any]],
     margin: float | None,
 ) -> float | None:
+    return near_margin_metrics(cases, margin)["near_margin_rate"]
+
+
+def near_margin_metrics(
+    cases: list[dict[str, Any]],
+    margin: float | None,
+) -> dict[str, float | int | None]:
     if margin is None:
-        return None
+        return {"near_margin_rate": None, "near_margin_measured_count": 0}
     if not cases:
-        return 0.0
+        return {"near_margin_rate": 0.0, "near_margin_measured_count": 0}
     near = 0
-    measured = False
+    measured = 0
     for case in cases:
         score = case.get("score")
         second_score = case.get("second_score")
         if not isinstance(score, int | float) or not isinstance(second_score, int | float):
             continue
-        measured = True
+        measured += 1
         if abs(float(score) - float(second_score)) <= margin:
             near += 1
-    if not measured:
-        return None
-    return near / len(cases)
+    if measured == 0:
+        return {"near_margin_rate": None, "near_margin_measured_count": 0}
+    return {
+        "near_margin_rate": near / measured,
+        "near_margin_measured_count": measured,
+    }
 
 
 def route_distribution_delta(
@@ -332,7 +345,12 @@ def render_markdown(report: dict[str, Any]) -> str:
     if product:
         lines.extend(["", "## Product Metrics"])
         for key, value in sorted(product.items()):
-            formatted = "n/a" if value is None else f"{float(value):.2%}"
+            if value is None:
+                formatted = "n/a"
+            elif key.endswith("_count"):
+                formatted = str(int(value))
+            else:
+                formatted = f"{float(value):.2%}"
             lines.append(f"- {key}: {formatted}")
     slice_section = report.get("slice_metrics", {})
     if slice_section:
