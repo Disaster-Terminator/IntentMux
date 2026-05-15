@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -81,3 +83,38 @@ samples:
             "redacted": True,
         }
     ]
+
+
+def test_build_zh_route_eval_cli_writes_eval_yaml(tmp_path: Path):
+    sample = tmp_path / "samples.yaml"
+    output = tmp_path / "eval.yaml"
+    sample.write_text(
+        """
+samples:
+  - id: fast_001
+    slice: fast_general_zh
+    text: 帮我总结这段话
+    expect: fast
+    source: curated
+    rationale: 普通总结请求低风险，适合 fast。
+    redacted: true
+""",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/build_zh_route_eval.py",
+            "--curated-samples",
+            str(sample),
+            "--output",
+            str(output),
+        ],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+
+    assert "wrote" in result.stdout
+    assert "fast_001" in output.read_text(encoding="utf-8")

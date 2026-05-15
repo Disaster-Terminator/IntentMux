@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 from pathlib import Path
 from typing import Any
 
@@ -79,3 +80,43 @@ def load_curated_samples(path: Path) -> list[dict[str, Any]]:
             )
         validated.append(dict(sample))
     return validated
+
+
+def build_eval_payload(samples: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "schema": "zh-intentmux-router-eval-v1",
+        "cases": [
+            {
+                "id": sample["id"],
+                "slice": sample["slice"],
+                "text": sample["text"],
+                "expect": sample["expect"],
+                "source": sample["source"],
+                "rationale": sample["rationale"],
+            }
+            for sample in samples
+        ],
+    }
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--curated-samples", action="append", required=True)
+    parser.add_argument("--output", required=True)
+    args = parser.parse_args()
+
+    samples: list[dict[str, Any]] = []
+    for path in args.curated_samples:
+        samples.extend(load_curated_samples(Path(path)))
+    payload = build_eval_payload(samples)
+    output = Path(args.output)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(
+        yaml.safe_dump(payload, allow_unicode=True, sort_keys=False),
+        encoding="utf-8",
+    )
+    print(f"wrote {output} with {len(payload['cases'])} cases")
+
+
+if __name__ == "__main__":
+    main()
