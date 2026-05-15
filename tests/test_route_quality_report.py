@@ -127,6 +127,53 @@ def test_quality_report_reads_eval_json_and_reports_slice_metrics():
     assert report["product_metrics"]["near_margin_total_count"] == 3
 
 
+def test_quality_report_counts_long_context_metadata_states():
+    eval_json = {
+        "schema": "intentmux-route-eval-v1",
+        "cases": [
+            {
+                "id": "long1",
+                "slice": "strong_long_context_zh",
+                "expect": "strong",
+                "actual_route": "strong",
+                "reason": "embedding",
+                "passed": True,
+                "input_chars": 12000,
+                "message_count": 3,
+                "context_policy": "preserved_length",
+            },
+            {
+                "id": "long2",
+                "slice": "strong_long_context_zh",
+                "expect": "strong",
+                "actual_route": "strong",
+                "reason": "embedding",
+                "passed": True,
+                "context_policy": "schema_reserved",
+            },
+            {
+                "id": "long3",
+                "slice": "strong_long_context_zh",
+                "expect": "strong",
+                "actual_route": "fast",
+                "reason": "low_confidence",
+                "passed": False,
+            },
+        ],
+    }
+
+    report = build_quality_report_from_eval_json(
+        eval_json=eval_json,
+        route_summary=None,
+        route_bank_path="sample",
+    )
+
+    assert report["product_metrics"]["long_context_total_count"] == 3
+    assert report["product_metrics"]["long_context_measured_count"] == 1
+    assert report["product_metrics"]["long_context_schema_reserved_count"] == 1
+    assert report["product_metrics"]["long_context_missing_metadata_count"] == 1
+
+
 def test_render_markdown_includes_actionable_quality_signals():
     report = {
         "route_bank_path": "examples/route_bank.sample.yaml",

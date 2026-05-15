@@ -11,5 +11,5 @@ cases:
     expect: strong
   - text: 这个 SQL 查询为什么越来越慢
     expect: strong
-  - text: 这个方案靠谱吗
+  - text: 这个生产改动方案会不会引入数据丢失、权限绕过或回滚风险
     expect: strong

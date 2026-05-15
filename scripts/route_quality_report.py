@@ -187,6 +187,7 @@ def product_metrics(
     high_risk = [case for case in cases if case.get("slice") == "high_risk_zh"]
     code = [case for case in cases if case.get("slice") == "strong_code_zh"]
     near_margin = near_margin_metrics(cases, margin)
+    long_context = long_context_metrics(cases)
     return {
         "fast_general_keep_rate": route_rate(fast_general, "fast"),
         "fast_precision": expected_rate(actual_fast, "fast"),
@@ -198,6 +199,10 @@ def product_metrics(
         "near_margin_rate": near_margin["near_margin_rate"],
         "near_margin_measured_count": near_margin["near_margin_measured_count"],
         "near_margin_total_count": total,
+        "long_context_total_count": long_context["total"],
+        "long_context_measured_count": long_context["measured"],
+        "long_context_schema_reserved_count": long_context["schema_reserved"],
+        "long_context_missing_metadata_count": long_context["missing_metadata"],
     }
 
 
@@ -260,6 +265,34 @@ def near_margin_metrics(
     return {
         "near_margin_rate": near / measured,
         "near_margin_measured_count": measured,
+    }
+
+
+def long_context_metrics(cases: list[dict[str, Any]]) -> dict[str, int]:
+    long_context = [
+        case for case in cases if case.get("slice") == "strong_long_context_zh"
+    ]
+    measured = 0
+    schema_reserved = 0
+    missing_metadata = 0
+    for case in long_context:
+        policy = case.get("context_policy")
+        if policy == "preserved_length":
+            if isinstance(case.get("input_chars"), int) and isinstance(
+                case.get("message_count"), int
+            ):
+                measured += 1
+            else:
+                missing_metadata += 1
+        elif policy == "schema_reserved":
+            schema_reserved += 1
+        else:
+            missing_metadata += 1
+    return {
+        "total": len(long_context),
+        "measured": measured,
+        "schema_reserved": schema_reserved,
+        "missing_metadata": missing_metadata,
     }
 
 

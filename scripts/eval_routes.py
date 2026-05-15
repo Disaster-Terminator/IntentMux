@@ -26,6 +26,9 @@ class EvalCase:
     source: str = "unknown"
     id: str | None = None
     slice: str | None = None
+    input_chars: int | None = None
+    message_count: int | None = None
+    context_policy: str | None = None
 
 
 class MockEmbeddingClient:
@@ -40,7 +43,21 @@ class MockEmbeddingClient:
             return [0.0, 0.0, 1.0]
         if any(
             marker in text
-            for marker in ("代码", "PR", "bug", "SQL", "数据库", "查询", "方案", "靠谱", "架构", "竞态", "线上")
+            for marker in (
+                "代码",
+                "PR",
+                "bug",
+                "SQL",
+                "数据库",
+                "查询",
+                "架构",
+                "竞态",
+                "线上",
+                "生产改动",
+                "数据丢失",
+                "权限绕过",
+                "回滚风险",
+            )
         ):
             return [0.0, 1.0, 0.0]
         return [1.0, 0.0, 0.0]
@@ -57,6 +74,9 @@ def load_cases(path: Path) -> list[EvalCase]:
                 source=item.get("source", "unknown"),
                 id=item.get("id"),
                 slice=item.get("slice"),
+                input_chars=item.get("input_chars"),
+                message_count=item.get("message_count"),
+                context_policy=item.get("context_policy"),
             )
         )
     return cases
@@ -107,20 +127,23 @@ async def run_eval(
         )
         actual_route = decision.route_id or decision.target_model
         status = "PASS" if actual_route == case.expect else "FAIL"
-        results.append(
-            {
-                "id": case_id(case, index),
-                "slice": case.slice,
-                "text": case.text,
-                "expect": case.expect,
-                "actual_route": actual_route,
-                "target_model": decision.target_model,
-                "reason": decision.reason,
-                "passed": actual_route == case.expect,
-                "score": decision.score,
-                "second_score": decision.second_score,
-            }
-        )
+        result = {
+            "id": case_id(case, index),
+            "slice": case.slice,
+            "text": case.text,
+            "expect": case.expect,
+            "actual_route": actual_route,
+            "target_model": decision.target_model,
+            "reason": decision.reason,
+            "passed": actual_route == case.expect,
+            "score": decision.score,
+            "second_score": decision.second_score,
+        }
+        for key in ("input_chars", "message_count", "context_policy"):
+            value = getattr(case, key)
+            if value is not None:
+                result[key] = value
+        results.append(result)
         print(
             f"{status}\t{case.expect}\t{actual_route}\t{decision.target_model}\t"
             f"{decision.reason}\t{case.text}"

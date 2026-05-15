@@ -45,6 +45,37 @@ cases:
     ]
 
 
+def test_load_cases_preserves_long_context_metadata(tmp_path: Path):
+    cases = tmp_path / "cases.yaml"
+    cases.write_text(
+        """
+cases:
+  - id: long_001
+    slice: strong_long_context_zh
+    text: 请基于长文档定位冲突结论
+    expect: strong
+    source: curated
+    input_chars: 12000
+    message_count: 3
+    context_policy: preserved_length
+""",
+        encoding="utf-8",
+    )
+
+    assert load_cases(cases) == [
+        EvalCase(
+            id="long_001",
+            slice="strong_long_context_zh",
+            text="请基于长文档定位冲突结论",
+            expect="strong",
+            source="curated",
+            input_chars=12000,
+            message_count=3,
+            context_policy="preserved_length",
+        )
+    ]
+
+
 def test_eval_routes_json_output_includes_id_slice_and_scores(tmp_path: Path):
     cases = tmp_path / "cases.yaml"
     output = tmp_path / "eval.json"
@@ -84,3 +115,77 @@ cases:
     assert payload["cases"][0]["passed"] is True
     assert "score" in payload["cases"][0]
     assert "second_score" in payload["cases"][0]
+
+
+def test_eval_routes_json_output_preserves_long_context_metadata(tmp_path: Path):
+    cases = tmp_path / "cases.yaml"
+    output = tmp_path / "eval.json"
+    cases.write_text(
+        """
+cases:
+  - id: long_001
+    slice: strong_long_context_zh
+    text: 线上长文档分析是否存在数据损坏风险
+    expect: strong
+    source: test
+    input_chars: 12000
+    message_count: 3
+    context_policy: preserved_length
+""",
+        encoding="utf-8",
+    )
+
+    subprocess.run(
+        [
+            sys.executable,
+            "scripts/eval_routes.py",
+            "--cases",
+            str(cases),
+            "--mock-embeddings",
+            "--json-output",
+            str(output),
+        ],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+
+    case = json.loads(output.read_text(encoding="utf-8"))["cases"][0]
+    assert case["slice"] == "strong_long_context_zh"
+    assert case["input_chars"] == 12000
+    assert case["message_count"] == 3
+    assert case["context_policy"] == "preserved_length"
+
+
+def test_mock_eval_keeps_generic_advice_on_fast(tmp_path: Path):
+    cases = tmp_path / "cases.yaml"
+    output = tmp_path / "eval.json"
+    cases.write_text(
+        """
+cases:
+  - id: fast_general_advice_001
+    slice: fast_general_zh
+    text: 这个学习计划靠谱吗？
+    expect: fast
+    source: regression
+""",
+        encoding="utf-8",
+    )
+
+    subprocess.run(
+        [
+            sys.executable,
+            "scripts/eval_routes.py",
+            "--cases",
+            str(cases),
+            "--mock-embeddings",
+            "--json-output",
+            str(output),
+        ],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+
+    case = json.loads(output.read_text(encoding="utf-8"))["cases"][0]
+    assert case["actual_route"] == "fast"
