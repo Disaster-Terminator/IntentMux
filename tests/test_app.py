@@ -801,6 +801,23 @@ def test_chat_completion_emits_structured_log_without_sensitive_payload(caplog):
                 "decision_ms": route_logs[0]["decision_ms"],
                 "duration_ms": route_logs[0]["duration_ms"],
                 "event": "route_complete",
+                "format_signals": {
+                    "approx_input_chars": 27,
+                    "assistant_message_count": 0,
+                    "function_count": 0,
+                    "functions_present": False,
+                    "message_count": 1,
+                    "multimodal_content": False,
+                    "response_format_present": False,
+                    "system_message_count": 0,
+                    "tool_call_count": 0,
+                    "tool_choice_present": False,
+                    "tool_count": 0,
+                    "tool_history": False,
+                    "tool_message_count": 0,
+                    "tools_present": False,
+                    "user_message_count": 1,
+                },
                 "ok": True,
                 "outcome": "success",
                 "policy_id": "hard_rule",
@@ -824,6 +841,53 @@ def test_chat_completion_emits_structured_log_without_sensitive_payload(caplog):
     serialized = "\n".join(record.message for record in caplog.records)
     assert "敏感 prompt" not in serialized
     assert "Bearer litellm-test" not in serialized
+
+
+def test_chat_completion_audit_log_includes_format_signals_without_content(caplog):
+    proxy = FakeProxy()
+    app = create_app(
+        router=FakeRouter(RoutingDecision("cheap-router", "test", rewrite=True, route_id="fast")),
+        proxy=proxy,
+    )
+
+    with caplog.at_level(logging.INFO, logger="intentmux"):
+        response = TestClient(app).post(
+            "/v1/chat/completions",
+            json={
+                "model": "semantic-router",
+                "messages": [
+                    {"role": "user", "content": "private edit request"},
+                    {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [{"id": "call-1", "type": "function"}],
+                    },
+                ],
+                "tools": [{"type": "function", "function": {"name": "edit_file"}}],
+            },
+        )
+
+    assert response.status_code == 200
+    records = [json.loads(record.message) for record in caplog.records]
+    route_log = next(record for record in records if record["event"] == "route_complete")
+    assert route_log["format_signals"] == {
+        "approx_input_chars": 20,
+        "assistant_message_count": 1,
+        "function_count": 0,
+        "functions_present": False,
+        "message_count": 2,
+        "multimodal_content": False,
+        "response_format_present": False,
+        "system_message_count": 0,
+        "tool_call_count": 1,
+        "tool_choice_present": False,
+        "tool_count": 1,
+        "tool_history": True,
+        "tool_message_count": 0,
+        "tools_present": True,
+        "user_message_count": 1,
+    }
+    assert "private edit request" not in json.dumps(route_log, ensure_ascii=False)
 
 
 def test_chat_completion_writes_redacted_audit_log(tmp_path):
@@ -877,6 +941,23 @@ def test_chat_completion_writes_redacted_audit_log(tmp_path):
             "decision_ms": records[0]["decision_ms"],
             "duration_ms": records[0]["duration_ms"],
             "event": "route_complete",
+            "format_signals": {
+                "approx_input_chars": 9,
+                "assistant_message_count": 0,
+                "function_count": 0,
+                "functions_present": False,
+                "message_count": 1,
+                "multimodal_content": False,
+                "response_format_present": False,
+                "system_message_count": 0,
+                "tool_call_count": 0,
+                "tool_choice_present": False,
+                "tool_count": 0,
+                "tool_history": False,
+                "tool_message_count": 0,
+                "tools_present": False,
+                "user_message_count": 1,
+            },
             "ok": True,
             "outcome": "success",
             "policy_id": "embedding",
@@ -1007,6 +1088,8 @@ def test_chat_completion_strips_router_private_metadata_before_forwarding():
 
     assert response.status_code == 200
     assert proxy.payloads[0]["metadata"] == {"tenant": "kept"}
+
+
 
 
 def test_chat_completion_does_not_use_user_field_as_request_id(caplog):

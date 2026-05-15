@@ -19,6 +19,7 @@ from router.observability import (
     log_route_error,
     now_ms,
     request_identity_from_request,
+    request_format_signals,
     route_headers,
 )
 from router.proxy import LiteLLMProxy
@@ -145,6 +146,7 @@ def create_app(
         payload = await parse_json_object(request)
         if isinstance(payload, JSONResponse):
             return payload
+        format_signals = request_format_signals(payload)
         request_identity = request_identity_from_request(request_headers, payload)
         request_id = request_identity.value
         request_headers["x-request-id"] = request_id
@@ -186,6 +188,7 @@ def create_app(
                         "decision_ms": decision_ms,
                         "upstream_ms": now_ms() - upstream_started_ms,
                     },
+                    format_signals=format_signals,
                     audit_logger=audit_logger,
                 )
                 return upstream_error_response(
@@ -209,6 +212,7 @@ def create_app(
                         "upstream_ms": now_ms() - upstream_started_ms,
                         "upstream_headers_ms": upstream_headers_ms,
                     },
+                    format_signals=format_signals,
                     audit_logger=audit_logger,
                 )
                 await stream_context.__aexit__(None, None, None)
@@ -231,6 +235,7 @@ def create_app(
                     decision_ms=decision_ms,
                     upstream_started_ms=upstream_started_ms,
                     upstream_headers_ms=upstream_headers_ms,
+                    format_signals=format_signals,
                     audit_logger=audit_logger,
                 ),
                 status_code=upstream.status_code,
@@ -255,6 +260,7 @@ def create_app(
                     "decision_ms": decision_ms,
                     "upstream_ms": now_ms() - upstream_started_ms,
                 },
+                format_signals=format_signals,
                 audit_logger=audit_logger,
             )
             return upstream_error_response(
@@ -277,6 +283,7 @@ def create_app(
                     "decision_ms": decision_ms,
                     "upstream_ms": upstream_ms,
                 },
+                format_signals=format_signals,
                 audit_logger=audit_logger,
             )
             return upstream_error_response(
@@ -298,6 +305,7 @@ def create_app(
                 "decision_ms": decision_ms,
                 "upstream_ms": upstream_ms,
             },
+            format_signals=format_signals,
             audit_logger=audit_logger,
         )
         return Response(
@@ -337,6 +345,7 @@ async def stream_with_context(
     decision_ms: float = 0.0,
     upstream_started_ms: float | None = None,
     upstream_headers_ms: float | None = None,
+    format_signals: dict[str, Any] | None = None,
     audit_logger: AuditLogger | None = None,
 ):
     if upstream_started_ms is None:
@@ -364,6 +373,7 @@ async def stream_with_context(
                 "upstream_headers_ms": upstream_headers_ms or 0.0,
                 "upstream_body_ms": now_ms() - body_started_ms,
             },
+            format_signals=format_signals,
             audit_logger=audit_logger,
         )
         return
@@ -387,6 +397,7 @@ async def stream_with_context(
                     "upstream_headers_ms": upstream_headers_ms or 0.0,
                     "upstream_body_ms": now_ms() - body_started_ms,
                 },
+                format_signals=format_signals,
                 audit_logger=audit_logger,
             )
 

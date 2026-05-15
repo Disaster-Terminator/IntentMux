@@ -53,6 +53,7 @@ deserve human review:
 ```bash
 uv run python scripts/select_review_candidates.py /data/logs/routes/*.jsonl \
   --routes /data/config/routes.yaml \
+  --prompt-path "/data/logs/prompts/*.jsonl" \
   --json-output /tmp/intentmux-review-candidates.json \
   --markdown-output /tmp/intentmux-review-candidates.md
 ```
@@ -67,7 +68,13 @@ The script selects records for signals such as:
 - score margins close to the configured margin;
 - slow requests above the configured duration threshold.
 
-The output is intentionally limited to route metadata:
+When prompt review logs are passed with `--prompt-path`, the script joins them
+by `request_id` and only reports whether a candidate has matching local review
+evidence, whether that evidence was truncated, and the prompt character count.
+It does not print prompt text or infer framework identity from prompt contents.
+
+The output is intentionally limited to route metadata and safe structural
+signals:
 
 ```json
 {
@@ -80,9 +87,25 @@ The output is intentionally limited to route metadata:
   "second_score": 0.51,
   "duration_ms": 1234.5,
   "upstream_status": 200,
+  "format_signals": {
+    "tools_present": true,
+    "tool_history": false,
+    "message_count": 8,
+    "approx_input_chars": 12000
+  },
+  "prompt_review": {
+    "matched": true,
+    "truncated": false,
+    "text_chars": 12000
+  },
   "review_reasons": ["low_confidence", "near_margin"]
 }
 ```
+
+`format_signals` are derived from OpenAI-compatible request structure, not from
+private prompt text. They are audit evidence for future routing-policy changes;
+do not treat them as automatic route decisions until production logs show a
+stable pattern.
 
 ## Promoting Samples
 

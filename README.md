@@ -387,11 +387,15 @@ route audit log 只负责发现低置信、异常状态码、慢请求和分布�
 ```bash
 uv run python scripts/select_review_candidates.py /data/logs/routes/*.jsonl \
   --routes /data/config/routes.yaml \
+  --prompt-path "/data/logs/prompts/*.jsonl" \
   --json-output /tmp/intentmux-review-candidates.json \
   --markdown-output /tmp/intentmux-review-candidates.md
 ```
 
-候选报告只包含 `request_id`、`route_id`、`target_model`、`reason`、分数、状态码和耗时等元数据。
+候选报告只包含 `request_id`、`route_id`、`target_model`、`reason`、分数、状态码、耗时和
+OpenAI-compatible 请求结构信号等元数据。启用 `--prompt-path` 时，报告只按 `request_id`
+标出是否存在匹配的 prompt review 证据、是否被截断和字符数，不输出 prompt 原文，也不从
+prompt 文本推断调用框架身份。
 `hard_rule:*` 命中会优先进入候选报告，用来复核 `token`、`安全`、`权限` 等宽词是否过度升级。
 人工复核后，只有脱敏且设置 `redacted: true` 的样本才能进入 eval 或 route bank。
 

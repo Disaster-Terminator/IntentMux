@@ -151,6 +151,12 @@ def test_build_review_candidate_report_counts_reasons_and_inputs():
                 "target_model": "cheap-router",
                 "reason": "low_confidence",
                 "duration_ms": 100,
+                "format_signals": {
+                    "tools_present": True,
+                    "tool_history": True,
+                    "response_format_present": False,
+                    "message_count": 4,
+                },
             },
             {
                 "event": "route_complete",
@@ -167,13 +173,74 @@ def test_build_review_candidate_report_counts_reasons_and_inputs():
     assert report["summary"] == {
         "input_records": 2,
         "candidate_count": 1,
+        "candidate_prompt_matches": 0,
+        "format_signal_counts": {"tool_history": 1, "tools_present": 1},
         "review_reasons": {"low_confidence": 1},
         "routes": {"fast": 1},
         "targets": {"cheap-router": 1},
         "hard_rules": {},
         "log_paths": ["routes.jsonl"],
+        "prompt_log_paths": [],
     }
     assert report["candidates"][0]["request_id"] == "req-low"
+    assert report["candidates"][0]["format_signals"] == {
+        "tools_present": True,
+        "tool_history": True,
+        "response_format_present": False,
+        "message_count": 4,
+    }
+
+
+def test_build_review_candidate_report_joins_prompt_reviews_without_inferring_source_or_leaking_text():
+    report = build_review_candidate_report(
+        [
+            {
+                "event": "route_complete",
+                "timestamp": "2026-05-13T00:00:00Z",
+                "request_id": "req-agent",
+                "route_id": "fast",
+                "target_model": "cheap-router",
+                "reason": "low_confidence",
+                "duration_ms": 100,
+            },
+            {
+                "event": "route_complete",
+                "timestamp": "2026-05-13T00:00:01Z",
+                "request_id": "req-normal",
+                "route_id": "fast",
+                "target_model": "cheap-router",
+                "reason": "low_confidence",
+                "duration_ms": 100,
+            },
+        ],
+        prompt_records=[
+            {
+                "event": "prompt_review",
+                "request_id": "req-agent",
+                "latest_user_text": "Agent framework wrapper. User task: Review this patch and report.",
+                "truncated": True,
+            },
+            {
+                "event": "prompt_review",
+                "request_id": "req-normal",
+                "latest_user_text": "Summarize this paragraph.",
+                "truncated": False,
+            },
+        ],
+        prompt_log_paths=["prompts.jsonl"],
+    )
+
+    assert report["summary"]["candidate_prompt_matches"] == 2
+    agent_candidate = report["candidates"][0]
+    assert agent_candidate["request_id"] == "req-agent"
+    assert agent_candidate["prompt_review"] == {
+        "matched": True,
+        "truncated": True,
+        "text_chars": 65,
+    }
+    encoded = json.dumps(report, ensure_ascii=False)
+    assert "Review this patch" not in encoded
+    assert "Summarize this paragraph" not in encoded
 
 
 def test_build_review_candidate_report_counts_hard_rule_keywords():

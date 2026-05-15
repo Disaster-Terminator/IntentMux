@@ -34,6 +34,7 @@ FALLBACK_MARGIN = 0.04
 
 SAFE_CANDIDATE_FIELDS = {
     "event",
+    "format_signals",
     "timestamp",
     "ts",
     "request_id",
@@ -90,6 +91,39 @@ def select_review_candidates(
     return limited
 
 
+def prompt_review_index(
+    records: Iterable[dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    indexed: dict[str, dict[str, Any]] = {}
+    for record in records:
+        if record.get("event") != "prompt_review":
+            continue
+        request_id = record.get("request_id")
+        if not isinstance(request_id, str) or not request_id:
+            continue
+        latest_user_text = record.get("latest_user_text")
+        text = latest_user_text if isinstance(latest_user_text, str) else ""
+        indexed[request_id] = {
+            "matched": True,
+            "truncated": bool(record.get("truncated")),
+            "text_chars": len(text),
+        }
+    return indexed
+
+
+def attach_prompt_reviews(
+    candidates: list[dict[str, Any]],
+    prompt_records: Iterable[dict[str, Any]] | None,
+) -> None:
+    if prompt_records is None:
+        return
+    prompts_by_request_id = prompt_review_index(prompt_records)
+    for candidate in candidates:
+        request_id = candidate.get("request_id")
+        if isinstance(request_id, str) and request_id in prompts_by_request_id:
+            candidate["prompt_review"] = prompts_by_request_id[request_id]
+
+
 def review_reasons_for_record(
     record: dict[str, Any],
     *,
@@ -141,7 +175,7 @@ def is_upstream_non_2xx(value: Any) -> bool:
 
 def candidate_from_record(record: dict[str, Any]) -> dict[str, Any]:
     safe = {key: record.get(key) for key in SAFE_CANDIDATE_FIELDS if key in record}
-    return {
+    candidate = {
         "timestamp": safe.get("timestamp") or safe.get("ts"),
         "request_id": safe.get("request_id"),
         "route_id": safe.get("route_id"),
@@ -154,12 +188,17 @@ def candidate_from_record(record: dict[str, Any]) -> dict[str, Any]:
         "outcome": safe.get("outcome"),
         "event": safe.get("event"),
     }
+    if isinstance(safe.get("format_signals"), dict):
+        candidate["format_signals"] = safe["format_signals"]
+    return candidate
 
 
 def build_review_candidate_report(
     records: Iterable[dict[str, Any]],
     *,
+    prompt_records: Iterable[dict[str, Any]] | None = None,
     log_paths: list[str] | None = None,
+    prompt_log_paths: list[str] | None = None,
     threshold: float = FALLBACK_THRESHOLD,
     threshold_window: float = 0.03,
     margin: float = FALLBACK_MARGIN,
@@ -177,6 +216,7 @@ def build_review_candidate_report(
         slow_duration_ms=slow_duration_ms,
         limit=limit,
     )
+    attach_prompt_reviews(candidates, prompt_records)
     review_reasons = Counter(
         review_reason
         for candidate in candidates
@@ -189,15 +229,30 @@ def build_review_candidate_report(
         and str(candidate["reason"]).startswith("hard_rule:")
         and ":" in str(candidate["reason"])
     )
+    format_signal_counts = Counter(
+        key
+        for candidate in candidates
+        if isinstance(candidate.get("format_signals"), dict)
+        for key, value in candidate["format_signals"].items()
+        if value is True
+    )
     return {
         "summary": {
             "input_records": len(record_list),
             "candidate_count": len(candidates),
+            "candidate_prompt_matches": sum(
+                1
+                for candidate in candidates
+                if isinstance(candidate.get("prompt_review"), dict)
+                and candidate["prompt_review"].get("matched") is True
+            ),
+            "format_signal_counts": dict(sorted(format_signal_counts.items())),
             "review_reasons": dict(sorted(review_reasons.items())),
             "routes": dict(sorted(Counter(candidate.get("route_id") for candidate in candidates if candidate.get("route_id")).items())),
             "targets": dict(sorted(Counter(candidate.get("target_model") for candidate in candidates if candidate.get("target_model")).items())),
             "hard_rules": dict(sorted(hard_rules.items())),
             "log_paths": log_paths or [],
+            "prompt_log_paths": prompt_log_paths or [],
         },
         "candidates": candidates,
     }
@@ -211,6 +266,8 @@ def render_markdown(report: dict[str, Any]) -> str:
         "## Summary",
         f"- input_records: {summary.get('input_records', 0)}",
         f"- candidate_count: {summary.get('candidate_count', 0)}",
+        f"- candidate_prompt_matches: {summary.get('candidate_prompt_matches', 0)}",
+        f"- format_signal_counts: {format_counts(summary.get('format_signal_counts', {}))}",
         f"- review_reasons: {format_counts(summary.get('review_reasons', {}))}",
         f"- routes: {format_counts(summary.get('routes', {}))}",
         f"- targets: {format_counts(summary.get('targets', {}))}",
@@ -218,10 +275,16 @@ def render_markdown(report: dict[str, Any]) -> str:
         "",
         "## Candidates",
         "",
-        "| timestamp | request_id | route_id | target_model | reason | review_reasons | score | second_score | duration_ms | upstream_status |",
-        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+        "| timestamp | request_id | route_id | target_model | reason | review_reasons | prompt_review | prompt_truncated | score | second_score | duration_ms | upstream_status |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     for candidate in report.get("candidates", []):
+        prompt_review = candidate.get("prompt_review")
+        prompt_matched = ""
+        prompt_truncated = ""
+        if isinstance(prompt_review, dict) and prompt_review.get("matched") is True:
+            prompt_matched = "matched"
+            prompt_truncated = str(bool(prompt_review.get("truncated"))).lower()
         lines.append(
             "| "
             + " | ".join(
@@ -232,6 +295,8 @@ def render_markdown(report: dict[str, Any]) -> str:
                     markdown_cell(candidate.get("target_model")),
                     markdown_cell(candidate.get("reason")),
                     markdown_cell(",".join(candidate.get("review_reasons", []))),
+                    markdown_cell(prompt_matched),
+                    markdown_cell(prompt_truncated),
                     markdown_cell(candidate.get("score")),
                     markdown_cell(candidate.get("second_score")),
                     markdown_cell(candidate.get("duration_ms")),
@@ -280,6 +345,22 @@ def load_route_thresholds(path: Path) -> tuple[float | None, float | None]:
     return threshold, margin
 
 
+def load_prompt_review_records(paths: list[str]) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    for line in iter_lines(paths):
+        line = line.strip()
+        if not line or "{" not in line:
+            continue
+        json_start = line.find("{")
+        try:
+            record = json.loads(line[json_start:])
+        except json.JSONDecodeError:
+            continue
+        if record.get("event") == "prompt_review":
+            records.append(record)
+    return records
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Select metadata-only IntentMux route log records for human review.",
@@ -296,6 +377,12 @@ def main() -> None:
     parser.add_argument("--margin-window", type=float, default=0.02)
     parser.add_argument("--slow-duration-ms", type=float, default=60_000.0)
     parser.add_argument("--limit", type=int, default=50)
+    parser.add_argument(
+        "--prompt-path",
+        action="append",
+        default=[],
+        help="Optional prompt review JSONL file or glob. Joined by request_id; raw text is never emitted.",
+    )
     parser.add_argument("--json-output")
     parser.add_argument("--markdown-output")
     args = parser.parse_args()
@@ -307,10 +394,14 @@ def main() -> None:
     margin = args.margin if args.margin is not None else route_margin
 
     log_paths = expand_log_paths(args.paths)
+    prompt_log_paths = expand_log_paths(args.prompt_path)
     records = list(parse_route_records(iter_lines(log_paths)))
+    prompt_records = load_prompt_review_records(prompt_log_paths) if prompt_log_paths else None
     report = build_review_candidate_report(
         records,
+        prompt_records=prompt_records,
         log_paths=log_paths,
+        prompt_log_paths=prompt_log_paths,
         threshold=FALLBACK_THRESHOLD if threshold is None else threshold,
         threshold_window=args.threshold_window,
         margin=FALLBACK_MARGIN if margin is None else margin,

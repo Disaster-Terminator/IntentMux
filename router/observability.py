@@ -118,6 +118,75 @@ def redact_prompt_text(text: str) -> str:
     return redacted
 
 
+def request_format_signals(payload: dict[str, Any]) -> dict[str, Any]:
+    messages = payload.get("messages")
+    message_list = messages if isinstance(messages, list) else []
+    role_counts: dict[str, int] = {
+        "assistant": 0,
+        "system": 0,
+        "tool": 0,
+        "user": 0,
+    }
+    approx_input_chars = 0
+    multimodal_content = False
+    tool_call_count = 0
+    for message in message_list:
+        if not isinstance(message, dict):
+            continue
+        role = message.get("role")
+        if isinstance(role, str) and role in role_counts:
+            role_counts[role] += 1
+        content = message.get("content")
+        content_chars, content_multimodal = content_shape(content)
+        approx_input_chars += content_chars
+        multimodal_content = multimodal_content or content_multimodal
+        tool_calls = message.get("tool_calls")
+        if isinstance(tool_calls, list):
+            tool_call_count += len(tool_calls)
+
+    tools = payload.get("tools")
+    functions = payload.get("functions")
+    return {
+        "approx_input_chars": approx_input_chars,
+        "assistant_message_count": role_counts["assistant"],
+        "function_count": len(functions) if isinstance(functions, list) else 0,
+        "functions_present": isinstance(functions, list) and bool(functions),
+        "message_count": len(message_list),
+        "multimodal_content": multimodal_content,
+        "response_format_present": payload.get("response_format") is not None,
+        "system_message_count": role_counts["system"],
+        "tool_call_count": tool_call_count,
+        "tool_choice_present": payload.get("tool_choice") is not None,
+        "tool_count": len(tools) if isinstance(tools, list) else 0,
+        "tool_history": role_counts["tool"] > 0 or tool_call_count > 0,
+        "tool_message_count": role_counts["tool"],
+        "tools_present": isinstance(tools, list) and bool(tools),
+        "user_message_count": role_counts["user"],
+    }
+
+
+def content_shape(content: Any) -> tuple[int, bool]:
+    if isinstance(content, str):
+        return len(content), False
+    if not isinstance(content, list):
+        return 0, False
+    chars = 0
+    multimodal = False
+    for part in content:
+        if isinstance(part, str):
+            chars += len(part)
+            continue
+        if not isinstance(part, dict):
+            continue
+        text = part.get("text")
+        if isinstance(text, str):
+            chars += len(text)
+        part_type = part.get("type")
+        if part_type not in (None, "text", "input_text"):
+            multimodal = True
+    return chars, multimodal
+
+
 def audit_log_day(
     now: datetime | None = None,
     *,
@@ -211,6 +280,7 @@ def log_route_complete(
     upstream_status: int,
     started_ms: float,
     timings_ms: dict[str, float] | None = None,
+    format_signals: dict[str, Any] | None = None,
     audit_logger: AuditLogger | None = None,
 ) -> None:
     ok = 200 <= upstream_status <= 299
@@ -225,6 +295,7 @@ def log_route_complete(
         outcome="success" if ok else "upstream_non_200",
         upstream_status=upstream_status,
         timings_ms=timings_ms,
+        format_signals=format_signals,
     )
     emit_route_record(logger, record, audit_logger)
 
@@ -240,6 +311,7 @@ def log_route_error(
     started_ms: float,
     upstream_status: int | None = None,
     timings_ms: dict[str, float] | None = None,
+    format_signals: dict[str, Any] | None = None,
     audit_logger: AuditLogger | None = None,
 ) -> None:
     record = route_record(
@@ -257,6 +329,7 @@ def log_route_error(
         ),
         upstream_status=upstream_status,
         timings_ms=timings_ms,
+        format_signals=format_signals,
     )
     record.update(
         {"error_type": type(error).__name__}
@@ -276,6 +349,7 @@ def route_record(
     outcome: str,
     upstream_status: int | None = None,
     timings_ms: dict[str, float] | None = None,
+    format_signals: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     record: dict[str, Any] = {
         "duration_ms": round(now_ms() - started_ms, 2),
@@ -297,6 +371,8 @@ def route_record(
     }
     if upstream_status is not None:
         record["upstream_status"] = upstream_status
+    if format_signals:
+        record["format_signals"] = format_signals
     if timings_ms:
         for name, duration_ms in timings_ms.items():
             record[name] = round(duration_ms, 2)

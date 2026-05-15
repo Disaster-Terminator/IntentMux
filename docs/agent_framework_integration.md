@@ -29,6 +29,19 @@ the stronger tier:
 route ids are product-level ids such as `fast` and `strong`, not deployment model
 group names such as `cheap-router` or `pro-router`.
 
+## Request Format Signals
+
+IntentMux records safe structural signals from OpenAI-compatible requests in
+route audit logs. These signals include message counts, approximate input
+character count, whether `tools` / legacy `functions` are present, whether
+there is tool-call history, whether `response_format` is set, and whether the
+request contains multimodal content.
+
+These fields are audit evidence, not framework-specific adapters. They do not
+store prompt text, tool schemas, tool outputs, file contents, or framework
+names. Use them to decide whether a future policy should route tool-heavy or
+long-context workloads to `strong` by default.
+
 ## When To Force `strong`
 
 Force `strong` for:
@@ -63,6 +76,7 @@ Before making an agent framework use `semantic-router` by default:
 2. Run a representative tool-call or code-review prompt.
 3. Check the route log for `route_id`, `target_model`, `reason`, and
    `request_id`.
-4. If agent prompts are mostly `low_confidence`, configure the framework to send
+4. Check `format_signals` for `tools_present`, `tool_history`, `message_count`,
+   and `approx_input_chars`.
+5. If agent prompts are mostly `low_confidence`, configure the framework to send
    `metadata.route_id=strong` for that agent class.
-
