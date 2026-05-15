@@ -17,7 +17,7 @@ IntentMux already has route quality scaffolding:
 - `docs/router_quality_research.md` defines the lightweight two-tier boundary.
 - `config/route_sources.yaml` currently uses MASSIVE zh-CN / zh-TW for `fast`, and SWE-bench / MBPP / HumanEval for `strong`.
 - `scripts/build_eval_bank.py` can merge manual cases and route-bank samples, but it has no slice-level labels or Chinese benchmark source policy.
-- `scripts/route_quality_report.py` reports route quality, but not product metrics such as `strong_recall_high_risk` or `fast_precision_general`.
+- `scripts/route_quality_report.py` reports route quality, but not product metrics such as `strong_recall_high_risk` or `fast_general_keep_rate`.
 
 External research direction:
 
@@ -41,30 +41,67 @@ If execution time is limited, implement only these first:
 1. `docs/zh_route_eval_plan.md` for public project direction.
 2. `config/zh_route_eval_sources.yaml` for source/license policy.
 3. `data/source_samples/zh_route_eval_v1.sample.yaml` with a tiny public schema sample.
-4. `scripts/build_zh_route_eval.py` validation and sample build.
-5. `slice_quality_metrics` in `scripts/route_quality_report.py`.
+4. `scripts/eval_routes.py --json-output` with `id`, `slice`, decision details, and backward-compatible stdout.
+5. `scripts/route_quality_report.py` consuming eval JSON and producing real slice/product metrics.
+6. `scripts/build_zh_route_eval.py` validation and sample build.
 
 Do not change `config/routes.yaml`, production route bank, LiteLLM config, or runtime routing in the MVP.
+
+## Review Corrections
+
+The first review of this plan found one blocking engineering gap: the original
+Task 4 tried to add `slice_quality_metrics(cases, decisions)` before the real
+eval pipeline had `id`, `slice`, or JSON decision output. That would produce a
+unit-test-only metric with no connection to actual `scripts/eval_routes.py`
+runs. The corrected dependency chain is:
+
+```text
+sample schema with id/slice/expect
+  -> eval_routes.py JSON output
+  -> route_quality_report.py reads eval JSON
+  -> slice_metrics and product_metrics
+```
+
+Additional corrections:
+
+- `borderline_zh` is not a route. It uses `label_policy:
+  manual_review_required`; every executable sample still ends with
+  `expect: fast` or `expect: strong`.
+- `fast_precision_general` was imprecise. Use `fast_general_keep_rate` for
+  the rate of `fast_general_zh` retained on `fast`, and `fast_precision` for
+  the precision of all actual `fast` decisions.
+- `near_margin_rate` requires `score`, `second_score`, and configured margin.
+  If any required value is unavailable, report `null` instead of pretending the
+  metric was measured.
+- Source manifests must use explicit license metadata. Avoid
+  `license: dataset-specific`; use `license_id`, `license_url`,
+  `redistributable`, `commercial_use`, `derived_prompt_allowed`, and
+  `commit_policy`.
+- Long-context samples should preserve length evidence through metadata such as
+  `input_chars`, `message_count`, and `context_policy`. If only summaries are
+  available, keep `strong_long_context_zh` as schema-reserved rather than
+  claiming it is measured.
 
 ## Target Eval Slices
 
 `zh-intentmux-router-eval-v1` uses these slices:
 
-| slice | route | target count v1 | source policy |
+| slice | expected route | target count v1 | source policy |
 | --- | --- | ---: | --- |
 | `fast_general_zh` | `fast` | 300 | MASSIVE zh, CLUE/DataCLUE short general utterances |
 | `fast_intent_zh` | `fast` | 200 | DataCLUE CIC or similar Chinese intent data |
 | `strong_code_zh` | `strong` | 250 | SuperCLUE-Code3, HumanEval-X/XL Chinese or small translated supplement |
 | `strong_reasoning_zh` | `strong` | 200 | C-Eval, CMMLU, AGIEval/Gaokao-like Chinese reasoning |
-| `strong_long_context_zh` | `strong` | 100 | LongBench Chinese tasks, sampled as request summaries |
+| `strong_long_context_zh` | `strong` | 100 | LongBench Chinese tasks with length metadata, or schema-reserved until length evidence is preserved |
 | `high_risk_zh` | `strong` | 100 | curated public/manual + redacted production review samples |
-| `borderline_zh` | manual | 200 | curated Chinese engineering boundary prompts |
+| `borderline_zh` | reviewed `fast` or `strong` | 200 | curated Chinese engineering boundary prompts with `label_policy: manual_review_required` |
 
 Minimum quality gates for v1:
 
 - `strong_recall_high_risk >= 0.98`
 - `strong_recall_code >= 0.90`
-- `fast_precision_general >= 0.90`
+- `fast_general_keep_rate >= 0.90`
+- `fast_precision >= 0.90`
 - `borderline_review_pass_rate >= 0.80`
 - report must show `low_confidence_rate`, `near_margin_rate`, `hard_rule_hit_rate`, and `strong_call_rate`
 
@@ -74,8 +111,8 @@ Minimum quality gates for v1:
 - Create `config/zh_route_eval_sources.yaml`: declarative source manifest for eval-bank construction.
 - Create `data/source_samples/zh_route_eval_v1.sample.yaml`: tiny tracked sample showing slice schema without committing full generated data.
 - Create `scripts/build_zh_route_eval.py`: offline builder that validates slice metadata and emits `data/semantic_sets/zh_route_eval_v1.yaml`.
-- Modify `scripts/route_quality_report.py`: add slice-level route metrics.
-- Modify `scripts/eval_routes.py` only if its current output cannot expose per-slice data to `route_quality_report.py`.
+- Modify `scripts/eval_routes.py`: add `id`, `slice`, optional structural metadata, and `--json-output`.
+- Modify `scripts/route_quality_report.py`: read eval JSON and add slice-level route metrics.
 - Add tests under `tests/test_build_zh_route_eval.py` and `tests/test_route_quality_report.py`.
 - Update `docs/router_quality_research.md` and `README.md` to point to the new eval baseline.
 
@@ -113,13 +150,14 @@ The next quality milestone is a Chinese-first fast/strong routing eval bank.
 | strong_reasoning_zh | strong | C-Eval, CMMLU, AGIEval/Gaokao-like data |
 | strong_long_context_zh | strong | LongBench Chinese |
 | high_risk_zh | strong | curated public/manual and redacted production review |
-| borderline_zh | manual | curated Chinese engineering boundary prompts |
+| borderline_zh | reviewed fast or strong | curated Chinese engineering boundary prompts |
 
 ## Metrics
 
 - strong_recall_high_risk
 - strong_recall_code
-- fast_precision_general
+- fast_general_keep_rate
+- fast_precision
 - low_confidence_rate
 - near_margin_rate
 - hard_rule_hit_rate
@@ -187,7 +225,12 @@ def test_validate_source_manifest_requires_known_slices():
                 "route": "fast",
                 "kind": "huggingface",
                 "homepage": "https://example.test",
-                "license": "CC BY 4.0",
+                "license_id": "CC-BY-4.0",
+                "license_url": "https://example.test/license",
+                "redistributable": True,
+                "commercial_use": True,
+                "derived_prompt_allowed": "yes",
+                "commit_policy": "sample_only",
             }
         ]
     }
@@ -204,7 +247,12 @@ def test_validate_source_manifest_rejects_unknown_slice():
                 "route": "fast",
                 "kind": "manual",
                 "homepage": "https://example.test",
-                "license": "unknown",
+                "license_id": "unknown",
+                "license_url": "https://example.test/license",
+                "redistributable": False,
+                "commercial_use": False,
+                "derived_prompt_allowed": "review_required",
+                "commit_policy": "manifest_only",
             }
         ]
     }
@@ -240,7 +288,7 @@ KNOWN_SLICES = {
     "borderline_zh",
 }
 
-KNOWN_ROUTES = {"fast", "strong", "manual"}
+KNOWN_ROUTES = {"fast", "strong"}
 
 
 def validate_source_manifest(manifest: dict[str, Any]) -> None:
@@ -259,7 +307,20 @@ def validate_source_manifest(manifest: dict[str, Any]) -> None:
         route = source.get("route")
         if route not in KNOWN_ROUTES:
             raise ValueError(f"source {name}: unknown route {route!r}")
-        for key in ("kind", "homepage", "license"):
+        for key in (
+            "kind",
+            "homepage",
+            "license_id",
+            "license_url",
+            "redistributable",
+            "commercial_use",
+            "derived_prompt_allowed",
+            "commit_policy",
+        ):
+            if key in {"redistributable", "commercial_use"}:
+                if not isinstance(source.get(key), bool):
+                    raise ValueError(f"source {name}: missing {key}")
+                continue
             if not isinstance(source.get(key), str) or not source[key]:
                 raise ValueError(f"source {name}: missing {key}")
 ```
@@ -275,7 +336,12 @@ sources:
     route: fast
     kind: remote_tar_jsonl
     homepage: https://www.amazon.science/code-and-datasets/massive
-    license: CC BY 4.0
+    license_id: CC-BY-4.0
+    license_url: https://github.com/alexa/massive/blob/master/LICENSE
+    redistributable: true
+    commercial_use: true
+    derived_prompt_allowed: yes
+    commit_policy: sample_only
     notes: Chinese-native general assistant utterances.
 
   - name: dataclue_cic_intent
@@ -283,7 +349,12 @@ sources:
     route: fast
     kind: manual_review_required
     homepage: https://github.com/CLUEbenchmark/DataCLUE
-    license: dataset-specific
+    license_id: review-required
+    license_url: https://github.com/CLUEbenchmark/DataCLUE
+    redistributable: false
+    commercial_use: false
+    derived_prompt_allowed: review_required
+    commit_policy: manifest_only
     notes: Use only license-compatible short intent samples.
 
   - name: ceval_reasoning
@@ -291,7 +362,12 @@ sources:
     route: strong
     kind: manual_review_required
     homepage: https://cevalbenchmark.com/
-    license: dataset-specific
+    license_id: CC-BY-NC-SA-4.0
+    license_url: https://creativecommons.org/licenses/by-nc-sa/4.0/
+    redistributable: false
+    commercial_use: false
+    derived_prompt_allowed: review_required
+    commit_policy: manifest_only
     notes: Convert questions into user-request style prompts without answers.
 
   - name: cmmlu_reasoning
@@ -299,7 +375,12 @@ sources:
     route: strong
     kind: manual_review_required
     homepage: https://github.com/haonan-li/CMMLU
-    license: dataset-specific
+    license_id: CC-BY-NC-SA-4.0
+    license_url: https://creativecommons.org/licenses/by-nc-sa/4.0/
+    redistributable: false
+    commercial_use: false
+    derived_prompt_allowed: review_required
+    commit_policy: manifest_only
     notes: Use for Chinese reasoning requests after license review.
 
   - name: longbench_zh
@@ -307,15 +388,25 @@ sources:
     route: strong
     kind: manual_review_required
     homepage: https://github.com/THUDM/LongBench
-    license: dataset-specific
-    notes: Convert into long-context request summaries without committing full contexts.
+    license_id: review-required
+    license_url: https://github.com/THUDM/LongBench
+    redistributable: false
+    commercial_use: false
+    derived_prompt_allowed: review_required
+    commit_policy: manifest_only
+    notes: Preserve length metadata or keep this slice schema-reserved.
 
   - name: superclue_code3
     slice: strong_code_zh
     route: strong
     kind: manual_review_required
     homepage: https://github.com/CLUEbenchmark/SuperCLUE-Code3
-    license: dataset-specific
+    license_id: review-required
+    license_url: https://github.com/CLUEbenchmark/SuperCLUE-Code3
+    redistributable: false
+    commercial_use: false
+    derived_prompt_allowed: review_required
+    commit_policy: manifest_only
     notes: Chinese-native code tasks.
 
   - name: curated_high_risk_zh
@@ -323,15 +414,26 @@ sources:
     route: strong
     kind: curated_yaml
     homepage: https://github.com/Disaster-Terminator/IntentMux
-    license: Apache-2.0
+    license_id: Apache-2.0
+    license_url: https://www.apache.org/licenses/LICENSE-2.0
+    redistributable: true
+    commercial_use: true
+    derived_prompt_allowed: yes
+    commit_policy: sample_only
     notes: Public/manual and redacted production-review prompts only.
 
   - name: curated_borderline_zh
     slice: borderline_zh
-    route: manual
+    route: strong
+    label_policy: manual_review_required
     kind: curated_yaml
     homepage: https://github.com/Disaster-Terminator/IntentMux
-    license: Apache-2.0
+    license_id: Apache-2.0
+    license_url: https://www.apache.org/licenses/LICENSE-2.0
+    redistributable: true
+    commercial_use: true
+    derived_prompt_allowed: yes
+    commit_policy: sample_only
     notes: Human-reviewed boundary prompts with explicit expected route.
 ```
 
@@ -374,9 +476,11 @@ def test_load_curated_samples_preserves_slice_route_and_source(tmp_path: Path):
 samples:
   - id: borderline_001
     slice: borderline_zh
-    text: 这个方案靠谱吗
+    text: 这个网关方案会不会导致上下文泄漏、路由回归或成本失控？
     expect: strong
     source: curated_borderline_zh
+    label_policy: manual_review_required
+    rationale: 工程风险、隐私和成本回归需要强模型复核。
     redacted: true
 """,
         encoding="utf-8",
@@ -386,9 +490,11 @@ samples:
         {
             "id": "borderline_001",
             "slice": "borderline_zh",
-            "text": "这个方案靠谱吗",
+            "text": "这个网关方案会不会导致上下文泄漏、路由回归或成本失控？",
             "expect": "strong",
             "source": "curated_borderline_zh",
+            "label_policy": "manual_review_required",
+            "rationale": "工程风险、隐私和成本回归需要强模型复核。",
             "redacted": True,
         }
     ]
@@ -427,9 +533,11 @@ def load_curated_samples(path: Path) -> list[dict[str, Any]]:
             raise ValueError(f"sample #{index}: expect must be fast or strong")
         if sample.get("redacted") is not True:
             raise ValueError(f"sample #{index}: redacted must be true")
-        for key in ("id", "text", "source"):
+        for key in ("id", "text", "source", "rationale"):
             if not isinstance(sample.get(key), str) or not sample[key]:
                 raise ValueError(f"sample #{index}: missing {key}")
+        if sample.get("slice") == "borderline_zh" and sample.get("label_policy") != "manual_review_required":
+            raise ValueError(f"sample #{index}: borderline_zh requires manual_review_required")
         validated.append(dict(sample))
     return validated
 ```
@@ -445,6 +553,7 @@ samples:
     text: 帮我把这段话润色一下
     expect: fast
     source: curated_public_sample
+    rationale: 普通改写请求低风险，适合 fast。
     redacted: true
 
   - id: strong_code_001
@@ -452,6 +561,7 @@ samples:
     text: 这个 PR 会不会引入回归
     expect: strong
     source: curated_public_sample
+    rationale: PR 回归分析需要代码风险判断，适合 strong。
     redacted: true
 
   - id: high_risk_001
@@ -459,13 +569,16 @@ samples:
     text: 线上服务偶发卡死，帮我定位根因
     expect: strong
     source: curated_public_sample
+    rationale: 生产事故根因分析属于高风险任务，适合 strong。
     redacted: true
 
   - id: borderline_001
     slice: borderline_zh
-    text: 这个方案靠谱吗
+    text: 这个网关方案会不会导致上下文泄漏、路由回归或成本失控？
     expect: strong
     source: curated_public_sample
+    label_policy: manual_review_required
+    rationale: 工程风险、隐私和成本回归需要强模型复核。
     redacted: true
 ```
 
@@ -484,91 +597,217 @@ git add data/source_samples/zh_route_eval_v1.sample.yaml scripts/build_zh_route_
 git commit -m "eval: add Chinese route sample schema"
 ```
 
-## Task 4: Slice-Level Metrics
+## Task 4: Eval JSON Output
 
 **Files:**
-- Modify: `scripts/route_quality_report.py`
-- Test: `tests/test_route_quality_report.py`
+- Modify: `scripts/eval_routes.py`
+- Test: `tests/test_eval_routes.py`
 
-- [ ] **Step 1: Add failing metric test**
+- [ ] **Step 1: Add failing JSON output test**
 
-Add a test that calls a new function `slice_quality_metrics`:
+Add to `tests/test_eval_routes.py`:
 
 ```python
-from scripts.route_quality_report import slice_quality_metrics
+import json
+import subprocess
+import sys
+from pathlib import Path
 
 
-def test_slice_quality_metrics_reports_product_gates():
-    cases = [
-        {"id": "fast1", "slice": "fast_general_zh", "expect": "fast"},
-        {"id": "risk1", "slice": "high_risk_zh", "expect": "strong"},
-        {"id": "code1", "slice": "strong_code_zh", "expect": "strong"},
-    ]
-    decisions = {
-        "fast1": {"route_id": "fast", "reason": "embedding"},
-        "risk1": {"route_id": "strong", "reason": "hard_rule:越权"},
-        "code1": {"route_id": "fast", "reason": "low_confidence"},
-    }
+def test_eval_routes_json_output_includes_id_slice_and_scores(tmp_path: Path):
+    cases = tmp_path / "cases.yaml"
+    output = tmp_path / "eval.json"
+    cases.write_text(
+        """
+cases:
+  - id: strong_code_001
+    slice: strong_code_zh
+    text: 这个 PR 会不会引入回归
+    expect: strong
+    source: test
+""",
+        encoding="utf-8",
+    )
 
-    metrics = slice_quality_metrics(cases, decisions)
+    subprocess.run(
+        [
+            sys.executable,
+            "scripts/eval_routes.py",
+            "--cases",
+            str(cases),
+            "--mock-embeddings",
+            "--json-output",
+            str(output),
+        ],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
 
-    assert metrics["fast_precision_general"] == 1.0
-    assert metrics["strong_recall_high_risk"] == 1.0
-    assert metrics["strong_recall_code"] == 0.0
-    assert metrics["low_confidence_rate"] == 1 / 3
-    assert metrics["strong_call_rate"] == 1 / 3
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["schema"] == "intentmux-route-eval-v1"
+    assert payload["cases"][0]["id"] == "strong_code_001"
+    assert payload["cases"][0]["slice"] == "strong_code_zh"
+    assert payload["cases"][0]["expect"] == "strong"
+    assert payload["cases"][0]["actual_route"] == "strong"
+    assert payload["cases"][0]["passed"] is True
+    assert "score" in payload["cases"][0]
+    assert "second_score" in payload["cases"][0]
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
 
 ```bash
-uv run pytest tests/test_route_quality_report.py::test_slice_quality_metrics_reports_product_gates -q
+uv run pytest tests/test_eval_routes.py::test_eval_routes_json_output_includes_id_slice_and_scores -q
+```
+
+Expected: CLI rejects `--json-output` or JSON file is missing.
+
+- [ ] **Step 3: Implement JSON output**
+
+Modify `scripts/eval_routes.py`:
+
+```python
+@dataclass(frozen=True)
+class EvalCase:
+    text: str
+    expect: str
+    source: str = "unknown"
+    id: str | None = None
+    slice: str | None = None
+
+
+def case_id(case: EvalCase, index: int) -> str:
+    return case.id or f"case_{index:04d}"
+```
+
+Inside `run_eval`, collect per-case records:
+
+```python
+results.append(
+    {
+        "id": case_id(case, index),
+        "slice": case.slice,
+        "text": case.text,
+        "expect": case.expect,
+        "actual_route": actual_route,
+        "target_model": decision.target_model,
+        "reason": decision.reason,
+        "passed": actual_route == case.expect,
+        "score": decision.score,
+        "second_score": decision.second_score,
+    }
+)
+```
+
+Add CLI option:
+
+```python
+parser.add_argument("--json-output")
+```
+
+Write:
+
+```python
+if json_output:
+    Path(json_output).write_text(
+        json.dumps({"schema": "intentmux-route-eval-v1", "cases": results}, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+```
+
+- [ ] **Step 4: Run tests**
+
+```bash
+uv run pytest tests/test_eval_routes.py -q
+```
+
+Expected: all tests pass.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add scripts/eval_routes.py tests/test_eval_routes.py
+git commit -m "eval: emit route eval JSON"
+```
+
+## Task 5: Slice Metrics From Eval JSON
+
+**Files:**
+- Modify: `scripts/route_quality_report.py`
+- Test: `tests/test_route_quality_report.py`
+
+- [ ] **Step 1: Add failing report test**
+
+Add to `tests/test_route_quality_report.py`:
+
+```python
+from scripts.route_quality_report import build_quality_report_from_eval_json
+
+
+def test_quality_report_reads_eval_json_and_reports_slice_metrics():
+    eval_json = {
+        "schema": "intentmux-route-eval-v1",
+        "cases": [
+            {"id": "fast1", "slice": "fast_general_zh", "expect": "fast", "actual_route": "fast", "reason": "embedding", "passed": True},
+            {"id": "risk1", "slice": "high_risk_zh", "expect": "strong", "actual_route": "strong", "reason": "hard_rule:越权", "passed": True},
+            {"id": "code1", "slice": "strong_code_zh", "expect": "strong", "actual_route": "fast", "reason": "low_confidence", "passed": False, "score": 0.54, "second_score": 0.52},
+        ],
+    }
+
+    report = build_quality_report_from_eval_json(
+        eval_json=eval_json,
+        route_summary=None,
+        route_bank_path="sample",
+        margin=0.04,
+    )
+
+    assert report["product_metrics"]["fast_general_keep_rate"] == 1.0
+    assert report["product_metrics"]["fast_precision"] == 0.5
+    assert report["product_metrics"]["strong_recall_high_risk"] == 1.0
+    assert report["product_metrics"]["strong_recall_code"] == 0.0
+    assert report["product_metrics"]["low_confidence_rate"] == 1 / 3
+    assert report["product_metrics"]["hard_rule_hit_rate"] == 1 / 3
+    assert report["product_metrics"]["strong_call_rate"] == 1 / 3
+    assert report["product_metrics"]["near_margin_rate"] == 1 / 3
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+```bash
+uv run pytest tests/test_route_quality_report.py::test_quality_report_reads_eval_json_and_reports_slice_metrics -q
 ```
 
 Expected: import error or missing function failure.
 
-- [ ] **Step 3: Implement metrics**
+- [ ] **Step 3: Implement JSON report path**
 
-Add `slice_quality_metrics(cases, decisions)` in `scripts/route_quality_report.py` using exact route ids:
+Add `build_quality_report_from_eval_json(...)` to `scripts/route_quality_report.py`.
+It must compute:
+
+- `slice_metrics` keyed by slice name.
+- `product_metrics.fast_general_keep_rate`.
+- `product_metrics.fast_precision`.
+- `product_metrics.strong_recall_high_risk`.
+- `product_metrics.strong_recall_code`.
+- `product_metrics.low_confidence_rate`.
+- `product_metrics.hard_rule_hit_rate`.
+- `product_metrics.strong_call_rate`.
+- `product_metrics.near_margin_rate`, or `None` when score/margin data is unavailable.
+- `missing_decision_count`.
+
+Keep the existing stdout parser for backward compatibility, but prefer eval JSON when a JSON input is provided.
+Add CLI option:
 
 ```python
-def slice_quality_metrics(
-    cases: list[dict[str, str]],
-    decisions: dict[str, dict[str, object]],
-) -> dict[str, float]:
-    def fraction(selected: list[bool]) -> float:
-        return sum(1 for value in selected if value) / len(selected) if selected else 0.0
-
-    fast_general = [
-        decisions[case["id"]].get("route_id") == "fast"
-        for case in cases
-        if case.get("slice") == "fast_general_zh" and case["id"] in decisions
-    ]
-    high_risk = [
-        decisions[case["id"]].get("route_id") == "strong"
-        for case in cases
-        if case.get("slice") == "high_risk_zh" and case["id"] in decisions
-    ]
-    code = [
-        decisions[case["id"]].get("route_id") == "strong"
-        for case in cases
-        if case.get("slice") == "strong_code_zh" and case["id"] in decisions
-    ]
-    all_decisions = [decision for case_id, decision in decisions.items()]
-    return {
-        "fast_precision_general": fraction(fast_general),
-        "strong_recall_high_risk": fraction(high_risk),
-        "strong_recall_code": fraction(code),
-        "low_confidence_rate": fraction(
-            [decision.get("reason") == "low_confidence" for decision in all_decisions]
-        ),
-        "strong_call_rate": fraction(
-            [decision.get("route_id") == "strong" for decision in all_decisions]
-        ),
-    }
+parser.add_argument("--eval-json", help="JSON output from scripts/eval_routes.py --json-output")
 ```
 
-- [ ] **Step 4: Run test**
+When `--eval-json` is present, load that file and call
+`build_quality_report_from_eval_json(...)`. Keep `--eval-output` for existing
+TSV reports.
+
+- [ ] **Step 4: Run tests**
 
 ```bash
 uv run pytest tests/test_route_quality_report.py -q
@@ -583,7 +822,7 @@ git add scripts/route_quality_report.py tests/test_route_quality_report.py
 git commit -m "report: add Chinese route slice metrics"
 ```
 
-## Task 5: Builder CLI And End-To-End Sample Report
+## Task 6: Builder CLI And End-To-End Sample Report
 
 **Files:**
 - Modify: `scripts/build_zh_route_eval.py`
@@ -611,6 +850,7 @@ samples:
     text: 帮我总结这段话
     expect: fast
     source: curated
+    rationale: 普通总结请求低风险，适合 fast。
     redacted: true
 """,
         encoding="utf-8",
@@ -660,6 +900,7 @@ def build_eval_payload(samples: list[dict[str, Any]]) -> dict[str, Any]:
                 "text": sample["text"],
                 "expect": sample["expect"],
                 "source": sample["source"],
+                "rationale": sample["rationale"],
             }
             for sample in samples
         ],
@@ -714,7 +955,7 @@ git add scripts/build_zh_route_eval.py tests/test_build_zh_route_eval.py docs/zh
 git commit -m "eval: build Chinese route eval samples"
 ```
 
-## Task 6: Verification And Production Safety
+## Task 7: Verification And Production Safety
 
 **Files:**
 - No production config edits.
@@ -746,7 +987,30 @@ uv run python scripts/build_zh_route_eval.py \
 
 Expected: command exits 0 and prints case count.
 
-- [ ] **Step 4: Confirm runtime unaffected**
+- [ ] **Step 4: Run sample eval JSON**
+
+```bash
+uv run python scripts/eval_routes.py \
+  --cases /tmp/zh_route_eval_v1.sample.yaml \
+  --mock-embeddings \
+  --json-output /tmp/zh_route_eval_v1.results.json
+```
+
+Expected: command exits 0 and writes JSON with `schema: intentmux-route-eval-v1`.
+
+- [ ] **Step 5: Run quality report from eval JSON**
+
+```bash
+uv run python scripts/route_quality_report.py \
+  --eval-json /tmp/zh_route_eval_v1.results.json \
+  --route-bank examples/route_bank.sample.yaml \
+  --json-output /tmp/zh_route_quality.json \
+  --markdown-output /tmp/zh_route_quality.md
+```
+
+Expected: JSON contains `slice_metrics`, `product_metrics`, and `missing_decision_count`.
+
+- [ ] **Step 6: Confirm runtime unaffected**
 
 ```bash
 curl -fsS http://127.0.0.1:4001/ready
@@ -754,7 +1018,7 @@ curl -fsS http://127.0.0.1:4001/ready
 
 Expected: JSON has `"ready": true`.
 
-- [ ] **Step 5: Commit final docs if needed**
+- [ ] **Step 7: Commit final docs if needed**
 
 ```bash
 git status --short
