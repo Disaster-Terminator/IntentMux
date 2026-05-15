@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -22,6 +24,8 @@ class EvalCase:
     text: str
     expect: str
     source: str = "unknown"
+    id: str | None = None
+    slice: str | None = None
 
 
 class MockEmbeddingClient:
@@ -55,10 +59,15 @@ def validate_case_route_ids(cases: list[EvalCase], route_ids: set[str]) -> None:
             )
 
 
+def case_id(case: EvalCase, index: int) -> str:
+    return case.id or f"case_{index:04d}"
+
+
 async def run_eval(
     cases_path: Path,
     routes_path: Path,
     mock_embeddings: bool,
+    json_output: Path | None = None,
 ) -> int:
     settings = load_settings(routes_path)
     embedding_client = (
@@ -73,11 +82,12 @@ async def run_eval(
     )
     router = Router(settings, embedding_client)
     failures: list[str] = []
+    results: list[dict[str, Any]] = []
 
     cases = load_cases(cases_path)
     validate_case_route_ids(cases, set(settings.routes))
 
-    for case in cases:
+    for index, case in enumerate(cases):
         decision = await router.decide(
             {
                 "model": settings.route_model,
@@ -86,12 +96,37 @@ async def run_eval(
         )
         actual_route = decision.route_id or decision.target_model
         status = "PASS" if actual_route == case.expect else "FAIL"
+        results.append(
+            {
+                "id": case_id(case, index),
+                "slice": case.slice,
+                "text": case.text,
+                "expect": case.expect,
+                "actual_route": actual_route,
+                "target_model": decision.target_model,
+                "reason": decision.reason,
+                "passed": actual_route == case.expect,
+                "score": decision.score,
+                "second_score": decision.second_score,
+            }
+        )
         print(
             f"{status}\t{case.expect}\t{actual_route}\t{decision.target_model}\t"
             f"{decision.reason}\t{case.text}"
         )
         if status == "FAIL":
             failures.append(case.text)
+
+    if json_output is not None:
+        json_output.write_text(
+            json.dumps(
+                {"schema": "intentmux-route-eval-v1", "cases": results},
+                ensure_ascii=False,
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
 
     if failures:
         print(f"\n{len(failures)} eval case(s) failed.")
@@ -105,6 +140,7 @@ def main() -> None:
     parser.add_argument("--cases", default="config/eval_cases.yaml")
     parser.add_argument("--routes", default="config/routes.yaml")
     parser.add_argument("--mock-embeddings", action="store_true")
+    parser.add_argument("--json-output")
     args = parser.parse_args()
     raise SystemExit(
         asyncio.run(
@@ -112,6 +148,7 @@ def main() -> None:
                 cases_path=Path(args.cases),
                 routes_path=Path(args.routes),
                 mock_embeddings=args.mock_embeddings,
+                json_output=Path(args.json_output) if args.json_output else None,
             )
         )
     )
