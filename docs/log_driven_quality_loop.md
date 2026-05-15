@@ -1,16 +1,29 @@
 # Log-Driven Quality Loop
 
-IntentMux improves routing quality from production metadata and redacted review
-samples, not from raw prompt logging. Audit logs identify routing drift,
-low-confidence decisions, failures, and latency regressions; only
-human-reviewed, redacted samples are promoted into eval cases or route banks.
+IntentMux improves routing quality from production metadata, optional local
+prompt review logs, and redacted review samples. Route audit logs identify
+routing drift, low-confidence decisions, failures, and latency regressions;
+prompt review logs provide local-only semantic evidence when explicitly
+enabled. Only human-reviewed, redacted samples are promoted into eval cases or
+route banks.
 
 ## Boundary
 
-The audit log is metadata only. It may contain `request_id`, `route_id`,
+The route audit log is metadata only. It may contain `request_id`, `route_id`,
 `target_model`, `reason`, scores, upstream status, and timing fields. It must
 not contain raw prompts, completions, request bodies, token usage, bearer
 credentials, provider keys, or LiteLLM secrets.
+
+Prompt review logging is a separate local-only surface. It is disabled by
+default with `ROUTER_PROMPT_LOG_MODE=off`. When enabled, it writes to
+`ROUTER_PROMPT_LOG_DIR/YYYY-MM-DD.jsonl`, not to stdout, route audit JSONL, or
+daily health output.
+
+- `ROUTER_PROMPT_LOG_MODE=redacted` records latest user text after masking
+  common bearer/sk/base64 credentials.
+- `ROUTER_PROMPT_LOG_MODE=raw_local` records latest user text as-is for private
+  local review. Do not sync, publish, or attach this directory to public
+  reports.
 
 `request_id` is an operational correlation key. It helps a human operator find
 the relevant context in systems they already control, but it is not training
@@ -22,7 +35,8 @@ text and should not be copied into public route-bank sources.
 audit logs
   -> daily health / route summary / route-error budget
   -> review candidate selection
-  -> human request_id review outside IntentMux
+  -> optional local prompt review lookup by request_id
+  -> human review
   -> redacted production_review JSONL
   -> eval bank import
   -> route bank / threshold / margin change

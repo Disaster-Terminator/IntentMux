@@ -13,6 +13,7 @@ from router.config import RouterSettings, load_settings
 from router.embedding import OpenAIEmbeddingClient
 from router.observability import (
     AuditLogger,
+    PromptReviewLogger,
     configure_logging,
     log_route_complete,
     log_route_error,
@@ -22,7 +23,7 @@ from router.observability import (
 )
 from router.proxy import LiteLLMProxy
 from router.readiness import ReadinessChecker
-from router.routing import Router
+from router.routing import Router, latest_user_text
 
 
 logger = logging.getLogger("intentmux")
@@ -64,6 +65,12 @@ def create_app(
         settings.audit_log_dir,
         enabled=settings.audit_log_enabled,
         timezone_name=settings.audit_log_timezone,
+    )
+    prompt_review_logger = PromptReviewLogger(
+        settings.prompt_log_dir,
+        mode=settings.prompt_log_mode,
+        timezone_name=settings.audit_log_timezone,
+        max_chars=settings.prompt_log_max_chars,
     )
 
     app = FastAPI(title="IntentMux")
@@ -145,6 +152,14 @@ def create_app(
         decision = await router.decide(payload)
         decision_ms = now_ms() - decision_started_ms
         forwarded_payload = sanitize_forwarded_payload(payload, decision.target_model)
+        stream = forwarded_payload.get("stream") is True
+        prompt_review_logger.write(
+            request_id=request_id,
+            request_id_source=request_identity.source,
+            latest_user_text=latest_user_text(payload.get("messages", [])),
+            decision=decision,
+            stream=stream,
+        )
         router_headers = route_headers(
             decision.target_model,
             decision.reason,
@@ -152,7 +167,7 @@ def create_app(
             route_id=decision.route_id,
             policy_id=decision.policy_id,
         )
-        if forwarded_payload.get("stream") is True:
+        if stream:
             upstream_started_ms = now_ms()
             stream_context = proxy.stream_chat(forwarded_payload, request_headers)
             try:

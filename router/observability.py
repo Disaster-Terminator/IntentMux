@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 import uuid
 from dataclasses import dataclass
@@ -46,6 +47,75 @@ class AuditLogger:
         with path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(record, ensure_ascii=False, sort_keys=True))
             handle.write("\n")
+
+
+class PromptReviewLogger:
+    def __init__(
+        self,
+        log_dir: str | None,
+        *,
+        mode: str = "off",
+        timezone_name: str = DEFAULT_AUDIT_LOG_TIMEZONE,
+        max_chars: int = 20_000,
+    ):
+        self.mode = mode
+        self.enabled = mode != "off"
+        self.log_dir = Path(log_dir) if log_dir else None
+        self.timezone_name = timezone_name
+        self.max_chars = max_chars
+        if self.enabled:
+            if self.log_dir is None:
+                raise ValueError("prompt_log_dir is required when prompt logging is enabled")
+            self.log_dir.mkdir(parents=True, exist_ok=True)
+
+    def write(
+        self,
+        *,
+        request_id: str,
+        request_id_source: str,
+        latest_user_text: str,
+        decision: RoutingDecision,
+        stream: bool,
+    ) -> None:
+        if not self.enabled or self.log_dir is None:
+            return
+        text = latest_user_text[: self.max_chars]
+        if self.mode == "redacted":
+            text = redact_prompt_text(text)
+        record = {
+            "event": "prompt_review",
+            "latest_user_text": text,
+            "mode": self.mode,
+            "policy_id": decision.policy_id,
+            "reason": decision.reason,
+            "request_id": request_id,
+            "request_id_source": request_id_source,
+            "route_id": decision.route_id,
+            "source_model": decision.source_model,
+            "stream": stream,
+            "target_model": decision.target_model,
+            "truncated": len(latest_user_text) > self.max_chars,
+            "ts": datetime.now(UTC).isoformat(),
+        }
+        path = self.log_dir / f"{audit_log_day(timezone_name=self.timezone_name)}.jsonl"
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(record, ensure_ascii=False, sort_keys=True))
+            handle.write("\n")
+
+
+SECRET_PATTERNS = (
+    re.compile(r"\bBearer\s+[A-Za-z0-9._~+/=-]{8,}", re.IGNORECASE),
+    re.compile(r"\bsk-[A-Za-z0-9_-]{8,}"),
+    re.compile(r"\bsk-proj-[A-Za-z0-9_-]{8,}"),
+    re.compile(r"\b[A-Za-z0-9+/]{80,}={0,2}\b"),
+)
+
+
+def redact_prompt_text(text: str) -> str:
+    redacted = text
+    for pattern in SECRET_PATTERNS:
+        redacted = pattern.sub("[REDACTED]", redacted)
+    return redacted
 
 
 def audit_log_day(

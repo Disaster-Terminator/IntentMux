@@ -7,7 +7,7 @@
   <img alt="runtime Python 3.11+" src="https://img.shields.io/badge/runtime-Python%203.11%2B-3776AB">
   <img alt="entry semantic-router" src="https://img.shields.io/badge/entry-semantic--router-0EA5E9">
   <img alt="gateway LiteLLM compatible" src="https://img.shields.io/badge/gateway-LiteLLM%20compatible-16A34A">
-  <img alt="logs no prompt or token" src="https://img.shields.io/badge/logs-no%20prompt%20%7C%20token-7C3AED">
+  <img alt="route logs metadata only" src="https://img.shields.io/badge/route%20logs-metadata%20only-7C3AED">
 </p>
 <p align="center">
   <img alt="built with FastAPI" src="https://img.shields.io/badge/built%20with-FastAPI-009688">
@@ -29,7 +29,7 @@ IntentMux 是一个本地优先的 OpenAI-compatible / LiteLLM-compatible 路由
     <td><strong>低侵入接入</strong><br>保留 LiteLLM 作为 provider、fallback、限流和鉴权层。</td>
   </tr>
   <tr>
-    <td><strong>可审计日志</strong><br>结构化记录 `route_complete` / `route_error`，不记录 prompt、token 或 bearer token。</td>
+    <td><strong>可审计日志</strong><br>route audit 默认只记录元数据；本地私有部署可显式开启 prompt review log。</td>
     <td><strong>生产前验证</strong><br>提供 preflight、LiteLLM-entry E2E、日志 summary 和 route-error budget gate。</td>
   </tr>
 </table>
@@ -95,6 +95,8 @@ uv run python -m router.app
 - `ROUTER_ACCESS_LOG`
 - `ROUTER_AUDIT_LOG_ENABLED`
 - `ROUTER_AUDIT_LOG_DIR`
+- `ROUTER_PROMPT_LOG_MODE`
+- `ROUTER_PROMPT_LOG_DIR`
 - `ROUTER_READINESS_TIMEOUT`
 
 IntentMux 支持本地进程和容器两种运行方式。容器不是唯一部署形态；挂载目录也不是开发
@@ -117,6 +119,7 @@ litellm/
     config/routes.yaml
     semantic_sets/route_bank.yaml
     logs/routes/YYYY-MM-DD.jsonl
+    logs/prompts/YYYY-MM-DD.jsonl   # optional local-only prompt review log
 ```
 
 容器内约定：
@@ -146,6 +149,9 @@ docker compose -f examples/docker-compose.yml up -d --build
 - `ROUTER_LITELLM_API_KEY`：IntentMux 调用上游 LiteLLM 使用的专用 key。设置后，IntentMux 不会把入站 `Authorization` 原样转发给上游。
 - `ROUTER_INBOUND_API_KEY`：可选的 IntentMux 入站 key，用于保护直连 sidecar 的 `/v1/chat/completions` 和 `/v1/semantic-router/decision`；不影响 `/health` 和 `/ready`。
 - `ROUTER_AUDIT_LOG_TIMEZONE`：审计日志按天分区的时区，默认 `Asia/Shanghai`。
+- `ROUTER_PROMPT_LOG_MODE`：可选 prompt review log，默认 `off`。可设为 `redacted` 或 `raw_local`，只适合本地私有审查。
+- `ROUTER_PROMPT_LOG_DIR`：prompt review log 目录，示例 compose 固定为 `/data/logs/prompts`。
+- `ROUTER_PROMPT_LOG_MAX_CHARS`：每条 latest user text 最多记录字符数，默认 `20000`。
 - `ROUTER_EMBEDDING_URL`：embedding 上游地址，默认 `http://host.docker.internal:1234/v1/embeddings`。
 - `ROUTER_EMBEDDING_MODEL`：embedding 模型名。
 - `ROUTER_EMBEDDING_API_KEY`：可选的 embedding 上游 key，设置后按 OpenAI-compatible `Authorization: Bearer ...` 发送。
@@ -176,7 +182,7 @@ docker compose -f examples/docker-compose.yml up -d intentmux
 
 IntentMux 暂未实现热重载，生产变更按“配置重启、代码重建”的规则处理。
 
-仓库里的 `examples/intentmux-home/` 是可复制的运行时目录模板。`/data` 不应放 LiteLLM 的 `.env`、provider token、数据库或原始 prompt。
+仓库里的 `examples/intentmux-home/` 是可复制的运行时目录模板。`/data` 不应放 LiteLLM 的 `.env`、provider token 或数据库。只有在明确启用 `ROUTER_PROMPT_LOG_MODE=raw_local` 时，`/data/logs/prompts` 才会保存 prompt review log；这个目录只适合本地私有审查，不应提交、上传或贴到 issue。
 
 运行时目录是用户部署资产，不是本仓库的源码内容。本仓库默认通过 `.gitignore` 排除
 `*-runtime/` 和 `data/semantic_sets/*.yaml`，避免把用户语义资产、审计日志或生产配置误提交。
@@ -271,7 +277,7 @@ uv run python scripts/e2e_litellm_entry.py --litellm-base-url http://127.0.0.1:4
 
 ## 日志审计
 
-IntentMux 有两个日志面：
+IntentMux 默认有两个日志面：
 
 - stdout：实时运行日志，便于 `docker logs` 和运行环境采集；
 - audit JSONL：可选持久审计日志，写入 `ROUTER_AUDIT_LOG_DIR`，默认生产路径是 `/data/logs/routes/YYYY-MM-DD.jsonl`。
@@ -298,7 +304,16 @@ IntentMux 只统计结构化 JSON 路由日志：
 - `upstream_headers_ms`（流式请求）
 - `upstream_body_ms`（流式请求）
 
-不会记录 prompt、completion、token usage 或 bearer token。`request_id` 只用于跨层关联，可能来自请求头、`metadata.semantic_router_request_id`、`user` 字段，或由 IntentMux 生成。
+默认不会记录 prompt、completion、token usage 或 bearer token。`request_id` 只用于跨层关联，可能来自请求头、`metadata.semantic_router_request_id`、`user` 字段，或由 IntentMux 生成。
+
+本地灰度阶段可以显式开启单独的 prompt review log：
+
+```bash
+ROUTER_PROMPT_LOG_MODE=redacted   # 默认建议：遮盖常见 bearer/sk/base64 凭据
+ROUTER_PROMPT_LOG_MODE=raw_local  # 本地私有审查：记录 latest user text 原文
+```
+
+prompt review log 写入 `ROUTER_PROMPT_LOG_DIR/YYYY-MM-DD.jsonl`，不进入 stdout、不进入普通 route audit JSONL、不进入 daily health。每条记录包含 `request_id`、`route_id`、`target_model`、`reason`、`stream` 和 `latest_user_text`，用于把 route candidate 和本地语义样本关联起来。公开部署和不可信环境应保持 `off`；开启 `raw_local` 前应确认挂载目录不会被提交、同步到云端或转发给外部系统。
 
 `event` 表示请求处理生命周期，`ok/outcome` 表示路由健康。上游非 2xx 会记录 `ok=false` 与 `outcome=upstream_non_200`，即使响应仍按代理语义返回给客户端。
 
@@ -366,7 +381,7 @@ uv run python scripts/intentmux_daily_health.py \
 `metadata.semantic_router_request_id`。OpenAI `user` 字段可能包含真实用户标识，IntentMux 不会把它写入 audit log 的 `request_id`。
 
 日志驱动质量闭环见 [docs/log_driven_quality_loop.md](docs/log_driven_quality_loop.md)。
-IntentMux 不记录 raw prompt；audit log 只负责发现低置信、异常状态码、慢请求和分布漂移。
+route audit log 只负责发现低置信、异常状态码、慢请求和分布漂移；prompt review log 是显式开启的本地私有补充证据。
 需要人审的候选可以从审计日志里生成：
 
 ```bash

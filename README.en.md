@@ -7,7 +7,7 @@
   <img alt="runtime Python 3.11+" src="https://img.shields.io/badge/runtime-Python%203.11%2B-3776AB">
   <img alt="entry semantic-router" src="https://img.shields.io/badge/entry-semantic--router-0EA5E9">
   <img alt="gateway LiteLLM compatible" src="https://img.shields.io/badge/gateway-LiteLLM%20compatible-16A34A">
-  <img alt="logs no prompt or token" src="https://img.shields.io/badge/logs-no%20prompt%20%7C%20token-7C3AED">
+  <img alt="route logs metadata only" src="https://img.shields.io/badge/route%20logs-metadata%20only-7C3AED">
 </p>
 <p align="center">
   <img alt="built with FastAPI" src="https://img.shields.io/badge/built%20with-FastAPI-009688">
@@ -29,7 +29,7 @@ IntentMux is a local-first OpenAI-compatible / LiteLLM-compatible routing sideca
     <td><strong>Low-intrusion integration</strong><br>Keep LiteLLM responsible for providers, fallback, rate limits, and authentication.</td>
   </tr>
   <tr>
-    <td><strong>Auditable logs</strong><br>Record structured `route_complete` / `route_error` events without prompts, tokens, or bearer tokens.</td>
+    <td><strong>Auditable logs</strong><br>Route audit logs are metadata-only by default; private local deployments can explicitly enable prompt review logs.</td>
     <td><strong>Operational gates</strong><br>Ship with preflight, LiteLLM-entry E2E, log summaries, and route-error budget checks.</td>
   </tr>
 </table>
@@ -86,6 +86,7 @@ litellm/
     config/routes.yaml
     semantic_sets/route_bank.yaml
     logs/routes/YYYY-MM-DD.jsonl
+    logs/prompts/YYYY-MM-DD.jsonl   # optional local-only prompt review log
 ```
 
 Inside the container, `/app` is image code and `/data` is the user-mounted IntentMux home.
@@ -107,6 +108,9 @@ Common overrides:
 - `ROUTER_LITELLM_BASE_URL`: LiteLLM upstream URL, default `http://host.docker.internal:4000`.
 - `ROUTER_LITELLM_API_KEY`: dedicated key used by IntentMux when calling upstream LiteLLM. When set, inbound `Authorization` is not forwarded upstream.
 - `ROUTER_INBOUND_API_KEY`: optional IntentMux inbound key for `/v1/chat/completions` and `/v1/semantic-router/decision`; `/health` and `/ready` remain unauthenticated.
+- `ROUTER_PROMPT_LOG_MODE`: optional prompt review log mode, default `off`; use `redacted` or `raw_local` only for private local review.
+- `ROUTER_PROMPT_LOG_DIR`: prompt review log directory. The compose example uses `/data/logs/prompts`.
+- `ROUTER_PROMPT_LOG_MAX_CHARS`: maximum latest-user-text characters per prompt review record, default `20000`.
 - `ROUTER_EMBEDDING_URL`: embedding upstream URL, default `http://host.docker.internal:1234/v1/embeddings`.
 - `ROUTER_EMBEDDING_MODEL`: embedding model name.
 
@@ -133,7 +137,7 @@ docker compose -f examples/docker-compose.yml up -d intentmux
 
 IntentMux does not hot-reload yet; production updates follow the rule: restart for config, rebuild for code.
 
-`examples/intentmux-home/` is a copyable runtime template. Keep LiteLLM `.env`, provider tokens, databases, and raw prompts outside the IntentMux home.
+`examples/intentmux-home/` is a copyable runtime template. Keep LiteLLM `.env`, provider tokens, and databases outside the IntentMux home. If `ROUTER_PROMPT_LOG_MODE=raw_local` is enabled, `/data/logs/prompts` stores prompt review logs for private local review only; do not commit, upload, or attach that directory to public issues.
 
 ## LiteLLM Entry
 
@@ -195,9 +199,18 @@ docker logs --since 12h intentmux 2>&1 \
 
 Summary output includes route/target/reason distributions, `ok/outcome`, upstream status codes, `max_duration_ms`, `p50/p90/p95/p99` duration percentiles, and the slowest request samples. Slow request samples include only audit metadata: timestamp, `request_id`, `route_id`, `target_model`, `reason`, `upstream_status`, and duration.
 
-Structured logs count `route_id`, `target_model`, `policy_id`, `reason`, `request_id`, `request_id_source`, `stream`, `upstream_status`, `ok`, `outcome`, `decision_ms`, and `upstream_ms`, while avoiding prompts, completions, token usage, and bearer tokens. Streaming requests also include `upstream_headers_ms` and `upstream_body_ms`. `event` is lifecycle; `ok/outcome` is route health. Upstream non-2xx responses record `ok=false` and `outcome=upstream_non_200`. `embedding_error` has a dedicated budget shortcut because it can fail open to the configured fast route without making the user request fail.
+Structured route audit logs count `route_id`, `target_model`, `policy_id`, `reason`, `request_id`, `request_id_source`, `stream`, `upstream_status`, `ok`, `outcome`, `decision_ms`, and `upstream_ms`, while avoiding prompts, completions, token usage, and bearer tokens. Streaming requests also include `upstream_headers_ms` and `upstream_body_ms`. `event` is lifecycle; `ok/outcome` is route health. Upstream non-2xx responses record `ok=false` and `outcome=upstream_non_200`. `embedding_error` has a dedicated budget shortcut because it can fail open to the configured fast route without making the user request fail.
 
-The log-driven quality loop is documented in [docs/log_driven_quality_loop.md](docs/log_driven_quality_loop.md). IntentMux does not log raw prompts; audit logs identify low confidence, upstream failures, slow requests, and route distribution drift. Generate metadata-only review candidates with:
+Private local deployments can explicitly enable a separate prompt review log:
+
+```bash
+ROUTER_PROMPT_LOG_MODE=redacted   # mask common bearer/sk/base64 credentials
+ROUTER_PROMPT_LOG_MODE=raw_local  # record latest user text as-is for local review
+```
+
+Prompt review logs are written to `ROUTER_PROMPT_LOG_DIR/YYYY-MM-DD.jsonl`; they do not go to stdout, route audit JSONL, or daily health reports. Keep this mode off in public or untrusted environments.
+
+The log-driven quality loop is documented in [docs/log_driven_quality_loop.md](docs/log_driven_quality_loop.md). Route audit logs identify low confidence, upstream failures, slow requests, and route distribution drift; prompt review logs are explicit local-only supplemental evidence. Generate metadata-only review candidates with:
 
 ```bash
 uv run python scripts/select_review_candidates.py /data/logs/routes/*.jsonl \

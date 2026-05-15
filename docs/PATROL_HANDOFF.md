@@ -111,8 +111,9 @@ Slow request rows include:
 - `upstream_headers_ms`
 - `upstream_body_ms`
 
-Schedulers should not parse prompt text because IntentMux audit logs do not
-write prompt text.
+Schedulers should not parse prompt text from route audit logs because those
+logs do not write prompt text. Optional prompt review logs live under the
+separate `logs/prompts` tree and are for local human review, not cron parsing.
 
 ## Read-Only Checks
 
@@ -147,7 +148,7 @@ Strict LiteLLM-entry E2E should verify:
 - stream strong route succeeds;
 - non-stream fast route succeeds;
 - each probe has a matching IntentMux route log by request id;
-- route logs do not contain prompts or bearer tokens.
+- route audit logs do not contain prompts or bearer tokens.
 
 ## Production Change Discipline
 

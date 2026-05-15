@@ -533,6 +533,70 @@ routes:
     assert settings.audit_log_timezone == "UTC"
 
 
+def test_load_settings_reads_prompt_review_log_overrides(tmp_path: Path, monkeypatch):
+    routes_path = tmp_path / "routes.yaml"
+    prompt_dir = tmp_path / "logs" / "prompts"
+    routes_path.write_text(
+        """
+route_model: semantic-router
+default_route: cheap-router
+routes:
+  cheap-router:
+    description: seed cheap
+    utterances:
+      - seed cheap utterance
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("ROUTER_PROMPT_LOG_MODE", "raw_local")
+    monkeypatch.setenv("ROUTER_PROMPT_LOG_DIR", str(prompt_dir))
+    monkeypatch.setenv("ROUTER_PROMPT_LOG_MAX_CHARS", "123")
+
+    settings = load_settings(routes_path)
+
+    assert settings.prompt_log_mode == "raw_local"
+    assert settings.prompt_log_dir == str(prompt_dir)
+    assert settings.prompt_log_max_chars == 123
+
+
+def test_load_settings_revalidates_prompt_review_log_env_overrides(
+    tmp_path: Path, monkeypatch
+):
+    routes_path = tmp_path / "routes.yaml"
+    routes_path.write_text(
+        """
+route_model: semantic-router
+default_route: cheap-router
+routes:
+  cheap-router:
+    description: seed cheap
+    utterances:
+      - seed cheap utterance
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("ROUTER_PROMPT_LOG_MODE", "raw_local")
+
+    with pytest.raises(ValidationError, match="prompt_log_dir"):
+        load_settings(routes_path)
+
+
+def test_router_settings_rejects_prompt_review_log_without_directory():
+    with pytest.raises(ValidationError, match="prompt_log_dir"):
+        RouterSettings(
+            route_model="semantic-router",
+            fallback_route_id="fast",
+            prompt_log_mode="raw_local",
+            routes={
+                "fast": RouteSpec(
+                    target_model="cheap-router",
+                    description="seed cheap",
+                    utterances=["seed cheap utterance"],
+                )
+            },
+        )
+
+
 def test_load_settings_disables_access_log_by_default(tmp_path: Path):
     routes_path = tmp_path / "routes.yaml"
     routes_path.write_text(

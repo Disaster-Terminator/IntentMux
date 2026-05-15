@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import AliasChoices, BaseModel, Field, model_validator
@@ -55,6 +55,9 @@ class RouterSettings(BaseModel):
     audit_log_enabled: bool = False
     audit_log_dir: str | None = None
     audit_log_timezone: str = "Asia/Shanghai"
+    prompt_log_mode: Literal["off", "redacted", "raw_local"] = "off"
+    prompt_log_dir: str | None = None
+    prompt_log_max_chars: int = 20_000
     readiness_timeout: float = 2.0
     listen_host: str = "127.0.0.1"
     listen_port: int = 4001
@@ -78,6 +81,10 @@ class RouterSettings(BaseModel):
         for hard_rule in self.hard_rules:
             if hard_rule.route_id not in self.routes:
                 raise ValueError("hard_rules route_id must be present in routes")
+        if self.prompt_log_mode != "off" and not self.prompt_log_dir:
+            raise ValueError("prompt_log_dir is required when prompt logging is enabled")
+        if self.prompt_log_max_chars <= 0:
+            raise ValueError("prompt_log_max_chars must be positive")
         return self
 
     @property
@@ -101,38 +108,42 @@ def load_settings(path: str | Path | None = None) -> RouterSettings:
     raw["require_route_bank"] = require_route_bank
     raw = merge_route_bank(raw, config_path.parent, require_route_bank=require_route_bank)
     settings = RouterSettings.model_validate(raw)
-    return settings.model_copy(
-        update={
-            "embedding_url": os.getenv("ROUTER_EMBEDDING_URL", settings.embedding_url),
-            "embedding_model": os.getenv("ROUTER_EMBEDDING_MODEL", settings.embedding_model),
-            "embedding_api_key": os.getenv("ROUTER_EMBEDDING_API_KEY")
-            or settings.embedding_api_key,
-            "embedding_headers": headers_from_json_env(
-                "ROUTER_EMBEDDING_HEADERS_JSON",
-                settings.embedding_headers,
-            ),
-            "litellm_base_url": os.getenv("ROUTER_LITELLM_BASE_URL", settings.litellm_base_url),
-            "litellm_api_key": os.getenv("ROUTER_LITELLM_API_KEY") or settings.litellm_api_key,
-            "inbound_api_key": os.getenv("ROUTER_INBOUND_API_KEY") or settings.inbound_api_key,
-            "litellm_timeout": float(
-                os.getenv("ROUTER_LITELLM_TIMEOUT", str(settings.litellm_timeout))
-            ),
-            "access_log": bool_from_env("ROUTER_ACCESS_LOG", settings.access_log),
-            "audit_log_enabled": bool_from_env(
-                "ROUTER_AUDIT_LOG_ENABLED", settings.audit_log_enabled
-            ),
-            "audit_log_dir": os.getenv("ROUTER_AUDIT_LOG_DIR", settings.audit_log_dir or ""),
-            "audit_log_timezone": os.getenv(
-                "ROUTER_AUDIT_LOG_TIMEZONE",
-                settings.audit_log_timezone,
-            ),
-            "readiness_timeout": float(
-                os.getenv("ROUTER_READINESS_TIMEOUT", str(settings.readiness_timeout))
-            ),
-            "listen_host": os.getenv("ROUTER_HOST", settings.listen_host),
-            "listen_port": int(os.getenv("ROUTER_PORT", str(settings.listen_port))),
-        }
-    )
+    overrides = {
+        "embedding_url": os.getenv("ROUTER_EMBEDDING_URL", settings.embedding_url),
+        "embedding_model": os.getenv("ROUTER_EMBEDDING_MODEL", settings.embedding_model),
+        "embedding_api_key": os.getenv("ROUTER_EMBEDDING_API_KEY")
+        or settings.embedding_api_key,
+        "embedding_headers": headers_from_json_env(
+            "ROUTER_EMBEDDING_HEADERS_JSON",
+            settings.embedding_headers,
+        ),
+        "litellm_base_url": os.getenv("ROUTER_LITELLM_BASE_URL", settings.litellm_base_url),
+        "litellm_api_key": os.getenv("ROUTER_LITELLM_API_KEY") or settings.litellm_api_key,
+        "inbound_api_key": os.getenv("ROUTER_INBOUND_API_KEY") or settings.inbound_api_key,
+        "litellm_timeout": float(
+            os.getenv("ROUTER_LITELLM_TIMEOUT", str(settings.litellm_timeout))
+        ),
+        "access_log": bool_from_env("ROUTER_ACCESS_LOG", settings.access_log),
+        "audit_log_enabled": bool_from_env(
+            "ROUTER_AUDIT_LOG_ENABLED", settings.audit_log_enabled
+        ),
+        "audit_log_dir": os.getenv("ROUTER_AUDIT_LOG_DIR", settings.audit_log_dir or ""),
+        "audit_log_timezone": os.getenv(
+            "ROUTER_AUDIT_LOG_TIMEZONE",
+            settings.audit_log_timezone,
+        ),
+        "prompt_log_mode": os.getenv("ROUTER_PROMPT_LOG_MODE", settings.prompt_log_mode),
+        "prompt_log_dir": os.getenv("ROUTER_PROMPT_LOG_DIR", settings.prompt_log_dir or ""),
+        "prompt_log_max_chars": int(
+            os.getenv("ROUTER_PROMPT_LOG_MAX_CHARS", str(settings.prompt_log_max_chars))
+        ),
+        "readiness_timeout": float(
+            os.getenv("ROUTER_READINESS_TIMEOUT", str(settings.readiness_timeout))
+        ),
+        "listen_host": os.getenv("ROUTER_HOST", settings.listen_host),
+        "listen_port": int(os.getenv("ROUTER_PORT", str(settings.listen_port))),
+    }
+    return RouterSettings.model_validate(settings.model_dump() | overrides)
 
 
 def bool_from_value(value: Any) -> bool:

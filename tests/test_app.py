@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 import json
 import logging
+from pathlib import Path
 from typing import Any
 
 from fastapi.testclient import TestClient
@@ -405,6 +406,94 @@ def test_chat_completion_requires_inbound_api_key_when_configured():
     assert missing.status_code == 401
     assert wrong.status_code == 401
     assert ok.status_code == 200
+
+
+def test_chat_completion_does_not_write_prompt_review_log_by_default(tmp_path: Path):
+    prompt_dir = tmp_path / "prompts"
+    app = create_app(
+        settings=RouterSettings(
+            route_model="semantic-router",
+            fallback_route_id="fast",
+            prompt_log_dir=str(prompt_dir),
+            routes={"fast": RouteSpec(target_model="cheap-router", description="fast", utterances=["hi"])},
+        ),
+        router=FakeRouter(RoutingDecision("cheap-router", "test", rewrite=True, route_id="fast")),
+        proxy=FakeProxy(),
+    )
+
+    response = TestClient(app).post(
+        "/v1/chat/completions",
+        json={
+            "model": "semantic-router",
+            "messages": [{"role": "user", "content": "raw local prompt"}],
+        },
+    )
+
+    assert response.status_code == 200
+    assert not prompt_dir.exists()
+
+
+def test_chat_completion_writes_raw_local_prompt_review_log(tmp_path: Path):
+    prompt_dir = tmp_path / "prompts"
+    app = create_app(
+        settings=RouterSettings(
+            route_model="semantic-router",
+            fallback_route_id="fast",
+            prompt_log_mode="raw_local",
+            prompt_log_dir=str(prompt_dir),
+            routes={"fast": RouteSpec(target_model="cheap-router", description="fast", utterances=["hi"])},
+        ),
+        router=FakeRouter(RoutingDecision("cheap-router", "test", rewrite=True, route_id="fast")),
+        proxy=FakeProxy(),
+    )
+
+    response = TestClient(app).post(
+        "/v1/chat/completions",
+        headers={"x-request-id": "req-prompt"},
+        json={
+            "model": "semantic-router",
+            "messages": [{"role": "user", "content": "请分析回滚方案"}],
+        },
+    )
+
+    assert response.status_code == 200
+    log_lines = list(prompt_dir.glob("*.jsonl"))[0].read_text(encoding="utf-8").splitlines()
+    record = json.loads(log_lines[0])
+    assert record["event"] == "prompt_review"
+    assert record["request_id"] == "req-prompt"
+    assert record["mode"] == "raw_local"
+    assert record["latest_user_text"] == "请分析回滚方案"
+    assert record["route_id"] == "fast"
+    assert record["target_model"] == "cheap-router"
+
+
+def test_chat_completion_redacted_prompt_review_log_masks_credentials(tmp_path: Path):
+    prompt_dir = tmp_path / "prompts"
+    app = create_app(
+        settings=RouterSettings(
+            route_model="semantic-router",
+            fallback_route_id="fast",
+            prompt_log_mode="redacted",
+            prompt_log_dir=str(prompt_dir),
+            routes={"fast": RouteSpec(target_model="cheap-router", description="fast", utterances=["hi"])},
+        ),
+        router=FakeRouter(RoutingDecision("cheap-router", "test", rewrite=True, route_id="fast")),
+        proxy=FakeProxy(),
+    )
+
+    response = TestClient(app).post(
+        "/v1/chat/completions",
+        headers={"x-request-id": "req-redacted"},
+        json={
+            "model": "semantic-router",
+            "messages": [{"role": "user", "content": "use Bearer abcdefghijklmnop"}],
+        },
+    )
+
+    assert response.status_code == 200
+    log_lines = list(prompt_dir.glob("*.jsonl"))[0].read_text(encoding="utf-8").splitlines()
+    record = json.loads(log_lines[0])
+    assert record["latest_user_text"] == "use [REDACTED]"
 
 
 def test_health_and_ready_do_not_require_inbound_api_key():
