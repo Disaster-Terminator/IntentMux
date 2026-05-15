@@ -1,0 +1,105 @@
+sources:
+  - name: massive_zh_general
+    slice: fast_general_zh
+    route: fast
+    kind: remote_tar_jsonl
+    homepage: https://www.amazon.science/code-and-datasets/massive
+    license_id: CC-BY-4.0
+    license_url: https://github.com/alexa/massive/blob/master/LICENSE
+    redistributable: true
+    commercial_use: true
+    derived_prompt_allowed: yes
+    commit_policy: sample_only
+    notes: Chinese-native general assistant utterances.
+
+  - name: dataclue_cic_intent
+    slice: fast_intent_zh
+    route: fast
+    kind: manual_review_required
+    homepage: https://github.com/CLUEbenchmark/DataCLUE
+    license_id: review-required
+    license_url: https://github.com/CLUEbenchmark/DataCLUE
+    redistributable: false
+    commercial_use: false
+    derived_prompt_allowed: review_required
+    commit_policy: manifest_only
+    notes: Use only license-compatible short intent samples.
+
+  - name: ceval_reasoning
+    slice: strong_reasoning_zh
+    route: strong
+    kind: manual_review_required
+    homepage: https://cevalbenchmark.com/
+    license_id: CC-BY-NC-SA-4.0
+    license_url: https://creativecommons.org/licenses/by-nc-sa/4.0/
+    redistributable: false
+    commercial_use: false
+    derived_prompt_allowed: review_required
+    commit_policy: manifest_only
+    notes: Convert questions into user-request style prompts without answers.
+
+  - name: cmmlu_reasoning
+    slice: strong_reasoning_zh
+    route: strong
+    kind: manual_review_required
+    homepage: https://github.com/haonan-li/CMMLU
+    license_id: CC-BY-NC-SA-4.0
+    license_url: https://creativecommons.org/licenses/by-nc-sa/4.0/
+    redistributable: false
+    commercial_use: false
+    derived_prompt_allowed: review_required
+    commit_policy: manifest_only
+    notes: Use for Chinese reasoning requests after license review.
+
+  - name: longbench_zh
+    slice: strong_long_context_zh
+    route: strong
+    kind: manual_review_required
+    homepage: https://github.com/THUDM/LongBench
+    license_id: review-required
+    license_url: https://github.com/THUDM/LongBench
+    redistributable: false
+    commercial_use: false
+    derived_prompt_allowed: review_required
+    commit_policy: manifest_only
+    notes: Preserve length metadata or keep this slice schema-reserved.
+
+  - name: superclue_code3
+    slice: strong_code_zh
+    route: strong
+    kind: manual_review_required
+    homepage: https://github.com/CLUEbenchmark/SuperCLUE-Code3
+    license_id: review-required
+    license_url: https://github.com/CLUEbenchmark/SuperCLUE-Code3
+    redistributable: false
+    commercial_use: false
+    derived_prompt_allowed: review_required
+    commit_policy: manifest_only
+    notes: Chinese-native code tasks.
+
+  - name: curated_high_risk_zh
+    slice: high_risk_zh
+    route: strong
+    kind: curated_yaml
+    homepage: https://github.com/Disaster-Terminator/IntentMux
+    license_id: Apache-2.0
+    license_url: https://www.apache.org/licenses/LICENSE-2.0
+    redistributable: true
+    commercial_use: true
+    derived_prompt_allowed: yes
+    commit_policy: sample_only
+    notes: Public/manual and redacted production-review prompts only.
+
+  - name: curated_borderline_zh
+    slice: borderline_zh
+    route: strong
+    label_policy: manual_review_required
+    kind: curated_yaml
+    homepage: https://github.com/Disaster-Terminator/IntentMux
+    license_id: Apache-2.0
+    license_url: https://www.apache.org/licenses/LICENSE-2.0
+    redistributable: true
+    commercial_use: true
+    derived_prompt_allowed: yes
+    commit_policy: sample_only
+    notes: Human-reviewed boundary prompts with explicit expected route.
