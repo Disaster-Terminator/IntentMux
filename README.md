@@ -432,6 +432,7 @@ curl http://127.0.0.1:4001/v1/semantic-router/decision \
 
 运行时保持轻依赖。更大的 route bank 从 `config/route_sources.yaml` 声明的来源离线生成，不把 Hugging Face 等构建依赖带进运行时。
 来源选择和语料政策见 [docs/router_quality_research.md](docs/router_quality_research.md)：默认不使用自生成语料，只使用成熟公开数据源和脱敏生产 review 样本。
+中文路由质量基线见 [docs/zh_route_eval_plan.md](docs/zh_route_eval_plan.md)。
 
 ```bash
 uv sync --group assets

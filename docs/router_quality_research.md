@@ -63,6 +63,11 @@ general assistant traffic should usually stay cheap, while code generation and
 real issue resolution should be strong by default unless later evaluation proves
 otherwise.
 
+The next eval milestone is `zh-intentmux-router-eval-v1`, described in
+`docs/zh_route_eval_plan.md`. It uses Chinese-native datasets as the primary
+source and borrows RouterBench / LLMRouterBench evaluation methodology without
+bulk-translating English benchmarks into the main eval bank.
+
 ## Next Quality Loop
 
 1. Build or refresh route banks from declared mature sources only.
