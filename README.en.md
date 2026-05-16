@@ -1,7 +1,7 @@
 # IntentMux
 
-> Lightweight local AI gateway for routing OpenAI-compatible requests between `lite` and `deep` model tiers.<br>
-> Preserves LiteLLM sidecar compatibility without owning provider routing, keys, budgets, or fallback.
+> Lightweight OpenAI-compatible routing gateway for `lite` / `deep` model tiers.<br>
+> Runs independently and treats LiteLLM-first sidecar deployment as a first-class topology.
 
 <p align="center">
   <img alt="runtime Python 3.11+" src="https://img.shields.io/badge/runtime-Python%203.11%2B-3776AB">
@@ -21,7 +21,7 @@
 
 ## One Line
 
-IntentMux is a lightweight local AI gateway that routes OpenAI-compatible requests between `lite` and `deep` model tiers with auditable decisions, while preserving LiteLLM sidecar compatibility.
+IntentMux is a lightweight OpenAI-compatible routing gateway that routes requests between `lite` and `deep` model tiers. It can run as a standalone `base_url`, or as a LiteLLM-first sidecar behind an existing LiteLLM entry point.
 
 <table>
   <tr>
@@ -36,10 +36,23 @@ IntentMux is a lightweight local AI gateway that routes OpenAI-compatible reques
 
 ## Project Boundary
 
-IntentMux is not a model provider and does not replace LiteLLM. It owns OpenAI-compatible gateway protocol, entry-model semantics, routing decisions, and audit logs. LiteLLM remains the recommended upstream for provider routing, provider fallback, provider credentials, virtual keys, budgets, and model pools.
+IntentMux is not a model provider and does not require LiteLLM to start. It owns OpenAI-compatible gateway protocol, entry-model semantics, routing decisions, and audit logs. The upstream can be LiteLLM or any OpenAI-compatible service. If a deployment already has LiteLLM, LiteLLM remains the recommended layer for provider routing, provider fallback, provider credentials, virtual keys, budgets, and model pools.
 
 ```text
 model=auto -> route_id(lite/deep) -> target_model -> OpenAI-compatible upstream
+```
+
+Both deployment topologies are first-class:
+
+```text
+Direct gateway:
+client -> IntentMux :4001/v1, model=auto|lite|deep
+       -> OpenAI-compatible upstream
+
+LiteLLM-first sidecar:
+client -> LiteLLM :4000, model=semantic-router
+       -> IntentMux :4001
+       -> LiteLLM :4000 target model group
 ```
 
 Canonical entry models:
@@ -51,19 +64,19 @@ Canonical entry models:
 | Requested model | Meaning | Behavior |
 | --- | --- | --- |
 | `auto` | Preferred routed entry | Runs IntentMux routing |
-| `semantic-router` | Legacy LiteLLM sidecar entry | Same as `auto`; retained for compatibility |
+| `semantic-router` | LiteLLM sidecar entry name | Same as `auto`; useful for LiteLLM-first topology |
 | `lite` | Explicit lightweight tier | Routes to configured `lite.target_model` |
 | `deep` | Explicit high-capability tier | Routes to configured `deep.target_model` |
 
 Compatibility entries and aliases:
 
-- `semantic-router`: legacy LiteLLM sidecar entry alias. It remains accepted, but is no longer the preferred advertised entry.
+- `semantic-router`: LiteLLM sidecar entry name. It remains accepted; it is a compatibility entry name, not a second-class deployment mode.
 - `fast`: legacy route alias for `lite`.
 - `strong`: legacy route alias for `deep`.
 
 `/v1/models` advertises only `auto`, `lite`, and `deep`. It does not advertise `semantic-router` or leak local LiteLLM model-group names. `target_model` values are deployment configuration, not product API names.
 
-IntentMux can still run as a LiteLLM sidecar. Keep provider secrets, tokens, `.env` files, and mounted LiteLLM data outside this repository.
+IntentMux can run as a standalone gateway or as a LiteLLM sidecar. Keep provider secrets, tokens, `.env` files, and mounted LiteLLM data outside this repository.
 
 Current compatibility scope:
 

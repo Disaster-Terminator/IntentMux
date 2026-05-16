@@ -1,7 +1,7 @@
 # IntentMux
 
-> 轻量本地 AI 网关，把 OpenAI 兼容请求按复杂度路由到 `lite` / `deep` 两档模型。<br>
-> 保留 LiteLLM sidecar 兼容部署，但不接管 provider routing、key、budget 或 fallback。
+> 轻量 OpenAI 兼容路由网关，把请求按复杂度路由到 `lite` / `deep` 两档模型。<br>
+> 可独立运行，也一等支持 LiteLLM-first sidecar 部署。
 
 <p align="center">
   <img alt="runtime Python 3.11+" src="https://img.shields.io/badge/runtime-Python%203.11%2B-3776AB">
@@ -21,7 +21,7 @@
 
 ## 一句话
 
-IntentMux 是一个轻量本地 AI 网关，把 OpenAI 兼容请求按复杂度路由到 `lite` / `deep` 两档模型，并保留 LiteLLM sidecar 兼容部署。
+IntentMux 是一个轻量 OpenAI 兼容路由网关，把请求按复杂度路由到 `lite` / `deep` 两档模型。它可以独立作为 `base_url`，也可以作为 LiteLLM-first sidecar 接入现有 LiteLLM 主入口。
 
 <table>
   <tr>
@@ -36,10 +36,23 @@ IntentMux 是一个轻量本地 AI 网关，把 OpenAI 兼容请求按复杂度�
 
 ## 项目边界
 
-IntentMux 不是模型提供商，也不是 LiteLLM 的替代品。它负责 OpenAI-compatible 网关协议、入口模型语义、路由决策和审计日志；LiteLLM 仍是推荐上游，用于 provider routing、provider fallback、provider credentials、virtual keys、budgets 和 model pools。
+IntentMux 不是模型提供商，也不需要 LiteLLM 才能启动。它负责 OpenAI-compatible 网关协议、入口模型语义、路由决策和审计日志；上游可以是 LiteLLM，也可以是任意 OpenAI-compatible 服务。生产环境如果已经有 LiteLLM，推荐继续让 LiteLLM 负责 provider routing、provider fallback、provider credentials、virtual keys、budgets 和 model pools。
 
 ```text
 model=auto -> route_id(lite/deep) -> target_model -> OpenAI-compatible upstream
+```
+
+两种部署形态都是一等支持：
+
+```text
+Direct gateway:
+client -> IntentMux :4001/v1, model=auto|lite|deep
+       -> OpenAI-compatible upstream
+
+LiteLLM-first sidecar:
+client -> LiteLLM :4000, model=semantic-router
+       -> IntentMux :4001
+       -> LiteLLM :4000 target model group
 ```
 
 规范入口模型：
@@ -51,19 +64,19 @@ model=auto -> route_id(lite/deep) -> target_model -> OpenAI-compatible upstream
 | Requested model | 含义 | 行为 |
 | --- | --- | --- |
 | `auto` | 推荐自动路由入口 | 执行 IntentMux 路由 |
-| `semantic-router` | 旧 LiteLLM sidecar 入口 | 与 `auto` 等价，兼容保留 |
+| `semantic-router` | LiteLLM sidecar 入口名 | 与 `auto` 等价，适合 LiteLLM-first 拓扑 |
 | `lite` | 显式轻量 tier | 路由到配置的 `lite.target_model` |
 | `deep` | 显式高能力 tier | 路由到配置的 `deep.target_model` |
 
 兼容入口和别名：
 
-- `semantic-router`：旧 LiteLLM sidecar 入口别名，继续接受，但不作为新默认入口宣传。
+- `semantic-router`：LiteLLM sidecar 入口名，继续接受；它是兼容入口名，不是低级部署模式。
 - `fast`：旧 `lite` route alias。
 - `strong`：旧 `deep` route alias。
 
 `/v1/models` 只广告规范入口 `auto`、`lite`、`deep`，不广告 `semantic-router`，也不泄漏本地 LiteLLM model group 名称。`target_model` 是部署侧配置值，不是产品接口。
 
-部署时可以把 IntentMux 作为 LiteLLM 旁路 sidecar 独立管理；不要把 LiteLLM 挂载目录、token、`.env` 或 provider 凭据加入本仓库。
+部署时可以让 IntentMux 独立作为 gateway，也可以把它作为 LiteLLM 旁路 sidecar 独立管理；不要把 LiteLLM 挂载目录、token、`.env` 或 provider 凭据加入本仓库。
 
 当前兼容范围：
 

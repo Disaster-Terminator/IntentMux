@@ -2,10 +2,10 @@
 
 ## Long-Term Operational Goal
 
-Make IntentMux a lightweight local AI gateway that can act as an
-OpenAI-compatible `base_url` with canonical `auto` / `lite` / `deep` entries,
-while preserving the existing LiteLLM `semantic-router` sidecar deployment mode
-for production compatibility.
+Make IntentMux a lightweight OpenAI-compatible routing gateway with canonical
+`auto` / `lite` / `deep` entries. It must run without LiteLLM by targeting any
+OpenAI-compatible upstream, and it must also support LiteLLM-first sidecar
+deployment as a first-class production topology.
 
 Current operating target:
 
@@ -17,8 +17,9 @@ Current operating target:
   allowing product route ids `lite` / `deep` to map to deployment-specific
   target models
 - `/v1/models` advertises only canonical synthetic entries: `auto`, `lite`, and
-  `deep`; legacy `semantic-router`, `fast`, `strong`, and local target model
-  names remain accepted or configured where needed but are not advertised
+  `deep`; `semantic-router` remains the LiteLLM sidecar entry name, while
+  `fast`, `strong`, and local target model names remain accepted or configured
+  where needed but are not advertised
 - degraded embedding availability is explicit: `/ready` returns `503`, routed
   chat requests fall back to `fallback_route_id` with
   `reason=embedding_error`, and route summaries count route ids, targets, and
@@ -52,10 +53,12 @@ Product boundary:
 - IntentMux owns OpenAI-compatible gateway behavior, entry-model semantics,
   routing decisions, request IDs, streaming pass-through, error classes, and
   privacy-safe logs.
+- IntentMux can run with any OpenAI-compatible upstream, including LiteLLM.
 - IntentMux does not replace LiteLLM provider routing, provider fallback,
-  provider credentials, virtual keys, budgets, or model pools.
-- LiteLLM remains the recommended upstream and the recommended compatibility
-  layer for existing sidecar deployments.
+  provider credentials, virtual keys, budgets, or model pools when LiteLLM is
+  present.
+- LiteLLM-first sidecar is a first-class deployment topology for environments
+  that already use LiteLLM as the main entry point.
 
 ## Lifecycle Management
 
@@ -64,15 +67,16 @@ in the same Docker Compose project for operational convenience, but its
 repository, image, config, audit logs, and secrets boundary stay separate from
 the LiteLLM mount directory.
 
-Future direction: keep gateway-mode lifecycle independent while making the
-LiteLLM sidecar compatibility lifecycle explicit. A good design should answer
-these questions before implementation:
+Future direction: keep direct-gateway lifecycle independent while making the
+LiteLLM-first sidecar lifecycle explicit. A good design should answer these
+questions before implementation:
 
 - Should router startup depend on LiteLLM health, service start, or a successful
   authenticated `/v1/models` probe?
 - Should router restart when LiteLLM restarts, or only retry upstream calls?
-- Should clients use IntentMux `:4001` directly in gateway mode, or keep using
-  LiteLLM `:4000` with legacy `semantic-router` in sidecar mode?
+- Should clients use IntentMux `:4001` directly, or keep using LiteLLM `:4000`
+  with `semantic-router` in sidecar mode? For RayStorm's local production, the
+  answer is currently LiteLLM-first sidecar.
 - Should embedding degraded fallback remain fail-open for all routed requests,
   or should selected high-risk categories fail closed in the future?
 
