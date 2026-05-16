@@ -1,5 +1,9 @@
 route_model: semantic-router
 fallback_route_id: fast
+agent_signal_enabled: true
+agent_signal_route_id: strong
+agent_signal_min_input_chars: 12000
+agent_signal_min_message_count: 6
 threshold: 0.55
 margin: 0.04
 route_bank_path: ../semantic_sets/route_bank.yaml
@@ -43,6 +47,11 @@ hard_rules:
       - 鉴权绕过
       - 权限绕过
       - 越权
+      - security reviewer
+      - security review
+      - coding agent
+      - code review
+      - permission bypass
 
 routes:
   fast:

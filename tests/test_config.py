@@ -788,6 +788,45 @@ def test_router_settings_defaults_target_model_to_route_id_when_omitted():
     assert settings.routes["strong"].target_model == "strong"
 
 
+def test_router_settings_defaults_agent_signal_to_strong_when_present():
+    settings = RouterSettings.model_validate(
+        {
+            "routes": {
+                "fast": {"description": "low risk", "utterances": ["x"]},
+                "strong": {"description": "high risk", "utterances": ["y"]},
+            }
+        }
+    )
+
+    assert settings.agent_signal_route_id is None
+    assert settings.effective_agent_signal_route_id == "strong"
+
+
+def test_router_settings_disables_agent_signal_when_strong_is_absent_by_default():
+    settings = RouterSettings.model_validate(
+        {
+            "routes": {
+                "fast": {"description": "low risk", "utterances": ["x"]},
+            }
+        }
+    )
+
+    assert settings.agent_signal_route_id is None
+    assert settings.effective_agent_signal_route_id is None
+
+
+def test_router_settings_rejects_unknown_explicit_agent_signal_route_id():
+    with pytest.raises(ValidationError, match="agent_signal_route_id"):
+        RouterSettings.model_validate(
+            {
+                "agent_signal_route_id": "missing",
+                "routes": {
+                    "fast": {"description": "low risk", "utterances": ["x"]},
+                },
+            }
+        )
+
+
 def test_router_settings_rejects_missing_fallback_route_id_in_routes():
     with pytest.raises(ValidationError, match="fallback_route_id must be present"):
         RouterSettings.model_validate(

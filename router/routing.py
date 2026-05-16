@@ -27,7 +27,11 @@ class Router:
         self.embedding_client = embedding_client
         self._route_vectors: dict[str, list[list[float]]] | None = None
 
-    async def decide(self, request_json: dict[str, Any]) -> RoutingDecision:
+    async def decide(
+        self,
+        request_json: dict[str, Any],
+        format_signals: dict[str, Any] | None = None,
+    ) -> RoutingDecision:
         source_model = request_json.get("model")
         if source_model != self.settings.route_model:
             return RoutingDecision(
@@ -60,6 +64,18 @@ class Router:
                 source_model=source_model,
                 reason=f"hard_rule:{keyword}",
                 policy_id="hard_rule",
+                rewrite=True,
+            )
+
+        agent_signal = self._matching_agent_signal(format_signals)
+        if agent_signal:
+            route_id, signal = agent_signal
+            return RoutingDecision(
+                route_id=route_id,
+                target_model=self._target_model_for_route(route_id),
+                source_model=source_model,
+                reason=f"agent_signal:{signal}",
+                policy_id="agent_signal",
                 rewrite=True,
             )
 
@@ -146,6 +162,39 @@ class Router:
                     return hard_rule.route_id, keyword
         return None
 
+    def _matching_agent_signal(
+        self,
+        format_signals: dict[str, Any] | None,
+    ) -> tuple[str, str] | None:
+        route_id = self.settings.effective_agent_signal_route_id
+        if route_id is None or not isinstance(format_signals, dict):
+            return None
+
+        if format_signals.get("tools_present") is True or _positive_int(
+            format_signals.get("tool_count")
+        ):
+            return route_id, "tools_present"
+        if format_signals.get("functions_present") is True or _positive_int(
+            format_signals.get("function_count")
+        ):
+            return route_id, "functions_present"
+        if format_signals.get("tool_history") is True or _positive_int(
+            format_signals.get("tool_call_count")
+        ):
+            return route_id, "tool_history"
+        if format_signals.get("tool_choice_present") is True:
+            return route_id, "tool_choice"
+
+        input_chars = _non_negative_int(format_signals.get("approx_input_chars"))
+        message_count = _non_negative_int(format_signals.get("message_count"))
+        if (
+            input_chars >= self.settings.agent_signal_min_input_chars
+            and message_count >= self.settings.agent_signal_min_message_count
+        ):
+            return route_id, "long_context"
+
+        return None
+
     def _target_model_for_route(self, route_id: str) -> str:
         target_model = self.settings.routes[route_id].target_model
         if target_model is None:
@@ -201,3 +250,13 @@ def cosine_similarity(left: list[float], right: list[float]) -> float:
     if denominator == 0.0:
         return 0.0
     return float(np.dot(left_array, right_array) / denominator)
+
+
+def _positive_int(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value > 0
+
+
+def _non_negative_int(value: Any) -> int:
+    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+        return value
+    return 0

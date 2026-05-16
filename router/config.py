@@ -33,6 +33,10 @@ class RouterSettings(BaseModel):
         default="fast",
         validation_alias=AliasChoices("fallback_route_id", "default_route"),
     )
+    agent_signal_enabled: bool = True
+    agent_signal_route_id: str | None = None
+    agent_signal_min_input_chars: int = 12_000
+    agent_signal_min_message_count: int = 6
     threshold: float = 0.55
     margin: float = 0.04
     routes: dict[str, RouteSpec]
@@ -77,6 +81,16 @@ class RouterSettings(BaseModel):
 
         if self.fallback_route_id not in self.routes:
             raise ValueError("fallback_route_id must be present in routes")
+        if self.agent_signal_min_input_chars <= 0:
+            raise ValueError("agent_signal_min_input_chars must be positive")
+        if self.agent_signal_min_message_count <= 0:
+            raise ValueError("agent_signal_min_message_count must be positive")
+        if (
+            self.agent_signal_enabled
+            and self.agent_signal_route_id is not None
+            and self.agent_signal_route_id not in self.routes
+        ):
+            raise ValueError("agent_signal_route_id must be present in routes")
 
         for hard_rule in self.hard_rules:
             if hard_rule.route_id not in self.routes:
@@ -94,6 +108,16 @@ class RouterSettings(BaseModel):
     @property
     def entry_model(self) -> str:
         return self.route_model
+
+    @property
+    def effective_agent_signal_route_id(self) -> str | None:
+        if not self.agent_signal_enabled:
+            return None
+        if self.agent_signal_route_id is not None:
+            return self.agent_signal_route_id
+        if "strong" in self.routes:
+            return "strong"
+        return None
 
 
 def load_settings(path: str | Path | None = None) -> RouterSettings:
@@ -116,6 +140,26 @@ def load_settings(path: str | Path | None = None) -> RouterSettings:
         "embedding_headers": headers_from_json_env(
             "ROUTER_EMBEDDING_HEADERS_JSON",
             settings.embedding_headers,
+        ),
+        "agent_signal_enabled": bool_from_env(
+            "ROUTER_AGENT_SIGNAL_ENABLED",
+            settings.agent_signal_enabled,
+        ),
+        "agent_signal_route_id": os.getenv(
+            "ROUTER_AGENT_SIGNAL_ROUTE_ID",
+            settings.agent_signal_route_id,
+        ),
+        "agent_signal_min_input_chars": int(
+            os.getenv(
+                "ROUTER_AGENT_SIGNAL_MIN_INPUT_CHARS",
+                str(settings.agent_signal_min_input_chars),
+            )
+        ),
+        "agent_signal_min_message_count": int(
+            os.getenv(
+                "ROUTER_AGENT_SIGNAL_MIN_MESSAGE_COUNT",
+                str(settings.agent_signal_min_message_count),
+            )
         ),
         "litellm_base_url": os.getenv("ROUTER_LITELLM_BASE_URL", settings.litellm_base_url),
         "litellm_api_key": os.getenv("ROUTER_LITELLM_API_KEY") or settings.litellm_api_key,

@@ -52,7 +52,7 @@ The default router borrows the common strong/weak LLM-router shape and Semantic
 Router thresholding:
 
 ```text
-explicit override -> high-precision hard escalation -> semantic score + threshold -> fallback fast
+explicit override -> high-precision hard escalation -> agent structure signal -> semantic score + threshold -> fallback fast
 ```
 
 `hard_rules` are reserved for high-risk escalation signals such as security,
@@ -60,6 +60,11 @@ secret leakage, production incidents, rollbacks, or data corruption. Ambiguous
 engineering words such as `PR`, `debug`, deployment, indexing, exceptions, and
 errors are handled by semantic examples and thresholds by default, so agent
 context accumulation does not permanently pin a conversation to `strong`.
+
+OpenAI-compatible requests with `tools` / legacy `functions`, tool-call history,
+`tool_choice`, or long multi-turn context are escalated to `strong` with
+`policy_id=agent_signal` by default. This policy uses request structure only; it
+does not depend on local framework names such as OpenCode, Hermes, or Retinue.
 
 ## Quick Start
 

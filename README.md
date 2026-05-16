@@ -60,12 +60,16 @@ IntentMux 的差异化不是“再造一个复杂 router”，而是轻量、本
 默认路由方法借鉴 strong/weak 两档 LLM router 和 Semantic Router 的成熟做法：
 
 ```text
-explicit override -> high-precision hard escalation -> semantic score + threshold -> fallback fast
+explicit override -> high-precision hard escalation -> agent structure signal -> semantic score + threshold -> fallback fast
 ```
 
 `hard_rules` 只用于安全、密钥泄露、线上事故、数据损坏等高风险强制升级场景。
 `PR`、`debug`、`部署`、`索引`、`异常`、`报错` 等容易被 agent 累积上下文污染的普通工程词，
 默认交给语义样本、相似度分数和阈值判断，避免后续轻量请求长期粘在 `strong`。
+
+OpenAI-compatible 请求如果带有 `tools` / legacy `functions`、工具调用历史、
+`tool_choice`，或达到长上下文多轮阈值，默认会作为 `agent_signal` 升级到 `strong`。
+这条策略只使用请求结构，不依赖 OpenCode、Hermes、Retinue 等本机框架名称。
 
 ## 快速运行
 

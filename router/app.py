@@ -124,7 +124,8 @@ def create_app(
         payload = await parse_json_object(request)
         if isinstance(payload, JSONResponse):
             return payload
-        decision = await router.decide(payload)
+        format_signals = request_format_signals(payload)
+        decision = await router.decide(payload, format_signals=format_signals)
         return {
             "source_model": decision.source_model,
             "route_id": decision.route_id,
@@ -151,7 +152,7 @@ def create_app(
         request_id = request_identity.value
         request_headers["x-request-id"] = request_id
         decision_started_ms = now_ms()
-        decision = await router.decide(payload)
+        decision = await router.decide(payload, format_signals=format_signals)
         decision_ms = now_ms() - decision_started_ms
         forwarded_payload = sanitize_forwarded_payload(payload, decision.target_model)
         stream = forwarded_payload.get("stream") is True

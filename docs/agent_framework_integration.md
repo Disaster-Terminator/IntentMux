@@ -29,7 +29,7 @@ the stronger tier:
 route ids are product-level ids such as `fast` and `strong`, not deployment model
 group names such as `cheap-router` or `pro-router`.
 
-## Request Format Signals
+## Agent Structure Signals
 
 IntentMux records safe structural signals from OpenAI-compatible requests in
 route audit logs. These signals include message counts, approximate input
@@ -37,10 +37,16 @@ character count, whether `tools` / legacy `functions` are present, whether
 there is tool-call history, whether `response_format` is set, and whether the
 request contains multimodal content.
 
-These fields are audit evidence, not framework-specific adapters. They do not
-store prompt text, tool schemas, tool outputs, file contents, or framework
-names. Use them to decide whether a future policy should route tool-heavy or
-long-context workloads to `strong` by default.
+The router also consumes the strongest generic agent signals before semantic
+embedding fallback. Requests with `tools`, legacy `functions`, tool-call
+history, `tool_choice`, or long multi-turn context are routed to `strong` with
+`policy_id=agent_signal` by default. This is deliberately structural: it does
+not hardcode OpenCode, Hermes, Retinue, or any other local framework name.
+
+These fields do not store prompt text, tool schemas, tool outputs, file
+contents, or framework names in the route audit log. Raw prompt review logs, if
+enabled for local debugging, should stay in a private runtime volume and should
+not be committed.
 
 ## When To Force `strong`
 
@@ -78,5 +84,7 @@ Before making an agent framework use `semantic-router` by default:
    `request_id`.
 4. Check `format_signals` for `tools_present`, `tool_history`, `message_count`,
    and `approx_input_chars`.
-5. If agent prompts are mostly `low_confidence`, configure the framework to send
-   `metadata.route_id=strong` for that agent class.
+5. If agent prompts are still mostly `low_confidence`, check whether the client
+   strips `tools`, tool history, or `tool_choice`; then either preserve those
+   request fields or configure the framework to send `metadata.route_id=strong`
+   for that agent class.

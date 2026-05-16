@@ -103,9 +103,10 @@ signals:
 ```
 
 `format_signals` are derived from OpenAI-compatible request structure, not from
-private prompt text. They are audit evidence for future routing-policy changes;
-do not treat them as automatic route decisions until production logs show a
-stable pattern.
+private prompt text. Strong generic agent signals such as `tools`,
+`tool_history`, `tool_choice`, and long multi-turn context are now active route
+policy inputs through `policy_id=agent_signal`. Treat weaker or ambiguous
+patterns as review candidates until production logs show a stable pattern.
 
 ## Promoting Samples
 

@@ -152,6 +152,220 @@ async def test_low_confidence_embedding_falls_back_to_default_route():
 
 
 @pytest.mark.asyncio
+async def test_agent_tool_schema_routes_to_strong_before_embedding():
+    router = Router(settings(), FakeEmbeddingClient({}, fail=True))
+
+    decision = await router.decide(
+        {
+            "model": "smart-router",
+            "messages": [{"role": "user", "content": "翻译这段工具说明"}],
+        },
+        format_signals={
+            "tools_present": True,
+            "tool_count": 12,
+            "tool_choice_present": True,
+            "tool_history": False,
+            "approx_input_chars": 4_000,
+            "message_count": 2,
+        },
+    )
+
+    assert decision.route_id == "strong"
+    assert decision.target_model == "pro-router"
+    assert decision.policy_id == "agent_signal"
+    assert decision.reason == "agent_signal:tools_present"
+
+
+@pytest.mark.asyncio
+async def test_agent_tool_history_routes_to_strong_before_embedding():
+    router = Router(settings(), FakeEmbeddingClient({}, fail=True))
+
+    decision = await router.decide(
+        {
+            "model": "smart-router",
+            "messages": [{"role": "user", "content": "继续"}],
+        },
+        format_signals={
+            "tools_present": False,
+            "tool_count": 0,
+            "tool_history": True,
+            "tool_call_count": 3,
+            "approx_input_chars": 2_000,
+            "message_count": 8,
+        },
+    )
+
+    assert decision.route_id == "strong"
+    assert decision.target_model == "pro-router"
+    assert decision.policy_id == "agent_signal"
+    assert decision.reason == "agent_signal:tool_history"
+
+
+@pytest.mark.asyncio
+async def test_legacy_functions_route_to_strong_before_embedding():
+    router = Router(settings(), FakeEmbeddingClient({}, fail=True))
+
+    decision = await router.decide(
+        {
+            "model": "smart-router",
+            "messages": [{"role": "user", "content": "解释这个函数"}],
+        },
+        format_signals={
+            "functions_present": True,
+            "function_count": 1,
+            "tools_present": False,
+            "tool_history": False,
+            "approx_input_chars": 1_000,
+            "message_count": 1,
+        },
+    )
+
+    assert decision.route_id == "strong"
+    assert decision.target_model == "pro-router"
+    assert decision.policy_id == "agent_signal"
+    assert decision.reason == "agent_signal:functions_present"
+
+
+@pytest.mark.asyncio
+async def test_long_multiturn_context_routes_to_strong_before_embedding():
+    router = Router(settings(), FakeEmbeddingClient({}, fail=True))
+
+    decision = await router.decide(
+        {
+            "model": "smart-router",
+            "messages": [{"role": "user", "content": "总结目前状态"}],
+        },
+        format_signals={
+            "tools_present": False,
+            "tool_history": False,
+            "approx_input_chars": 20_000,
+            "message_count": 6,
+        },
+    )
+
+    assert decision.route_id == "strong"
+    assert decision.target_model == "pro-router"
+    assert decision.policy_id == "agent_signal"
+    assert decision.reason == "agent_signal:long_context"
+
+
+@pytest.mark.asyncio
+async def test_empty_agent_signal_fields_do_not_route_to_strong():
+    vectors = {
+        "翻译成中文": [1.0, 0.0, 0.0],
+        "总结这篇文章": [1.0, 0.0, 0.0],
+        "分析这个线上 bug": [0.0, 1.0, 0.0],
+        "代码审查": [0.0, 1.0, 0.0],
+        "天气怎么样": [0.2, 0.2, 0.2],
+    }
+    router = Router(settings(), FakeEmbeddingClient(vectors))
+
+    decision = await router.decide(
+        {
+            "model": "smart-router",
+            "messages": [{"role": "user", "content": "天气怎么样"}],
+        },
+        format_signals={
+            "tools_present": False,
+            "tool_count": 0,
+            "functions_present": False,
+            "function_count": 0,
+            "tool_history": False,
+            "tool_call_count": 0,
+            "tool_choice_present": False,
+            "approx_input_chars": 20_000,
+            "message_count": 1,
+        },
+    )
+
+    assert decision.route_id == "fast"
+    assert decision.target_model == "cheap-router"
+    assert decision.policy_id == "low_confidence"
+
+
+@pytest.mark.asyncio
+async def test_agent_signal_is_disabled_when_route_is_absent():
+    route_settings = RouterSettings(
+        route_model="smart-router",
+        fallback_route_id="fast",
+        threshold=0.5,
+        margin=0.05,
+        routes={
+            "fast": RouteSpec(
+                target_model="cheap-router",
+                description="low risk",
+                utterances=["翻译成中文"],
+            ),
+        },
+    )
+    router = Router(route_settings, FakeEmbeddingClient({}, fail=True))
+
+    decision = await router.decide(
+        {
+            "model": "smart-router",
+            "messages": [{"role": "user", "content": "翻译这段工具说明"}],
+        },
+        format_signals={
+            "tools_present": True,
+            "tool_count": 1,
+            "approx_input_chars": 4_000,
+            "message_count": 2,
+        },
+    )
+
+    assert route_settings.effective_agent_signal_route_id is None
+    assert decision.route_id == "fast"
+    assert decision.target_model == "cheap-router"
+    assert decision.policy_id == "embedding_error"
+
+
+@pytest.mark.asyncio
+async def test_explicit_route_precedence_over_agent_signal():
+    router = Router(settings(), FakeEmbeddingClient({}, fail=True))
+
+    decision = await router.decide(
+        {
+            "model": "smart-router",
+            "metadata": {"route_id": "fast"},
+            "messages": [{"role": "user", "content": "继续"}],
+        },
+        format_signals={
+            "tools_present": True,
+            "tool_history": True,
+            "approx_input_chars": 80_000,
+            "message_count": 20,
+        },
+    )
+
+    assert decision.route_id == "fast"
+    assert decision.target_model == "cheap-router"
+    assert decision.policy_id == "explicit"
+
+
+@pytest.mark.asyncio
+async def test_hard_rule_precedence_over_agent_signal():
+    router = Router(settings(), FakeEmbeddingClient({}, fail=True))
+
+    decision = await router.decide(
+        {
+            "model": "smart-router",
+            "messages": [{"role": "user", "content": "密钥疑似泄漏"}],
+        },
+        format_signals={
+            "tools_present": True,
+            "tool_history": True,
+            "approx_input_chars": 80_000,
+            "message_count": 20,
+        },
+    )
+
+    assert decision.route_id == "strong"
+    assert decision.target_model == "pro-router"
+    assert decision.policy_id == "hard_rule"
+    assert decision.reason == "hard_rule:密钥"
+
+
+@pytest.mark.asyncio
 async def test_embedding_failure_falls_back_to_default_route():
     router = Router(settings(), FakeEmbeddingClient({}, fail=True))
 

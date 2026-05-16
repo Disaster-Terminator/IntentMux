@@ -19,9 +19,15 @@ class FakeRouter:
     def __init__(self, decision: RoutingDecision):
         self.decision = decision
         self.requests: list[dict[str, Any]] = []
+        self.format_signals: list[dict[str, Any] | None] = []
 
-    async def decide(self, request_json: dict[str, Any]) -> RoutingDecision:
+    async def decide(
+        self,
+        request_json: dict[str, Any],
+        format_signals: dict[str, Any] | None = None,
+    ) -> RoutingDecision:
         self.requests.append(request_json)
+        self.format_signals.append(format_signals)
         return self.decision
 
 
@@ -845,8 +851,9 @@ def test_chat_completion_emits_structured_log_without_sensitive_payload(caplog):
 
 def test_chat_completion_audit_log_includes_format_signals_without_content(caplog):
     proxy = FakeProxy()
+    router = FakeRouter(RoutingDecision("cheap-router", "test", rewrite=True, route_id="fast"))
     app = create_app(
-        router=FakeRouter(RoutingDecision("cheap-router", "test", rewrite=True, route_id="fast")),
+        router=router,
         proxy=proxy,
     )
 
@@ -887,6 +894,7 @@ def test_chat_completion_audit_log_includes_format_signals_without_content(caplo
         "tools_present": True,
         "user_message_count": 1,
     }
+    assert router.format_signals == [route_log["format_signals"]]
     assert "private edit request" not in json.dumps(route_log, ensure_ascii=False)
 
 
