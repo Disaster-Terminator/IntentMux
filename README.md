@@ -333,9 +333,20 @@ LiteLLM 入口 E2E：
 uv run python scripts/e2e_litellm_entry.py --litellm-base-url http://127.0.0.1:4000
 ```
 
-`preflight.py` 直连 IntentMux，只在配置了 `ROUTER_INBOUND_API_KEY` 时需要 `--intentmux-api-key`。
-`e2e_litellm_entry.py` 通过 LiteLLM 入口验证完整链路，需要 `LITELLM_MASTER_KEY` 或 `--api-key`。
-两个脚本都不会打印密钥或 prompt。
+本机生产推荐继续使用 LiteLLM sidecar 入口，避免让客户端绕过既有
+LiteLLM provider routing、fallback、key 和 budget 管理；开发和 CI 则要同时覆盖
+direct gateway 与 sidecar 两条路径：
+
+| 场景 | 入口 | 主要验证 |
+| --- | --- | --- |
+| 本机生产 | LiteLLM `:4000`，`model=semantic-router` | `e2e_litellm_entry.py` 和 rollout helper 的 legacy preflight |
+| direct gateway | IntentMux `:4001/v1`，`model=auto|lite|deep` | `preflight.py --model auto`、`/v1/models` 和协议级测试 |
+| sidecar 兼容 | LiteLLM model entry -> IntentMux | `tests/test_e2e_litellm_entry.py` |
+| 协议回归 | IntentMux -> OpenAI-compatible upstream | `tests/test_protocol_gateway.py` |
+
+`preflight.py` 直连 IntentMux，只在配置了 `ROUTER_INBOUND_API_KEY` 时需要
+`--intentmux-api-key`。`e2e_litellm_entry.py` 通过 LiteLLM 入口验证完整链路，
+需要 `LITELLM_MASTER_KEY` 或 `--api-key`。两个脚本都不会打印密钥或 prompt。
 
 ## 日志审计
 

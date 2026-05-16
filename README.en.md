@@ -227,6 +227,17 @@ LiteLLM-entry E2E:
 uv run python scripts/e2e_litellm_entry.py --litellm-base-url http://127.0.0.1:4000
 ```
 
+Local production can keep using the LiteLLM sidecar entry so clients do not
+bypass existing LiteLLM provider routing, fallback, keys, and budgets. Development
+and CI should still cover both direct gateway mode and sidecar mode:
+
+| Scenario | Entry | Primary checks |
+| --- | --- | --- |
+| Local production | LiteLLM `:4000`, `model=semantic-router` | `e2e_litellm_entry.py` and rollout-helper legacy preflight |
+| Direct gateway | IntentMux `:4001/v1`, `model=auto|lite|deep` | `preflight.py --model auto`, `/v1/models`, and protocol tests |
+| Sidecar compatibility | LiteLLM model entry -> IntentMux | `tests/test_e2e_litellm_entry.py` |
+| Protocol regression | IntentMux -> OpenAI-compatible upstream | `tests/test_protocol_gateway.py` |
+
 ## Log Review
 
 ```bash
