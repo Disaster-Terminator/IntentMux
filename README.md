@@ -184,17 +184,22 @@ docker compose -f examples/docker-compose.yml build intentmux
 docker compose -f examples/docker-compose.yml up -d intentmux
 ```
 
-仓库也提供一个人工触发的本机部署封装：
+仓库也提供一个人工触发的 Compose sidecar rollout helper：
 
 ```bash
 INTENTMUX_COMPOSE_FILE=examples/docker-compose.yml \
-  scripts/deploy_local_intentmux.sh
+  scripts/rollout_compose_intentmux.sh --yes
 ```
 
 这个脚本会按顺序执行测试、route contract 校验、preflight、只重建/重启
 `intentmux` service、`/ready`、preflight 复验和 `agent_signal` 决策冒烟。
-生产路径不应写进脚本；把 `INTENTMUX_COMPOSE_FILE`、`INTENTMUX_BASE_URL`、
-`INTENTMUX_RUNTIME_CONFIG` 等变量放到本机未跟踪 wrapper 或 shell 环境中。
+它是通用 Compose helper，不是本仓库内置的生产拓扑；真实重启必须显式传
+`--yes`，`--dry-run` 可用于先审计将要执行的命令。
+
+生产路径不应写进仓库脚本或 README；把 `INTENTMUX_COMPOSE_FILE`、
+`INTENTMUX_BASE_URL`、`INTENTMUX_RUNTIME_CONFIG` 等变量放到本机未跟踪
+wrapper 或 shell 环境中。RayStorm 本机生产 wrapper 属于本机运维资产，
+不应进入 public repo。
 如需同步挂载目录里的 `routes.yaml`，必须显式加 `--sync-runtime-config`；
 默认只部署代码镜像，不覆盖用户 runtime config。
 

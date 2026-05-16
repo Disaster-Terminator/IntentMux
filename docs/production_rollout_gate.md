@@ -125,25 +125,27 @@ For code/image changes:
 3. Recreate only the IntentMux sidecar.
 4. Run the same post-rollout checks.
 
-The repository includes a manually triggered helper for local deployments:
+The repository includes a manually triggered Compose sidecar rollout helper:
 
 ```bash
 INTENTMUX_COMPOSE_FILE=/path/to/docker-compose.yml \
 INTENTMUX_BASE_URL=http://127.0.0.1:4001 \
-scripts/deploy_local_intentmux.sh
+scripts/rollout_compose_intentmux.sh --yes
 ```
 
 Use a local, untracked wrapper or shell environment for machine-specific paths.
 The helper is intentionally not a commit hook or automatic release mechanism.
-It refuses a dirty worktree by default, rebuilds and recreates only the
-configured IntentMux service, and re-runs `/ready`, preflight, and an
-`agent_signal` decision smoke after rollout.
+It refuses a dirty worktree by default, requires `--yes` before any real service
+restart, rebuilds and recreates only the configured IntentMux service, and
+re-runs `/ready`, preflight, and an `agent_signal` decision smoke after rollout.
+RayStorm's local production wrapper is a host-specific operations asset and
+should remain outside this public repository.
 
 Runtime config sync is opt-in:
 
 ```bash
 INTENTMUX_RUNTIME_CONFIG=/path/to/intentmux-home/config/routes.yaml \
-scripts/deploy_local_intentmux.sh --sync-runtime-config
+scripts/rollout_compose_intentmux.sh --yes --sync-runtime-config
 ```
 
 Without `--sync-runtime-config`, the helper does not copy over mounted

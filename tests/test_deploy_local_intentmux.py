@@ -6,7 +6,8 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SCRIPT = REPO_ROOT / "scripts" / "deploy_local_intentmux.sh"
+SCRIPT = REPO_ROOT / "scripts" / "rollout_compose_intentmux.sh"
+LEGACY_SCRIPT = REPO_ROOT / "scripts" / "deploy_local_intentmux.sh"
 
 
 def run_script(*args: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
@@ -105,3 +106,40 @@ def test_deploy_script_sync_runtime_config_is_explicit(tmp_path: Path):
     assert result.returncode == 0, result.stderr
     assert f"cp {runtime_config}" in result.stdout
     assert "config/routes.yaml" in result.stdout
+
+
+def test_rollout_script_requires_yes_for_real_restart(tmp_path: Path):
+    compose_file = tmp_path / "docker-compose.yml"
+    compose_file.write_text("services: {}\n", encoding="utf-8")
+
+    result = run_script(
+        "--allow-dirty",
+        env={"INTENTMUX_COMPOSE_FILE": str(compose_file)},
+    )
+
+    assert result.returncode != 0
+    assert "--yes" in result.stderr
+    assert "refusing to restart" in result.stderr
+
+
+def test_legacy_deploy_script_is_a_compatibility_wrapper(tmp_path: Path):
+    compose_file = tmp_path / "docker-compose.yml"
+    compose_file.write_text("services: {}\n", encoding="utf-8")
+    result = subprocess.run(
+        [
+            "bash",
+            str(LEGACY_SCRIPT),
+            "--dry-run",
+            "--allow-dirty",
+            "--skip-tests",
+        ],
+        cwd=REPO_ROOT,
+        env=os.environ | {"INTENTMUX_COMPOSE_FILE": str(compose_file)},
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "deprecated" in result.stderr.lower()
+    assert "rollout_compose_intentmux.sh" in result.stderr
