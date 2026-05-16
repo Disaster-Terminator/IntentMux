@@ -39,6 +39,16 @@ def settings() -> RouterSettings:
     )
 
 
+SUPERPOWERS_BOILERPLATE = (
+    "<EXTREMELY_IMPORTANT> You have superpowers.\n\n"
+    "## Instruction Priority\n"
+    "Review early, review often. Dispatch a code review subagent when needed.\n"
+    "<system-reminder>\n"
+    "The user indicated that they do not want you to execute yet.\n"
+    "</system-reminder>"
+)
+
+
 @pytest.mark.asyncio
 async def test_non_smart_router_passes_through_without_embedding():
     router = Router(settings(), FakeEmbeddingClient({}))
@@ -73,6 +83,63 @@ async def test_high_precision_hard_rule_routes_to_strong_without_embedding():
     assert decision.policy_id == "hard_rule"
     assert decision.reason == "hard_rule:线上事故"
     assert decision.rewrite is True
+
+
+@pytest.mark.asyncio
+async def test_agent_instruction_boilerplate_prefers_agent_signal_over_hard_rule():
+    route_settings = settings().model_copy(deep=True)
+    route_settings.hard_rules.append(
+        HardRuleSpec(route_id="strong", keywords=["code review"])
+    )
+    router = Router(route_settings, FakeEmbeddingClient({}, fail=True))
+
+    decision = await router.decide(
+        {
+            "model": "smart-router",
+            "messages": [{"role": "user", "content": SUPERPOWERS_BOILERPLATE}],
+        },
+        format_signals={
+            "tools_present": True,
+            "tool_count": 8,
+            "tool_choice_present": True,
+            "tool_history": True,
+            "tool_call_count": 5,
+            "approx_input_chars": 72_000,
+            "message_count": 11,
+        },
+    )
+
+    assert decision.route_id == "strong"
+    assert decision.target_model == "pro-router"
+    assert decision.policy_id == "agent_signal"
+    assert decision.reason == "agent_signal:tools_present"
+
+
+@pytest.mark.asyncio
+async def test_agent_instruction_boilerplate_does_not_trigger_hard_rule_without_signal():
+    route_settings = settings().model_copy(deep=True)
+    route_settings.hard_rules.append(
+        HardRuleSpec(route_id="strong", keywords=["code review"])
+    )
+    vectors = {
+        "翻译成中文": [1.0, 0.0, 0.0],
+        "总结这篇文章": [1.0, 0.0, 0.0],
+        "分析这个线上 bug": [0.0, 1.0, 0.0],
+        "代码审查": [0.0, 1.0, 0.0],
+        SUPERPOWERS_BOILERPLATE: [0.2, 0.2, 0.2],
+    }
+    router = Router(route_settings, FakeEmbeddingClient(vectors))
+
+    decision = await router.decide(
+        {
+            "model": "smart-router",
+            "messages": [{"role": "user", "content": SUPERPOWERS_BOILERPLATE}],
+        },
+    )
+
+    assert decision.route_id == "fast"
+    assert decision.target_model == "cheap-router"
+    assert decision.policy_id == "low_confidence"
 
 
 @pytest.mark.asyncio

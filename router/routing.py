@@ -9,6 +9,16 @@ from router.config import RouterSettings
 from router.embedding import EmbeddingClient
 
 
+AGENT_INSTRUCTION_BOILERPLATE_MARKERS = (
+    "<extremely_important> you have superpowers",
+    "using-superpowers skill content",
+    "<subagent-stop>",
+    "## instruction priority",
+    "<system-reminder>",
+    "absolute constraint",
+)
+
+
 @dataclass(frozen=True)
 class RoutingDecision:
     target_model: str
@@ -55,7 +65,8 @@ class Router:
             )
 
         text = latest_user_text(request_json.get("messages", []))
-        hard_rule = self._matching_hard_rule(text)
+        hard_rule_text = "" if looks_like_agent_instruction_boilerplate(text) else text
+        hard_rule = self._matching_hard_rule(hard_rule_text)
         if hard_rule:
             route_id, keyword = hard_rule
             return RoutingDecision(
@@ -241,6 +252,17 @@ def latest_user_text(messages: Any) -> str:
             return "\n".join(parts)
         return ""
     return ""
+
+
+def looks_like_agent_instruction_boilerplate(text: str) -> bool:
+    if not text:
+        return False
+
+    lowered = text.lower()
+    hits = sum(
+        1 for marker in AGENT_INSTRUCTION_BOILERPLATE_MARKERS if marker in lowered
+    )
+    return hits >= 2
 
 
 def cosine_similarity(left: list[float], right: list[float]) -> float:
