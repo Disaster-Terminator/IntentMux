@@ -43,7 +43,18 @@ class Router:
         format_signals: dict[str, Any] | None = None,
     ) -> RoutingDecision:
         source_model = request_json.get("model")
-        if source_model != self.settings.route_model:
+        requested_route_id = self._requested_route_id(source_model)
+        if requested_route_id is not None:
+            return RoutingDecision(
+                route_id=requested_route_id,
+                target_model=self._target_model_for_route(requested_route_id),
+                source_model=source_model,
+                reason="explicit",
+                policy_id="explicit",
+                rewrite=True,
+            )
+
+        if not self._is_entry_model(source_model):
             return RoutingDecision(
                 target_model=source_model,
                 source_model=source_model,
@@ -149,6 +160,27 @@ class Router:
             second_score=round(second_score, 6),
         )
 
+    def _is_entry_model(self, source_model: Any) -> bool:
+        return isinstance(source_model, str) and (
+            source_model == self.settings.route_model
+            or source_model in self.settings.entry_model_aliases
+        )
+
+    def _requested_route_id(self, source_model: Any) -> str | None:
+        if not isinstance(source_model, str):
+            return None
+        return self._canonical_route_id(source_model)
+
+    def _canonical_route_id(self, route: Any) -> str | None:
+        if not isinstance(route, str):
+            return None
+        if route in self.settings.routes:
+            return route
+        alias_target = self.settings.route_id_aliases.get(route)
+        if alias_target in self.settings.routes:
+            return alias_target
+        return None
+
     def _explicit_route(self, request_json: dict[str, Any]) -> str | None:
         metadata = request_json.get("metadata")
         if not isinstance(metadata, dict):
@@ -161,9 +193,7 @@ class Router:
             or metadata.get("route")
             or metadata.get("target_route")
         )
-        if route in self.settings.routes:
-            return route
-        return None
+        return self._canonical_route_id(route)
 
     def _matching_hard_rule(self, text: str) -> tuple[str, str] | None:
         lowered = text.lower()

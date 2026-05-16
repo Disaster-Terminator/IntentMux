@@ -39,6 +39,28 @@ def settings() -> RouterSettings:
     )
 
 
+def canonical_settings() -> RouterSettings:
+    return RouterSettings(
+        route_model="auto",
+        fallback_route_id="lite",
+        threshold=0.5,
+        margin=0.05,
+        routes={
+            "lite": RouteSpec(
+                target_model="local-lite-model",
+                description="low risk",
+                utterances=["翻译成中文", "总结这篇文章"],
+            ),
+            "deep": RouteSpec(
+                target_model="local-deep-model",
+                description="high risk",
+                utterances=["分析这个线上 bug", "代码审查"],
+            ),
+        },
+        hard_rules=[{"route_id": "deep", "keywords": ["线上事故", "死锁", "密钥"]}],
+    )
+
+
 SUPERPOWERS_BOILERPLATE = (
     "<EXTREMELY_IMPORTANT> You have superpowers.\n\n"
     "## Instruction Priority\n"
@@ -65,6 +87,96 @@ async def test_non_smart_router_passes_through_without_embedding():
     assert decision.policy_id == "passthrough"
     assert decision.reason == "passthrough"
     assert decision.rewrite is False
+
+
+@pytest.mark.asyncio
+async def test_auto_entry_model_uses_normal_routing():
+    route_settings = canonical_settings()
+    vectors = {
+        "翻译成中文": [1.0, 0.0, 0.0],
+        "总结这篇文章": [1.0, 0.0, 0.0],
+        "分析这个线上 bug": [0.0, 1.0, 0.0],
+        "代码审查": [0.0, 1.0, 0.0],
+        "把这句话翻译成英文": [1.0, 0.0, 0.0],
+    }
+    router = Router(route_settings, FakeEmbeddingClient(vectors))
+
+    decision = await router.decide(
+        {"model": "auto", "messages": [{"role": "user", "content": "把这句话翻译成英文"}]}
+    )
+
+    assert decision.route_id == "lite"
+    assert decision.target_model == "local-lite-model"
+    assert decision.policy_id == "embedding"
+
+
+@pytest.mark.asyncio
+async def test_legacy_semantic_router_entry_model_alias_uses_normal_routing():
+    vectors = {
+        "翻译成中文": [1.0, 0.0, 0.0],
+        "总结这篇文章": [1.0, 0.0, 0.0],
+        "分析这个线上 bug": [0.0, 1.0, 0.0],
+        "代码审查": [0.0, 1.0, 0.0],
+        "代码审查这个变更": [0.0, 1.0, 0.0],
+    }
+    router = Router(canonical_settings(), FakeEmbeddingClient(vectors))
+
+    decision = await router.decide(
+        {
+            "model": "semantic-router",
+            "messages": [{"role": "user", "content": "代码审查这个变更"}],
+        }
+    )
+
+    assert decision.route_id == "deep"
+    assert decision.target_model == "local-deep-model"
+    assert decision.policy_id == "embedding"
+
+
+@pytest.mark.asyncio
+async def test_lite_and_deep_model_names_are_explicit_route_overrides():
+    router = Router(canonical_settings(), FakeEmbeddingClient({}, fail=True))
+
+    lite_decision = await router.decide(
+        {"model": "lite", "messages": [{"role": "user", "content": "密钥疑似泄漏"}]}
+    )
+    deep_decision = await router.decide(
+        {"model": "deep", "messages": [{"role": "user", "content": "你好"}]}
+    )
+
+    assert lite_decision.route_id == "lite"
+    assert lite_decision.target_model == "local-lite-model"
+    assert lite_decision.policy_id == "explicit"
+    assert deep_decision.route_id == "deep"
+    assert deep_decision.target_model == "local-deep-model"
+    assert deep_decision.policy_id == "explicit"
+
+
+@pytest.mark.asyncio
+async def test_metadata_route_id_accepts_canonical_ids_and_legacy_aliases():
+    router = Router(canonical_settings(), FakeEmbeddingClient({}, fail=True))
+
+    canonical_decision = await router.decide(
+        {
+            "model": "auto",
+            "metadata": {"route_id": "deep"},
+            "messages": [{"role": "user", "content": "你好"}],
+        }
+    )
+    legacy_decision = await router.decide(
+        {
+            "model": "auto",
+            "metadata": {"route_id": "fast"},
+            "messages": [{"role": "user", "content": "密钥疑似泄漏"}],
+        }
+    )
+
+    assert canonical_decision.route_id == "deep"
+    assert canonical_decision.target_model == "local-deep-model"
+    assert canonical_decision.policy_id == "explicit"
+    assert legacy_decision.route_id == "lite"
+    assert legacy_decision.target_model == "local-lite-model"
+    assert legacy_decision.policy_id == "explicit"
 
 
 @pytest.mark.asyncio
