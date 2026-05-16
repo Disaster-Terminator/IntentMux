@@ -99,7 +99,7 @@ IntentMux 的差异化不是“再造一个复杂 router”，而是轻量、本
 默认路由方法借鉴 strong/weak 两档 LLM router 和 Semantic Router 的成熟做法：
 
 ```text
-explicit override -> high-precision hard escalation -> agent structure signal -> semantic score + threshold -> fallback lite
+explicit override -> high-precision hard escalation -> semantic score + threshold -> fallback lite
 ```
 
 `hard_rules` 只用于安全、密钥泄露、线上事故、数据损坏等高风险强制升级场景。
@@ -107,8 +107,9 @@ explicit override -> high-precision hard escalation -> agent structure signal ->
 默认交给语义样本、相似度分数和阈值判断，避免后续轻量请求长期粘在 `deep`。
 
 OpenAI-compatible 请求如果带有 `tools` / legacy `functions`、工具调用历史、
-`tool_choice`，或达到长上下文多轮阈值，默认会作为 `agent_signal` 升级到 `deep`。
-这条策略只使用请求结构，不依赖 OpenCode、Hermes、Retinue 等本机框架名称。
+`tool_choice`，或达到长上下文多轮阈值，IntentMux 只把这些结构信息写入
+`format_signals` 供日志审计和候选复核使用。请求结构本身不会直接升级到
+`deep`；是否升级仍由显式 route、高精度 hard rule、语义样本和阈值共同决定。
 
 ## 快速运行
 
@@ -231,7 +232,7 @@ INTENTMUX_COMPOSE_FILE=examples/docker-compose.yml \
 ```
 
 这个脚本会按顺序执行测试、route contract 校验、preflight、只重建/重启
-`intentmux` service、`/ready`、preflight 复验和 `agent_signal` 决策冒烟。
+`intentmux` service、`/ready`、preflight 复验和 cost-first 决策冒烟。
 它是通用 Compose helper，不是本仓库内置的生产拓扑；真实重启必须显式传
 `--yes`，`--dry-run` 可用于先审计将要执行的命令。
 

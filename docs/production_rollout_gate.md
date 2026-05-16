@@ -137,7 +137,7 @@ Use a local, untracked wrapper or shell environment for machine-specific paths.
 The helper is intentionally not a commit hook or automatic release mechanism.
 It refuses a dirty worktree by default, requires `--yes` before any real service
 restart, rebuilds and recreates only the configured IntentMux service, and
-re-runs `/ready`, preflight, and an `agent_signal` decision smoke after rollout.
+re-runs `/ready`, preflight, and a cost-first decision smoke after rollout.
 RayStorm's local production wrapper is a host-specific operations asset and
 should remain outside this public repository.
 
@@ -146,7 +146,7 @@ product also supports direct OpenAI-compatible gateway use. The rollout helper
 therefore checks both contracts: before rebuilding it probes the legacy
 `semantic-router` sidecar entry against the existing container, and after
 recreating IntentMux it probes the canonical `auto` direct entry plus the
-agent-signal decision endpoint. This keeps the local production topology stable
+cost-first decision endpoint. This keeps the local production topology stable
 while forcing development changes to preserve the broader gateway contract.
 
 Runtime config sync is opt-in:

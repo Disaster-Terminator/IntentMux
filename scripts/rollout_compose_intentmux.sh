@@ -208,9 +208,9 @@ wait_for_ready
 wait_for_container_healthy
 run "${canonical_preflight_cmd[@]}"
 
-agent_signal_payload='{"model":"auto","messages":[{"role":"user","content":"agent signal smoke"}],"tools":[{"type":"function","function":{"name":"read_file","description":"read a file","parameters":{"type":"object","properties":{}}}}],"tool_choice":"auto"}'
-agent_signal_cmd=(uv run python -c 'import json, sys, urllib.request; url=sys.argv[1]+"/v1/semantic-router/decision"; payload=sys.argv[2].encode(); req=urllib.request.Request(url,data=payload,headers={"Content-Type":"application/json"}); data=json.loads(urllib.request.urlopen(req,timeout=30).read()); print(json.dumps(data,ensure_ascii=False)); assert data.get("policy_id")=="agent_signal"; assert data.get("route_id") in {"deep","strong"}' "$base_url" "$agent_signal_payload")
-run "${agent_signal_cmd[@]}"
+cost_first_payload='{"model":"auto","messages":[{"role":"user","content":"summarize this tool schema"}],"tools":[{"type":"function","function":{"name":"read_file","description":"read a file","parameters":{"type":"object","properties":{}}}}],"tool_choice":"auto"}'
+cost_first_cmd=(uv run python -c 'import json, sys, urllib.request; url=sys.argv[1]+"/v1/semantic-router/decision"; payload=sys.argv[2].encode(); req=urllib.request.Request(url,data=payload,headers={"Content-Type":"application/json"}); data=json.loads(urllib.request.urlopen(req,timeout=30).read()); print(json.dumps(data,ensure_ascii=False)); assert data.get("policy_id")!="agent_signal"; assert data.get("route_id") in {"lite","fast"}' "$base_url" "$cost_first_payload")
+run "${cost_first_cmd[@]}"
 
 if ((dry_run)); then
   log "dry run completed for commit $current_commit"

@@ -103,10 +103,11 @@ signals:
 ```
 
 `format_signals` are derived from OpenAI-compatible request structure, not from
-private prompt text. Strong generic agent signals such as `tools`,
-`tool_history`, `tool_choice`, and long multi-turn context are now active route
-policy inputs through `policy_id=agent_signal`. Treat weaker or ambiguous
-patterns as review candidates until production logs show a stable pattern.
+private prompt text. Generic agent-like structure such as `tools`,
+`tool_history`, `tool_choice`, and long multi-turn context is audit evidence,
+not a hard route decision. Treat these records as review candidates when they
+cluster around `low_confidence`, high latency, or unexpected `deep` call-rate
+changes, but do not promote request structure alone into a stronger-tier route.
 
 ## Promoting Samples
 

@@ -238,7 +238,7 @@ async def test_high_precision_hard_rule_routes_to_strong_without_embedding():
 
 
 @pytest.mark.asyncio
-async def test_agent_instruction_boilerplate_prefers_agent_signal_over_hard_rule():
+async def test_agent_instruction_boilerplate_uses_cost_first_fallback():
     route_settings = settings().model_copy(deep=True)
     route_settings.hard_rules.append(
         HardRuleSpec(route_id="strong", keywords=["code review"])
@@ -261,10 +261,10 @@ async def test_agent_instruction_boilerplate_prefers_agent_signal_over_hard_rule
         },
     )
 
-    assert decision.route_id == "strong"
-    assert decision.target_model == "deep-upstream"
-    assert decision.policy_id == "agent_signal"
-    assert decision.reason == "agent_signal:tools_present"
+    assert decision.route_id == "fast"
+    assert decision.target_model == "lite-upstream"
+    assert decision.policy_id == "embedding_error"
+    assert decision.reason == "embedding_error"
 
 
 @pytest.mark.asyncio
@@ -371,7 +371,7 @@ async def test_low_confidence_embedding_falls_back_to_default_route():
 
 
 @pytest.mark.asyncio
-async def test_agent_tool_schema_routes_to_strong_before_embedding():
+async def test_agent_tool_schema_does_not_override_cost_first_routing():
     router = Router(settings(), FakeEmbeddingClient({}, fail=True))
 
     decision = await router.decide(
@@ -389,14 +389,14 @@ async def test_agent_tool_schema_routes_to_strong_before_embedding():
         },
     )
 
-    assert decision.route_id == "strong"
-    assert decision.target_model == "deep-upstream"
-    assert decision.policy_id == "agent_signal"
-    assert decision.reason == "agent_signal:tools_present"
+    assert decision.route_id == "fast"
+    assert decision.target_model == "lite-upstream"
+    assert decision.policy_id == "embedding_error"
+    assert decision.reason == "embedding_error"
 
 
 @pytest.mark.asyncio
-async def test_agent_tool_history_routes_to_strong_before_embedding():
+async def test_agent_tool_history_does_not_override_cost_first_routing():
     router = Router(settings(), FakeEmbeddingClient({}, fail=True))
 
     decision = await router.decide(
@@ -414,14 +414,14 @@ async def test_agent_tool_history_routes_to_strong_before_embedding():
         },
     )
 
-    assert decision.route_id == "strong"
-    assert decision.target_model == "deep-upstream"
-    assert decision.policy_id == "agent_signal"
-    assert decision.reason == "agent_signal:tool_history"
+    assert decision.route_id == "fast"
+    assert decision.target_model == "lite-upstream"
+    assert decision.policy_id == "embedding_error"
+    assert decision.reason == "embedding_error"
 
 
 @pytest.mark.asyncio
-async def test_legacy_functions_route_to_strong_before_embedding():
+async def test_legacy_functions_do_not_override_cost_first_routing():
     router = Router(settings(), FakeEmbeddingClient({}, fail=True))
 
     decision = await router.decide(
@@ -439,14 +439,14 @@ async def test_legacy_functions_route_to_strong_before_embedding():
         },
     )
 
-    assert decision.route_id == "strong"
-    assert decision.target_model == "deep-upstream"
-    assert decision.policy_id == "agent_signal"
-    assert decision.reason == "agent_signal:functions_present"
+    assert decision.route_id == "fast"
+    assert decision.target_model == "lite-upstream"
+    assert decision.policy_id == "embedding_error"
+    assert decision.reason == "embedding_error"
 
 
 @pytest.mark.asyncio
-async def test_long_multiturn_context_routes_to_strong_before_embedding():
+async def test_long_multiturn_context_does_not_override_cost_first_routing():
     router = Router(settings(), FakeEmbeddingClient({}, fail=True))
 
     decision = await router.decide(
@@ -462,10 +462,10 @@ async def test_long_multiturn_context_routes_to_strong_before_embedding():
         },
     )
 
-    assert decision.route_id == "strong"
-    assert decision.target_model == "deep-upstream"
-    assert decision.policy_id == "agent_signal"
-    assert decision.reason == "agent_signal:long_context"
+    assert decision.route_id == "fast"
+    assert decision.target_model == "lite-upstream"
+    assert decision.policy_id == "embedding_error"
+    assert decision.reason == "embedding_error"
 
 
 @pytest.mark.asyncio

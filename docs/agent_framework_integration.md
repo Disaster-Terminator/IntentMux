@@ -64,11 +64,12 @@ character count, whether `tools` / legacy `functions` are present, whether
 there is tool-call history, whether `response_format` is set, and whether the
 request contains multimodal content.
 
-The router also consumes the strongest generic agent signals before semantic
-embedding fallback. Requests with `tools`, legacy `functions`, tool-call
-history, `tool_choice`, or long multi-turn context are routed to `deep` with
-`policy_id=agent_signal` by default. This is deliberately structural: it does
-not hardcode OpenCode, Hermes, Retinue, or any other local framework name.
+The router records generic agent-like structure before semantic embedding, but
+these fields are audit signals rather than hard route decisions. Requests with
+`tools`, legacy `functions`, tool-call history, `tool_choice`, or long
+multi-turn context are not routed to `deep` solely because of that structure.
+IntentMux stays cost-first: explicit route overrides, high-precision hard
+rules, semantic similarity, thresholds, and fallback decide the final tier.
 
 These fields do not store prompt text, tool schemas, tool outputs, file
 contents, or framework names in the route audit log. Raw prompt review logs, if
@@ -79,28 +80,27 @@ not be committed.
 
 Force `deep` for:
 
-- coding agents that can edit files;
-- agents that can run shell commands;
-- code review and patch review;
 - production incident analysis;
 - security, credential, permission, or data-loss triage;
-- long-running tool-call loops where a failed step is expensive to unwind.
+- code review, patch review, or shell execution only when the request itself
+  carries high-risk or high-complexity evidence.
 
 Let semantic routing decide for:
 
 - normal chat;
 - translation, explanation, rewriting, and summarization;
 - low-risk one-shot utility prompts;
-- calls where falling back to `lite` is an intentional cost-saving behavior.
+- low-risk tool calls and read-only agent reviews where falling back to `lite`
+  is an intentional cost-saving behavior.
 
 ## Why This Matters
 
 IntentMux intentionally falls back to `fallback_route_id` when embedding scores
 are low-confidence or embeddings are degraded. That is the right default for a
-lightweight local gateway, but agent workloads often prefer predictable quality
-over cost savings. Explicit model entries or route ids give agent frameworks a
-deterministic escape hatch without changing LiteLLM provider routing, provider
-keys, budgets, or fallback.
+lightweight local gateway, including deployments where most traffic comes from
+agent frameworks. Agent callers that know a request needs the stronger tier can
+still use explicit model entries or route ids without changing LiteLLM provider
+routing, provider keys, budgets, or fallback.
 
 ## Validation
 
@@ -112,7 +112,7 @@ Before making an agent framework use `auto` or legacy `semantic-router` by defau
    `request_id`.
 4. Check `format_signals` for `tools_present`, `tool_history`, `message_count`,
    and `approx_input_chars`.
-5. If agent prompts are still mostly `low_confidence`, check whether the client
-   strips `tools`, tool history, or `tool_choice`; then either preserve those
-   request fields or configure the framework to send `model=deep` or
-   `metadata.route_id=deep` for that agent class.
+5. If agent prompts are mostly `low_confidence`, review representative prompts
+   before changing routes. Preserve `format_signals` for audit, but configure
+   the framework to send `model=deep` or `metadata.route_id=deep` only for
+   agent classes whose requests consistently need the stronger tier.

@@ -47,6 +47,8 @@ def test_deploy_script_dry_run_is_parameterized(tmp_path: Path):
     assert "wait for container intentmux to become healthy" in result.stdout
     assert "scripts/preflight.py --router-base-url http://127.0.0.1:4999" in result.stdout
     assert "uv run python -c" in result.stdout
+    assert "summarize\\ this\\ tool\\ schema" in result.stdout
+    assert "policy_id" in result.stdout
     assert "agent_signal" in result.stdout
 
 
