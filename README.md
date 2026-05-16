@@ -184,6 +184,20 @@ docker compose -f examples/docker-compose.yml build intentmux
 docker compose -f examples/docker-compose.yml up -d intentmux
 ```
 
+仓库也提供一个人工触发的本机部署封装：
+
+```bash
+INTENTMUX_COMPOSE_FILE=examples/docker-compose.yml \
+  scripts/deploy_local_intentmux.sh
+```
+
+这个脚本会按顺序执行测试、route contract 校验、preflight、只重建/重启
+`intentmux` service、`/ready`、preflight 复验和 `agent_signal` 决策冒烟。
+生产路径不应写进脚本；把 `INTENTMUX_COMPOSE_FILE`、`INTENTMUX_BASE_URL`、
+`INTENTMUX_RUNTIME_CONFIG` 等变量放到本机未跟踪 wrapper 或 shell 环境中。
+如需同步挂载目录里的 `routes.yaml`，必须显式加 `--sync-runtime-config`；
+默认只部署代码镜像，不覆盖用户 runtime config。
+
 IntentMux 暂未实现热重载，生产变更按“配置重启、代码重建”的规则处理。
 
 仓库里的 `examples/intentmux-home/` 是可复制的运行时目录模板。`/data` 不应放 LiteLLM 的 `.env`、provider token 或数据库。只有在明确启用 `ROUTER_PROMPT_LOG_MODE=raw_local` 时，`/data/logs/prompts` 才会保存 prompt review log；这个目录只适合本地私有审查，不应提交、上传或贴到 issue。

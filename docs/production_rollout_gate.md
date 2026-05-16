@@ -125,6 +125,30 @@ For code/image changes:
 3. Recreate only the IntentMux sidecar.
 4. Run the same post-rollout checks.
 
+The repository includes a manually triggered helper for local deployments:
+
+```bash
+INTENTMUX_COMPOSE_FILE=/path/to/docker-compose.yml \
+INTENTMUX_BASE_URL=http://127.0.0.1:4001 \
+scripts/deploy_local_intentmux.sh
+```
+
+Use a local, untracked wrapper or shell environment for machine-specific paths.
+The helper is intentionally not a commit hook or automatic release mechanism.
+It refuses a dirty worktree by default, rebuilds and recreates only the
+configured IntentMux service, and re-runs `/ready`, preflight, and an
+`agent_signal` decision smoke after rollout.
+
+Runtime config sync is opt-in:
+
+```bash
+INTENTMUX_RUNTIME_CONFIG=/path/to/intentmux-home/config/routes.yaml \
+scripts/deploy_local_intentmux.sh --sync-runtime-config
+```
+
+Without `--sync-runtime-config`, the helper does not copy over mounted
+`routes.yaml` or other deployment assets.
+
 ## Rollback
 
 Rollback keeps LiteLLM untouched whenever possible:
