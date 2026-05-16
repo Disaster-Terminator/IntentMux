@@ -1,15 +1,15 @@
 cases:
   - text: 帮我把这段话润色一下
-    expect: fast
+    expect: lite
   - text: 什么是 Java 序列化
-    expect: fast
+    expect: lite
   - text: 翻译成中文
-    expect: fast
+    expect: lite
   - text: 帮我分析这个 PR 有没有竞态条件
-    expect: strong
+    expect: deep
   - text: 这个 NPE 为什么只在线上偶发
-    expect: strong
+    expect: deep
   - text: 这个 SQL 查询为什么越来越慢
-    expect: strong
+    expect: deep
   - text: 这个生产改动方案会不会引入数据丢失、权限绕过或回滚风险
-    expect: strong
+    expect: deep

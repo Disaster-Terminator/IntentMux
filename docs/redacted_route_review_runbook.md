@@ -9,7 +9,7 @@ Create a JSONL file from review findings where every line is a **synthetic or re
 - MUST set `redacted: true`
 - MUST include non-empty `text`
 - MUST include non-empty `expect` as a **route_id** (for example `fast`, `strong`)
-- MUST NOT use `target_model` names in `expect` (for example `pro-router` is invalid)
+- MUST NOT use `target_model` names in `expect` (for example `deep-upstream` is invalid)
 
 Optional fields:
 

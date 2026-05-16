@@ -81,7 +81,7 @@ signals:
   "request_id": "req-...",
   "timestamp": "2026-05-13T00:00:00Z",
   "route_id": "fast",
-  "target_model": "cheap-router",
+  "target_model": "lite-upstream",
   "reason": "low_confidence",
   "score": 0.53,
   "second_score": 0.51,
@@ -130,8 +130,8 @@ uv run python scripts/import_review_samples.py \
 ```
 
 Every imported sample must use a product `route_id` such as `fast` or `strong`
-as `expect`; deployment-side target model names such as `cheap-router` and
-`pro-router` must not be used as eval labels.
+as `expect`; deployment-side target model names such as `lite-upstream` and
+`deep-upstream` must not be used as eval labels.
 
 Local production review JSONL files are deployment artifacts and are ignored by
 git. Keep only curated public examples such as

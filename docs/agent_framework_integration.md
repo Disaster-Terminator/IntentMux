@@ -7,17 +7,39 @@ drop.
 
 ## Recommended Entry Policy
 
-Use `model=semantic-router` for ordinary mixed traffic when fallback to `fast`
-is acceptable.
+Use `model=auto` for ordinary mixed traffic when fallback to the configured
+fallback route, normally `lite`, is acceptable. Existing LiteLLM sidecar clients
+may keep using the legacy `model=semantic-router` entry; it has the same
+automatic-routing semantics but is no longer the canonical advertised model.
 
-Use an explicit route override when the caller already knows the workload needs
-the stronger tier:
+| Requested model | Meaning | Agent behavior |
+| --- | --- | --- |
+| `auto` | Preferred routed entry | Let IntentMux decide from request structure, hard rules, and semantic score |
+| `semantic-router` | Legacy LiteLLM sidecar entry | Same as `auto`; keep only for compatibility |
+| `lite` | Explicit lightweight tier | Use for known low-risk utility calls |
+| `deep` | Explicit high-capability tier | Use for code, tools, review, incidents, and security-sensitive work |
+
+Use an explicit model entry when the caller already knows the workload needs a
+specific tier:
 
 ```json
 {
-  "model": "semantic-router",
+  "model": "deep",
+  "messages": [
+    {"role": "user", "content": "Review this patch and run the required checks."}
+  ]
+}
+```
+
+`model=lite` and `model=deep` are explicit route overrides. `metadata.route_id`
+remains supported for clients that keep sending `model=auto` or legacy
+`model=semantic-router`:
+
+```json
+{
+  "model": "auto",
   "metadata": {
-    "route_id": "strong"
+    "route_id": "deep"
   },
   "messages": [
     {"role": "user", "content": "Review this patch and run the required checks."}
@@ -26,8 +48,13 @@ the stronger tier:
 ```
 
 `metadata.route_id` is checked before hard rules and semantic similarity. Valid
-route ids are product-level ids such as `fast` and `strong`, not deployment model
-group names such as `cheap-router` or `pro-router`.
+route ids are product-level ids such as `lite` and `deep`, not deployment model
+group names such as `your-lite-model` or `your-deep-model`. Legacy `fast` and `strong`
+route ids are aliases for `lite` and `deep`.
+
+`/v1/models` advertises only canonical entries: `auto`, `lite`, and `deep`.
+It does not list `semantic-router`, `fast`, `strong`, or upstream model group
+names.
 
 ## Agent Structure Signals
 
@@ -39,7 +66,7 @@ request contains multimodal content.
 
 The router also consumes the strongest generic agent signals before semantic
 embedding fallback. Requests with `tools`, legacy `functions`, tool-call
-history, `tool_choice`, or long multi-turn context are routed to `strong` with
+history, `tool_choice`, or long multi-turn context are routed to `deep` with
 `policy_id=agent_signal` by default. This is deliberately structural: it does
 not hardcode OpenCode, Hermes, Retinue, or any other local framework name.
 
@@ -48,9 +75,9 @@ contents, or framework names in the route audit log. Raw prompt review logs, if
 enabled for local debugging, should stay in a private runtime volume and should
 not be committed.
 
-## When To Force `strong`
+## When To Force `deep`
 
-Force `strong` for:
+Force `deep` for:
 
 - coding agents that can edit files;
 - agents that can run shell commands;
@@ -64,19 +91,20 @@ Let semantic routing decide for:
 - normal chat;
 - translation, explanation, rewriting, and summarization;
 - low-risk one-shot utility prompts;
-- calls where falling back to `fast` is an intentional cost-saving behavior.
+- calls where falling back to `lite` is an intentional cost-saving behavior.
 
 ## Why This Matters
 
 IntentMux intentionally falls back to `fallback_route_id` when embedding scores
 are low-confidence or embeddings are degraded. That is the right default for a
-lightweight local sidecar, but agent workloads often prefer predictable quality
-over cost savings. Explicit route ids give agent frameworks a deterministic
-escape hatch without changing LiteLLM provider routing.
+lightweight local gateway, but agent workloads often prefer predictable quality
+over cost savings. Explicit model entries or route ids give agent frameworks a
+deterministic escape hatch without changing LiteLLM provider routing, provider
+keys, budgets, or fallback.
 
 ## Validation
 
-Before making an agent framework use `semantic-router` by default:
+Before making an agent framework use `auto` or legacy `semantic-router` by default:
 
 1. Run the LiteLLM-entry E2E script.
 2. Run a representative tool-call or code-review prompt.
@@ -86,5 +114,5 @@ Before making an agent framework use `semantic-router` by default:
    and `approx_input_chars`.
 5. If agent prompts are still mostly `low_confidence`, check whether the client
    strips `tools`, tool history, or `tool_choice`; then either preserve those
-   request fields or configure the framework to send `metadata.route_id=strong`
-   for that agent class.
+   request fields or configure the framework to send `model=deep` or
+   `metadata.route_id=deep` for that agent class.

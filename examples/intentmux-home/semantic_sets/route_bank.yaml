@@ -1,6 +1,6 @@
 version: 1
 routes:
-  fast:
+  lite:
     utterances: []
-  strong:
+  deep:
     utterances: []

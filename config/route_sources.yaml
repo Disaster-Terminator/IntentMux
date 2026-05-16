@@ -10,7 +10,7 @@ sources:
     license: CC BY 4.0
     license_url: https://github.com/alexa/massive/blob/master/LICENSE
     member: 1.0/data/zh-CN.jsonl
-    route: fast
+    route: lite
     text_field: utt
     limit: 80
     mappings:
@@ -31,7 +31,7 @@ sources:
     license: CC BY 4.0
     license_url: https://github.com/alexa/massive/blob/master/LICENSE
     member: 1.0/data/zh-TW.jsonl
-    route: fast
+    route: lite
     text_field: utt
     limit: 40
     mappings:
@@ -52,7 +52,7 @@ sources:
     license: MIT
     license_url: https://github.com/SWE-bench/SWE-bench/blob/main/LICENSE.md
     split: test
-    route: strong
+    route: deep
     text_field: problem_statement
     limit: 80
 
@@ -63,7 +63,7 @@ sources:
     license: CC BY 4.0
     license_url: https://creativecommons.org/licenses/by/4.0/
     split: test
-    route: strong
+    route: deep
     text_field: text
     limit: 40
 
@@ -74,6 +74,6 @@ sources:
     license: MIT
     license_url: https://github.com/openai/human-eval/blob/master/LICENSE
     split: test
-    route: strong
+    route: deep
     text_field: prompt
     limit: 40

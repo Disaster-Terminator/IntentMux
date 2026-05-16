@@ -1,12 +1,12 @@
 # IntentMux
 
-> 轻量、可审计的 LiteLLM 意图分流 sidecar。<br>
-> 按请求意图选择 `route_id`，再映射到你的本地 LiteLLM 模型组。
+> 轻量本地 AI 网关，把 OpenAI 兼容请求按复杂度路由到 `lite` / `deep` 两档模型。<br>
+> 保留 LiteLLM sidecar 兼容部署，但不接管 provider routing、key、budget 或 fallback。
 
 <p align="center">
   <img alt="runtime Python 3.11+" src="https://img.shields.io/badge/runtime-Python%203.11%2B-3776AB">
-  <img alt="entry semantic-router" src="https://img.shields.io/badge/entry-semantic--router-0EA5E9">
-  <img alt="gateway LiteLLM compatible" src="https://img.shields.io/badge/gateway-LiteLLM%20compatible-16A34A">
+  <img alt="entries auto lite deep" src="https://img.shields.io/badge/entries-auto%20%7C%20lite%20%7C%20deep-0EA5E9">
+  <img alt="LiteLLM sidecar compatible" src="https://img.shields.io/badge/LiteLLM-sidecar%20compatible-16A34A">
   <img alt="route logs metadata only" src="https://img.shields.io/badge/route%20logs-metadata%20only-7C3AED">
 </p>
 <p align="center">
@@ -21,12 +21,12 @@
 
 ## 一句话
 
-IntentMux 是一个本地优先的 OpenAI-compatible / LiteLLM-compatible 路由 sidecar：客户端仍然请求原来的 LiteLLM 入口，只把模型名切到 `semantic-router`，IntentMux 根据请求意图选择 `route_id`，再映射到实际部署中的 `target_model`。
+IntentMux 是一个轻量本地 AI 网关，把 OpenAI 兼容请求按复杂度路由到 `lite` / `deep` 两档模型，并保留 LiteLLM sidecar 兼容部署。
 
 <table>
   <tr>
-    <td><strong>意图分流</strong><br>默认在 `fast` / `strong` 两档之间按意图和阈值分流。</td>
-    <td><strong>低侵入接入</strong><br>保留 LiteLLM 作为 provider、fallback、限流和鉴权层。</td>
+    <td><strong>双档路由</strong><br>`auto` 自动分流；`lite` / `deep` 可作为显式模型入口。</td>
+    <td><strong>边界清晰</strong><br>LiteLLM 继续负责 provider routing、fallback、限流、key 和 budget。</td>
   </tr>
   <tr>
     <td><strong>可审计日志</strong><br>route audit 默认只记录元数据；本地私有部署可显式开启 prompt review log。</td>
@@ -36,17 +36,43 @@ IntentMux 是一个本地优先的 OpenAI-compatible / LiteLLM-compatible 路由
 
 ## 项目边界
 
-IntentMux 不是模型提供商，也不是 LiteLLM 的替代品。它只处理进入 sidecar 的兼容入口模型：
+IntentMux 不是模型提供商，也不是 LiteLLM 的替代品。它负责 OpenAI-compatible 网关协议、入口模型语义、路由决策和审计日志；LiteLLM 仍是推荐上游，用于 provider routing、provider fallback、provider credentials、virtual keys、budgets 和 model pools。
 
 ```text
-model=semantic-router -> route_id -> target_model -> LiteLLM model group
+model=auto -> route_id(lite/deep) -> target_model -> OpenAI-compatible upstream
 ```
 
-其他模型名默认透传给 LiteLLM。
+规范入口模型：
 
-默认示例配置使用 `fast`、`strong` 两个产品级 route id，并映射到 LiteLLM 模型组 `cheap-router`、`pro-router`。这些 `target_model` 是部署名，不是产品接口。代码仍支持用户自定义更多 route，但默认产品心智是高/低两档。
+- `auto`：默认自动路由入口。
+- `lite`：显式轻量、低成本、低风险 tier。
+- `deep`：显式深度推理、高能力、高置信 tier。
 
-部署时建议把 IntentMux 作为 LiteLLM 旁路 sidecar 独立管理；不要把 LiteLLM 挂载目录、token、`.env` 或 provider 凭据加入本仓库。
+| Requested model | 含义 | 行为 |
+| --- | --- | --- |
+| `auto` | 推荐自动路由入口 | 执行 IntentMux 路由 |
+| `semantic-router` | 旧 LiteLLM sidecar 入口 | 与 `auto` 等价，兼容保留 |
+| `lite` | 显式轻量 tier | 路由到配置的 `lite.target_model` |
+| `deep` | 显式高能力 tier | 路由到配置的 `deep.target_model` |
+
+兼容入口和别名：
+
+- `semantic-router`：旧 LiteLLM sidecar 入口别名，继续接受，但不作为新默认入口宣传。
+- `fast`：旧 `lite` route alias。
+- `strong`：旧 `deep` route alias。
+
+`/v1/models` 只广告规范入口 `auto`、`lite`、`deep`，不广告 `semantic-router`，也不泄漏本地 LiteLLM model group 名称。`target_model` 是部署侧配置值，不是产品接口。
+
+部署时可以把 IntentMux 作为 LiteLLM 旁路 sidecar 独立管理；不要把 LiteLLM 挂载目录、token、`.env` 或 provider 凭据加入本仓库。
+
+当前兼容范围：
+
+- 支持 `/health`、`/ready`、`/v1/models`、`/v1/chat/completions` 和 `/v1/semantic-router/decision`。
+- 支持 streaming / non-streaming chat completion pass-through。
+- 不声明完整 OpenAI API 兼容，不实现 `/v1/responses`。
+- 不管理 provider pools；provider routing、key、budget、fallback 请交给 LiteLLM 或其他 OpenAI-compatible upstream。
+- IntentMux 入站鉴权、上游鉴权和 embedding 鉴权是三组独立 secret。
+- embedding 降级按路由 fallback 处理；上游传输或状态失败返回受控、脱敏的 gateway error。
 
 ## 适合什么场景
 
@@ -55,20 +81,20 @@ model=semantic-router -> route_id -> target_model -> LiteLLM model group
 - 你希望路由决策可回放、可审计、可用日志继续改进。
 - 你不想引入一个大型调度平台，也不想让客户端大改端点。
 
-IntentMux 的差异化不是“再造一个复杂 router”，而是轻量、本地、快速部署、日志可读。成熟的 provider 路由、fallback、限流和鉴权仍交给 LiteLLM。
+IntentMux 的差异化不是“再造一个复杂 router”，而是轻量、本地、协议兼容、快速部署、日志可读。成熟的 provider 路由、fallback、限流、鉴权、key 和 budget 仍交给 LiteLLM。
 
 默认路由方法借鉴 strong/weak 两档 LLM router 和 Semantic Router 的成熟做法：
 
 ```text
-explicit override -> high-precision hard escalation -> agent structure signal -> semantic score + threshold -> fallback fast
+explicit override -> high-precision hard escalation -> agent structure signal -> semantic score + threshold -> fallback lite
 ```
 
 `hard_rules` 只用于安全、密钥泄露、线上事故、数据损坏等高风险强制升级场景。
 `PR`、`debug`、`部署`、`索引`、`异常`、`报错` 等容易被 agent 累积上下文污染的普通工程词，
-默认交给语义样本、相似度分数和阈值判断，避免后续轻量请求长期粘在 `strong`。
+默认交给语义样本、相似度分数和阈值判断，避免后续轻量请求长期粘在 `deep`。
 
 OpenAI-compatible 请求如果带有 `tools` / legacy `functions`、工具调用历史、
-`tool_choice`，或达到长上下文多轮阈值，默认会作为 `agent_signal` 升级到 `strong`。
+`tool_choice`，或达到长上下文多轮阈值，默认会作为 `agent_signal` 升级到 `deep`。
 这条策略只使用请求结构，不依赖 OpenCode、Hermes、Retinue 等本机框架名称。
 
 ## 快速运行
@@ -212,8 +238,8 @@ IntentMux 暂未实现热重载，生产变更按“配置重启、代码重建�
 生产部署应把运行时目录单独备份和迁移。
 
 其中 `config/routes.yaml` 定义产品级 `route_id` 到 LiteLLM `target_model` 的映射，
-`semantic_sets/route_bank.yaml` 必须使用同一组 `route_id` 作为 key，例如
-`fast`、`strong`，不能使用 `cheap-router`、`pro-router`
+`semantic_sets/route_bank.yaml` 必须使用同一组规范 `route_id` 作为 key，例如
+`lite`、`deep`，不能使用 `your-lite-model`、`your-deep-model`
 这类部署侧 target model 名称作为 key。
 
 仓库提供一个可跟踪的精简示例：[examples/route_bank.sample.yaml](examples/route_bank.sample.yaml)。
@@ -228,9 +254,22 @@ git commit、生成时间、source manifest hash 和每个 source 的原始行�
 `/ready` 的 `components.router.detail` 会暴露 `route_bank_loaded` 和每个 route 的
 utterance 数量，用来快速确认运行时实际加载的路由资产规模。
 
-## LiteLLM 接入方式
+## 入口模型
 
-低侵入接入方式是：客户端继续请求 LiteLLM `:4000`，只把模型名切到 `semantic-router`。
+新默认接入方式是把 IntentMux 作为 OpenAI-compatible `base_url`，客户端请求规范入口模型：
+
+```text
+client -> IntentMux :4001/v1, model=auto|lite|deep
+       -> route_id(lite/deep)
+       -> target_model
+       -> OpenAI-compatible upstream
+```
+
+- `model=auto`：执行正常路由。
+- `model=lite` / `model=deep`：显式指定 route id，跳过语义判断。
+- `/v1/models`：只返回 `auto`、`lite`、`deep`。
+
+LiteLLM sidecar 兼容方式仍然支持：客户端继续请求 LiteLLM `:4000`，把模型名切到旧入口 `semantic-router`。
 
 ```text
 client -> LiteLLM :4000, model=semantic-router
@@ -240,31 +279,31 @@ client -> LiteLLM :4000, model=semantic-router
        -> LiteLLM model group
 ```
 
-在 LiteLLM 中把 `semantic-router` 配置为指向 IntentMux sidecar 的模型入口后，客户端即可通过这个模型名触发意图分流。未命中该入口的模型名会保持透传。
+在 LiteLLM 中把 `semantic-router` 配置为指向 IntentMux sidecar 的模型入口后，客户端即可通过这个旧模型名触发自动路由。`semantic-router` 是兼容 alias，不会出现在 IntentMux `/v1/models` 的推荐列表中。旧 route id `fast` / `strong` 分别按 `lite` / `deep` 语义保留兼容。
 
 ## 配置模型
 
 `config/routes.yaml` 的核心结构：
 
 ```yaml
-route_model: semantic-router
-fallback_route_id: fast
+route_model: auto
+fallback_route_id: lite
 
 routes:
-  fast:
-    target_model: cheap-router
+  lite:
+    target_model: your-lite-model
     description: 低风险、普通问答、解释、翻译、格式转换、轻量总结
     utterances:
       - 帮我解释一下这段概念
 
-  strong:
-    target_model: pro-router
+  deep:
+    target_model: your-deep-model
     description: 代码、debug、架构、agent、多步推理、高风险判断
     utterances:
       - 这个线上 bug 为什么偶发
 ```
 
-运行时校验会阻止递归配置：入口模型本身不能作为 route id 或 target model，`fallback_route_id` 必须存在。
+运行时校验会阻止递归配置：入口模型本身不能作为 route id 或 target model，`fallback_route_id` 必须存在。现有 LiteLLM sidecar 部署可以继续接受 `semantic-router` 作为 `auto` 的兼容入口。
 
 生产容器中应通过 `ROUTER_CONFIG=/data/config/routes.yaml` 指向挂载配置。本地开发未设置 `ROUTER_CONFIG` 时，默认读取仓库内 `config/routes.yaml`。
 
@@ -384,7 +423,7 @@ uv run python scripts/check_route_error_budget.py /data/logs/routes/*.jsonl \
   --max-embedding-error-rate 0
 ```
 
-`embedding_error` 不一定会导致请求失败，它表示 embedding 不可用后按配置降级到 fast 路由；生产巡检应给它独立预算。若要放宽预算，可以用 `--max-embedding-error-rate 0.02` 这类阈值保留告警能力。
+`embedding_error` 不一定会导致请求失败，它表示 embedding 不可用后按配置降级到 fallback route，默认语义是 `lite`；生产巡检应给它独立预算。若要放宽预算，可以用 `--max-embedding-error-rate 0.02` 这类阈值保留告警能力。
 
 日常巡检还可以要求今天的审计日志达到最低样本量，避免“没有真实流量”被误读为健康：
 
@@ -445,7 +484,7 @@ uv run python scripts/diagnose_router_state.py \
 ```bash
 curl http://127.0.0.1:4001/v1/semantic-router/decision \
   -H "Content-Type: application/json" \
-  -d '{"model":"semantic-router","messages":[{"role":"user","content":"这个线上 bug 为什么偶发？"}]}'
+  -d '{"model":"auto","messages":[{"role":"user","content":"这个线上 bug 为什么偶发？"}]}'
 ```
 
 如果启用了 `ROUTER_INBOUND_API_KEY`，加上入站鉴权头：
@@ -454,7 +493,7 @@ curl http://127.0.0.1:4001/v1/semantic-router/decision \
 curl http://127.0.0.1:4001/v1/semantic-router/decision \
   -H "Authorization: Bearer $ROUTER_INBOUND_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"model":"semantic-router","messages":[{"role":"user","content":"这个线上 bug 为什么偶发？"}]}'
+  -d '{"model":"auto","messages":[{"role":"user","content":"这个线上 bug 为什么偶发？"}]}'
 ```
 
 返回内容包含 `route_id`、`target_model`、`policy_id`、`reason`、`rewrite` 和分数。
@@ -500,7 +539,7 @@ uv run python scripts/route_quality_report.py \
 生产变更必须先通过 [docs/production_rollout_gate.md](docs/production_rollout_gate.md)，不要在探索阶段直接重启或重建生产 sidecar。
 任何 route bank、阈值、margin 或 hard rule 变更，都应附带本报告作为审计证据。
 
-Agent 框架接入建议见 [docs/agent_framework_integration.md](docs/agent_framework_integration.md)。代码编辑、工具调用、PR review、生产事故和安全分析等高风险负载建议显式发送 `metadata.route_id=strong`，不要完全依赖低置信 fallback。
+Agent 框架接入建议见 [docs/agent_framework_integration.md](docs/agent_framework_integration.md)。代码编辑、工具调用、PR review、生产事故和安全分析等高风险负载建议显式发送 `model=deep` 或 `metadata.route_id=deep`，不要完全依赖低置信 fallback。
 
 ## 运行行为
 

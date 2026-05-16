@@ -11,7 +11,7 @@ generated:
 sources:
   - name: massive_zh_cn_general
     kind: remote_tar_jsonl
-    route: fast
+    route: lite
     limit: 4
     url: https://amazon-massive-nlu-dataset.s3.amazonaws.com/amazon-massive-dataset-1.0.tar.gz
     dataset: null
@@ -21,7 +21,7 @@ sources:
     license_url: https://github.com/alexa/massive/blob/master/LICENSE
   - name: swebench_issue_resolution
     kind: huggingface
-    route: strong
+    route: deep
     limit: 4
     url: null
     dataset: princeton-nlp/SWE-bench
@@ -31,7 +31,7 @@ sources:
     license_url: https://github.com/SWE-bench/SWE-bench/blob/main/LICENSE.md
   - name: humaneval_codegen
     kind: huggingface
-    route: strong
+    route: deep
     limit: 2
     url: null
     dataset: openai/openai_humaneval
@@ -40,7 +40,7 @@ sources:
     license: MIT
     license_url: https://github.com/openai/human-eval/blob/master/LICENSE
 routes:
-  fast:
+  lite:
     utterances:
       - text: 翻译成中文
         source: massive_zh_cn_general
@@ -50,7 +50,7 @@ routes:
         source: massive_zh_cn_general
       - text: 这个命令是什么意思
         source: massive_zh_cn_general
-  strong:
+  deep:
     utterances:
       - text: Fix crash when parsing config files.
         source: swebench_issue_resolution

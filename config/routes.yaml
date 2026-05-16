@@ -1,7 +1,7 @@
-route_model: semantic-router
-fallback_route_id: fast
+route_model: auto
+fallback_route_id: lite
 agent_signal_enabled: true
-agent_signal_route_id: strong
+agent_signal_route_id: deep
 agent_signal_min_input_chars: 12000
 agent_signal_min_message_count: 6
 threshold: 0.55
@@ -15,7 +15,7 @@ listen_host: 127.0.0.1
 listen_port: 4001
 
 hard_rules:
-  - route_id: strong
+  - route_id: deep
     keywords:
       - 死锁
       - 内存泄漏
@@ -50,8 +50,8 @@ hard_rules:
       - permission bypass
 
 routes:
-  fast:
-    target_model: cheap-router
+  lite:
+    target_model: your-lite-model
     description: 低风险、普通问答、解释、翻译、格式转换、轻量总结
     utterances:
       - 什么是 Java File 类
@@ -64,8 +64,8 @@ routes:
       - 你好
       - 谢谢
 
-  strong:
-    target_model: pro-router
+  deep:
+    target_model: your-deep-model
     description: 代码、debug、架构、agent、多步推理、高风险判断
     utterances:
       - 帮我分析这个 PR 有没有问题

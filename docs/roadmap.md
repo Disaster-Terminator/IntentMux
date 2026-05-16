@@ -2,9 +2,10 @@
 
 ## Long-Term Operational Goal
 
-Make `semantic-router` a low-intrusion LiteLLM model-entry sidecar that can stay
-in production traffic with auditable routing decisions, bounded failure modes,
-and repeatable E2E checks.
+Make IntentMux a lightweight local AI gateway that can act as an
+OpenAI-compatible `base_url` with canonical `auto` / `lite` / `deep` entries,
+while preserving the existing LiteLLM `semantic-router` sidecar deployment mode
+for production compatibility.
 
 Current operating target:
 
@@ -12,8 +13,12 @@ Current operating target:
   event without prompt or bearer-token leakage
 - upstream disconnects and HTTP `5xx` statuses return a controlled `502` and
   are visible in route-log summaries
-- runtime config validation prevents recursive `semantic-router` targets while
-  allowing user-defined route ids mapped to deployment-specific target models
+- runtime config validation prevents recursive entry-model targets while
+  allowing product route ids `lite` / `deep` to map to deployment-specific
+  target models
+- `/v1/models` advertises only canonical synthetic entries: `auto`, `lite`, and
+  `deep`; legacy `semantic-router`, `fast`, `strong`, and local target model
+  names remain accepted or configured where needed but are not advertised
 - degraded embedding availability is explicit: `/ready` returns `503`, routed
   chat requests fall back to `fallback_route_id` with
   `reason=embedding_error`, and route summaries count route ids, targets, and
@@ -37,26 +42,37 @@ Next hardening targets:
 - route quality review through `/v1/semantic-router/decision`, which returns
   the would-route decision without forwarding to LiteLLM or a model backend
 - agent workload routing policy for tool-call and code-editing frameworks,
-  including when callers should use `metadata.route_id=strong`
+  including when callers should use `model=deep` or `metadata.route_id=deep`
 - public-readiness work after the configurable route abstraction and
   observability contract have both been audited; the current repository should
   not be treated as public-release frozen
 
+Product boundary:
+
+- IntentMux owns OpenAI-compatible gateway behavior, entry-model semantics,
+  routing decisions, request IDs, streaming pass-through, error classes, and
+  privacy-safe logs.
+- IntentMux does not replace LiteLLM provider routing, provider fallback,
+  provider credentials, virtual keys, budgets, or model pools.
+- LiteLLM remains the recommended upstream and the recommended compatibility
+  layer for existing sidecar deployments.
+
 ## Lifecycle Management
 
-The router is a third-party sidecar, not an internal LiteLLM component. It may
-run in the same Docker Compose project for operational convenience, but its
-repository, image, config, and secrets boundary stay separate from the LiteLLM
-mount directory.
+The gateway is a separate component, not an internal LiteLLM module. It may run
+in the same Docker Compose project for operational convenience, but its
+repository, image, config, audit logs, and secrets boundary stay separate from
+the LiteLLM mount directory.
 
-Future direction: bind the router sidecar lifecycle to the LiteLLM service
-itself, not to the broader compose group. A good design should answer these
-questions before implementation:
+Future direction: keep gateway-mode lifecycle independent while making the
+LiteLLM sidecar compatibility lifecycle explicit. A good design should answer
+these questions before implementation:
 
 - Should router startup depend on LiteLLM health, service start, or a successful
   authenticated `/v1/models` probe?
 - Should router restart when LiteLLM restarts, or only retry upstream calls?
-- Should clients switch to `:4001` only after router and LiteLLM are both ready?
+- Should clients use IntentMux `:4001` directly in gateway mode, or keep using
+  LiteLLM `:4000` with legacy `semantic-router` in sidecar mode?
 - Should embedding degraded fallback remain fail-open for all routed requests,
   or should selected high-risk categories fail closed in the future?
 

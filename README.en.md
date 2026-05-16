@@ -1,12 +1,12 @@
 # IntentMux
 
-> Lightweight, auditable intent-routing sidecar for LiteLLM.<br>
-> Select a `route_id` from request intent, then resolve it to your local LiteLLM model group.
+> Lightweight local AI gateway for routing OpenAI-compatible requests between `lite` and `deep` model tiers.<br>
+> Preserves LiteLLM sidecar compatibility without owning provider routing, keys, budgets, or fallback.
 
 <p align="center">
   <img alt="runtime Python 3.11+" src="https://img.shields.io/badge/runtime-Python%203.11%2B-3776AB">
-  <img alt="entry semantic-router" src="https://img.shields.io/badge/entry-semantic--router-0EA5E9">
-  <img alt="gateway LiteLLM compatible" src="https://img.shields.io/badge/gateway-LiteLLM%20compatible-16A34A">
+  <img alt="entries auto lite deep" src="https://img.shields.io/badge/entries-auto%20%7C%20lite%20%7C%20deep-0EA5E9">
+  <img alt="LiteLLM sidecar compatible" src="https://img.shields.io/badge/LiteLLM-sidecar%20compatible-16A34A">
   <img alt="route logs metadata only" src="https://img.shields.io/badge/route%20logs-metadata%20only-7C3AED">
 </p>
 <p align="center">
@@ -21,12 +21,12 @@
 
 ## One Line
 
-IntentMux is a local-first OpenAI-compatible / LiteLLM-compatible routing sidecar. Clients keep using the existing LiteLLM endpoint and opt in with `model=semantic-router`; IntentMux selects a `route_id` from request intent, then resolves that route to the deployment-specific `target_model`.
+IntentMux is a lightweight local AI gateway that routes OpenAI-compatible requests between `lite` and `deep` model tiers with auditable decisions, while preserving LiteLLM sidecar compatibility.
 
 <table>
   <tr>
-    <td><strong>Intent routing</strong><br>Route between the default `fast` and `strong` tiers with semantic scores and thresholds.</td>
-    <td><strong>Low-intrusion integration</strong><br>Keep LiteLLM responsible for providers, fallback, rate limits, and authentication.</td>
+    <td><strong>Two-tier routing</strong><br>`auto` routes automatically; `lite` / `deep` are explicit model entries.</td>
+    <td><strong>Clear boundary</strong><br>Keep LiteLLM responsible for provider routing, fallback, rate limits, keys, and budgets.</td>
   </tr>
   <tr>
     <td><strong>Auditable logs</strong><br>Route audit logs are metadata-only by default; private local deployments can explicitly enable prompt review logs.</td>
@@ -36,33 +36,59 @@ IntentMux is a local-first OpenAI-compatible / LiteLLM-compatible routing sideca
 
 ## Project Boundary
 
-IntentMux is not a model provider and does not replace LiteLLM. It only handles the configured compatibility entry model:
+IntentMux is not a model provider and does not replace LiteLLM. It owns OpenAI-compatible gateway protocol, entry-model semantics, routing decisions, and audit logs. LiteLLM remains the recommended upstream for provider routing, provider fallback, provider credentials, virtual keys, budgets, and model pools.
 
 ```text
-model=semantic-router -> route_id -> target_model -> LiteLLM model group
+model=auto -> route_id(lite/deep) -> target_model -> OpenAI-compatible upstream
 ```
 
-All other model names pass through.
+Canonical entry models:
 
-The default sample config uses two product-level route ids, `fast` and `strong`, mapped to LiteLLM model groups such as `cheap-router` and `pro-router`. These `target_model` values are deployment names, not product API names. Custom routes remain supported, but the default product model is a weak/strong two-tier router.
+- `auto`: default automatic routing entry.
+- `lite`: explicit lightweight, lower-cost, lower-risk tier.
+- `deep`: explicit deeper-reasoning, higher-capability tier.
 
-Deploy IntentMux as a sidecar next to LiteLLM and keep provider secrets, tokens, `.env` files, and mounted LiteLLM data outside this repository.
+| Requested model | Meaning | Behavior |
+| --- | --- | --- |
+| `auto` | Preferred routed entry | Runs IntentMux routing |
+| `semantic-router` | Legacy LiteLLM sidecar entry | Same as `auto`; retained for compatibility |
+| `lite` | Explicit lightweight tier | Routes to configured `lite.target_model` |
+| `deep` | Explicit high-capability tier | Routes to configured `deep.target_model` |
+
+Compatibility entries and aliases:
+
+- `semantic-router`: legacy LiteLLM sidecar entry alias. It remains accepted, but is no longer the preferred advertised entry.
+- `fast`: legacy route alias for `lite`.
+- `strong`: legacy route alias for `deep`.
+
+`/v1/models` advertises only `auto`, `lite`, and `deep`. It does not advertise `semantic-router` or leak local LiteLLM model-group names. `target_model` values are deployment configuration, not product API names.
+
+IntentMux can still run as a LiteLLM sidecar. Keep provider secrets, tokens, `.env` files, and mounted LiteLLM data outside this repository.
+
+Current compatibility scope:
+
+- Supports `/health`, `/ready`, `/v1/models`, `/v1/chat/completions`, and `/v1/semantic-router/decision`.
+- Supports streaming and non-streaming chat completion pass-through.
+- Does not claim full OpenAI API compatibility and does not implement `/v1/responses`.
+- Does not manage provider pools; use LiteLLM or another OpenAI-compatible upstream for provider routing, keys, budgets, and fallback.
+- Keeps inbound IntentMux auth, upstream auth, and embedding auth as separate secrets.
+- Treats embedding degradation as route fallback; upstream transport or status failures return controlled, redacted gateway errors.
 
 The default router borrows the common strong/weak LLM-router shape and Semantic
 Router thresholding:
 
 ```text
-explicit override -> high-precision hard escalation -> agent structure signal -> semantic score + threshold -> fallback fast
+explicit override -> high-precision hard escalation -> agent structure signal -> semantic score + threshold -> fallback lite
 ```
 
 `hard_rules` are reserved for high-risk escalation signals such as security,
 secret leakage, production incidents, rollbacks, or data corruption. Ambiguous
 engineering words such as `PR`, `debug`, deployment, indexing, exceptions, and
 errors are handled by semantic examples and thresholds by default, so agent
-context accumulation does not permanently pin a conversation to `strong`.
+context accumulation does not permanently pin a conversation to `deep`.
 
 OpenAI-compatible requests with `tools` / legacy `functions`, tool-call history,
-`tool_choice`, or long multi-turn context are escalated to `strong` with
+`tool_choice`, or long multi-turn context are escalated to `deep` with
 `policy_id=agent_signal` by default. This policy uses request structure only; it
 does not depend on local framework names such as OpenCode, Hermes, or Retinue.
 
@@ -144,9 +170,28 @@ IntentMux does not hot-reload yet; production updates follow the rule: restart f
 
 `examples/intentmux-home/` is a copyable runtime template. Keep LiteLLM `.env`, provider tokens, and databases outside the IntentMux home. If `ROUTER_PROMPT_LOG_MODE=raw_local` is enabled, `/data/logs/prompts` stores prompt review logs for private local review only; do not commit, upload, or attach that directory to public issues.
 
-## LiteLLM Entry
+Tracked examples use generic paths and generic model names. Local runtime logs,
+prompt review logs, generated route banks, production compose overrides, and
+site-specific rollout wrappers remain outside git. Public deployment
+instructions should not hardcode workstation paths; keep those in local
+environment variables or untracked wrapper scripts.
 
-The low-intrusion path is to keep clients on LiteLLM `:4000` and change only the model name to `semantic-router`.
+## Entry Models
+
+The new default path is to use IntentMux directly as an OpenAI-compatible `base_url` and request the canonical entry models:
+
+```text
+client -> IntentMux :4001/v1, model=auto|lite|deep
+       -> route_id(lite/deep)
+       -> target_model
+       -> OpenAI-compatible upstream
+```
+
+- `model=auto`: run normal routing.
+- `model=lite` / `model=deep`: force the corresponding route id and skip semantic routing.
+- `/v1/models`: list only `auto`, `lite`, and `deep`.
+
+The LiteLLM sidecar compatibility path remains supported. Clients can keep using LiteLLM `:4000` and change only the model name to the legacy entry `semantic-router`.
 
 ```text
 client -> LiteLLM :4000, model=semantic-router
@@ -156,7 +201,7 @@ client -> LiteLLM :4000, model=semantic-router
        -> LiteLLM model group
 ```
 
-Configure `semantic-router` in LiteLLM as a model entry that points to the IntentMux sidecar. Requests that use that model name are routed by intent; other model names pass through unchanged.
+Configure `semantic-router` in LiteLLM as a model entry that points to the IntentMux sidecar. Requests that use that legacy model name run automatic routing. `semantic-router` is a compatibility alias and is not listed by IntentMux `/v1/models`. Legacy route ids `fast` and `strong` remain aliases for `lite` and `deep`.
 
 ## Verification
 
@@ -204,7 +249,7 @@ docker logs --since 12h intentmux 2>&1 \
 
 Summary output includes route/target/reason distributions, `ok/outcome`, upstream status codes, `max_duration_ms`, `p50/p90/p95/p99` duration percentiles, and the slowest request samples. Slow request samples include only audit metadata: timestamp, `request_id`, `route_id`, `target_model`, `reason`, `upstream_status`, and duration.
 
-Structured route audit logs count `route_id`, `target_model`, `policy_id`, `reason`, `request_id`, `request_id_source`, `stream`, `upstream_status`, `ok`, `outcome`, `decision_ms`, and `upstream_ms`, while avoiding prompts, completions, token usage, and bearer tokens. Streaming requests also include `upstream_headers_ms` and `upstream_body_ms`. `event` is lifecycle; `ok/outcome` is route health. Upstream non-2xx responses record `ok=false` and `outcome=upstream_non_200`. `embedding_error` has a dedicated budget shortcut because it can fail open to the configured fast route without making the user request fail.
+Structured route audit logs count `route_id`, `target_model`, `policy_id`, `reason`, `request_id`, `request_id_source`, `stream`, `upstream_status`, `ok`, `outcome`, `decision_ms`, and `upstream_ms`, while avoiding prompts, completions, token usage, and bearer tokens. Streaming requests also include `upstream_headers_ms` and `upstream_body_ms`. `event` is lifecycle; `ok/outcome` is route health. Upstream non-2xx responses record `ok=false` and `outcome=upstream_non_200`. `embedding_error` has a dedicated budget shortcut because it can fail open to the configured fallback route, whose default product meaning is `lite`, without making the user request fail.
 
 Private local deployments can explicitly enable a separate prompt review log:
 
@@ -232,7 +277,7 @@ Real production review JSONL files are ignored by git by default; commit only cu
 ```bash
 curl http://127.0.0.1:4001/v1/semantic-router/decision \
   -H "Content-Type: application/json" \
-  -d '{"model":"semantic-router","messages":[{"role":"user","content":"Why is this production bug intermittent?"}]}'
+  -d '{"model":"auto","messages":[{"role":"user","content":"Why is this production bug intermittent?"}]}'
 ```
 
 If `ROUTER_INBOUND_API_KEY` is enabled, include the inbound auth header:
@@ -241,7 +286,7 @@ If `ROUTER_INBOUND_API_KEY` is enabled, include the inbound auth header:
 curl http://127.0.0.1:4001/v1/semantic-router/decision \
   -H "Authorization: Bearer $ROUTER_INBOUND_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"model":"semantic-router","messages":[{"role":"user","content":"Why is this production bug intermittent?"}]}'
+  -d '{"model":"auto","messages":[{"role":"user","content":"Why is this production bug intermittent?"}]}'
 ```
 
 This returns the selected `route_id`, resolved `target_model`, `policy_id`, reason, rewrite flag, and scores without forwarding to LiteLLM.
@@ -276,7 +321,7 @@ report before production rollout.
 For agent frameworks, see
 [docs/agent_framework_integration.md](docs/agent_framework_integration.md).
 Code-editing agents, tool-call loops, PR review, production incidents, and
-security analysis should usually send `metadata.route_id=strong` explicitly
+security analysis should usually send `model=deep` or `metadata.route_id=deep` explicitly
 instead of relying only on low-confidence fallback.
 
 ## Runtime Behavior
