@@ -16,9 +16,9 @@ from scripts.route_quality_report import (
 def test_parse_eval_output_counts_routes_and_reasons():
     output = "\n".join(
         [
-            "PASS\tfast\tfast\tcheap-router\tlow_confidence\t翻译成中文",
-            "PASS\tstrong\tstrong\tpro-router\tembedding\t这个 bug 为什么偶发",
-            "FAIL\tstrong\tfast\tcheap-router\tlow_confidence\t分析这个 PR",
+            "PASS\tlite\tlite\tyour-lite-model\tlow_confidence\t翻译成中文",
+            "PASS\tdeep\tdeep\tyour-deep-model\tembedding\t这个 bug 为什么偶发",
+            "FAIL\tdeep\tlite\tyour-lite-model\tlow_confidence\t分析这个 PR",
             "",
             "1 eval case(s) failed.",
         ]
@@ -29,14 +29,14 @@ def test_parse_eval_output_counts_routes_and_reasons():
     assert result.total == 3
     assert result.passed == 2
     assert result.failed == 1
-    assert result.expected_routes == {"fast": 1, "strong": 2}
-    assert result.actual_routes == {"fast": 2, "strong": 1}
+    assert result.expected_routes == {"lite": 1, "deep": 2}
+    assert result.actual_routes == {"lite": 2, "deep": 1}
     assert result.reasons == {"embedding": 1, "low_confidence": 2}
     assert result.failures == [
         {
-            "expect": "strong",
-            "actual": "fast",
-            "target_model": "cheap-router",
+            "expect": "deep",
+            "actual": "lite",
+            "target_model": "your-lite-model",
             "reason": "low_confidence",
             "text": "分析这个 PR",
         }
@@ -46,13 +46,13 @@ def test_parse_eval_output_counts_routes_and_reasons():
 def test_build_quality_report_combines_eval_and_route_summary():
     eval_output = "\n".join(
         [
-            "PASS\tfast\tfast\tcheap-router\tlow_confidence\t翻译成中文",
-            "PASS\tstrong\tstrong\tpro-router\tembedding\t分析这个 PR",
+            "PASS\tlite\tlite\tyour-lite-model\tlow_confidence\t翻译成中文",
+            "PASS\tdeep\tdeep\tyour-deep-model\tembedding\t分析这个 PR",
         ]
     )
     route_summary = {
         "total": 10,
-        "routes": {"fast": 8, "strong": 2},
+        "routes": {"lite": 8, "deep": 2},
         "reasons": {"low_confidence": 7, "embedding": 3},
         "not_ok": 1,
         "upstream_statuses": {"200": 9, "400": 1},
@@ -69,8 +69,8 @@ def test_build_quality_report_combines_eval_and_route_summary():
     assert report["traffic"]["low_confidence_rate"] == 0.7
     assert report["traffic"]["not_ok_rate"] == 0.1
     assert report["route_distribution_delta"] == {
-        "fast": {"eval_rate": 0.5, "traffic_rate": 0.8, "delta": 0.3},
-        "strong": {"eval_rate": 0.5, "traffic_rate": 0.2, "delta": -0.3},
+        "lite": {"eval_rate": 0.5, "traffic_rate": 0.8, "delta": 0.3},
+        "deep": {"eval_rate": 0.5, "traffic_rate": 0.2, "delta": -0.3},
     }
     assert report["route_bank_path"] == "examples/route_bank.sample.yaml"
 
@@ -80,26 +80,26 @@ def test_quality_report_reads_eval_json_and_reports_slice_metrics():
         "schema": "intentmux-route-eval-v1",
         "cases": [
             {
-                "id": "fast1",
-                "slice": "fast_general_zh",
-                "expect": "fast",
-                "actual_route": "fast",
+                "id": "lite1",
+                "slice": "lite_general_zh",
+                "expect": "lite",
+                "actual_route": "lite",
                 "reason": "embedding",
                 "passed": True,
             },
             {
                 "id": "risk1",
                 "slice": "high_risk_zh",
-                "expect": "strong",
-                "actual_route": "strong",
+                "expect": "deep",
+                "actual_route": "deep",
                 "reason": "hard_rule:越权",
                 "passed": True,
             },
             {
                 "id": "code1",
-                "slice": "strong_code_zh",
-                "expect": "strong",
-                "actual_route": "fast",
+                "slice": "deep_code_zh",
+                "expect": "deep",
+                "actual_route": "lite",
                 "reason": "low_confidence",
                 "passed": False,
                 "score": 0.54,
@@ -115,13 +115,13 @@ def test_quality_report_reads_eval_json_and_reports_slice_metrics():
         margin=0.04,
     )
 
-    assert report["product_metrics"]["fast_general_keep_rate"] == 1.0
-    assert report["product_metrics"]["fast_precision"] == 0.5
-    assert report["product_metrics"]["strong_recall_high_risk"] == 1.0
-    assert report["product_metrics"]["strong_recall_code"] == 0.0
+    assert report["product_metrics"]["lite_general_keep_rate"] == 1.0
+    assert report["product_metrics"]["lite_precision"] == 0.5
+    assert report["product_metrics"]["deep_recall_high_risk"] == 1.0
+    assert report["product_metrics"]["deep_recall_code"] == 0.0
     assert report["product_metrics"]["low_confidence_rate"] == 1 / 3
     assert report["product_metrics"]["hard_rule_hit_rate"] == 1 / 3
-    assert report["product_metrics"]["strong_call_rate"] == 1 / 3
+    assert report["product_metrics"]["deep_call_rate"] == 1 / 3
     assert report["product_metrics"]["near_margin_rate"] == 1.0
     assert report["product_metrics"]["near_margin_measured_count"] == 1
     assert report["product_metrics"]["near_margin_total_count"] == 3
@@ -133,9 +133,9 @@ def test_quality_report_counts_long_context_metadata_states():
         "cases": [
             {
                 "id": "long1",
-                "slice": "strong_long_context_zh",
-                "expect": "strong",
-                "actual_route": "strong",
+                "slice": "deep_long_context_zh",
+                "expect": "deep",
+                "actual_route": "deep",
                 "reason": "embedding",
                 "passed": True,
                 "input_chars": 12000,
@@ -144,18 +144,18 @@ def test_quality_report_counts_long_context_metadata_states():
             },
             {
                 "id": "long2",
-                "slice": "strong_long_context_zh",
-                "expect": "strong",
-                "actual_route": "strong",
+                "slice": "deep_long_context_zh",
+                "expect": "deep",
+                "actual_route": "deep",
                 "reason": "embedding",
                 "passed": True,
                 "context_policy": "schema_reserved",
             },
             {
                 "id": "long3",
-                "slice": "strong_long_context_zh",
-                "expect": "strong",
-                "actual_route": "fast",
+                "slice": "deep_long_context_zh",
+                "expect": "deep",
+                "actual_route": "lite",
                 "reason": "low_confidence",
                 "passed": False,
             },
@@ -185,9 +185,9 @@ def test_render_markdown_includes_actionable_quality_signals():
             "reasons": {"low_confidence": 2},
             "failures": [
                 {
-                    "expect": "strong",
-                    "actual": "fast",
-                    "target_model": "cheap-router",
+                    "expect": "deep",
+                    "actual": "lite",
+                    "target_model": "your-lite-model",
                     "reason": "low_confidence",
                     "text": "分析这个 PR",
                 }
@@ -195,7 +195,7 @@ def test_render_markdown_includes_actionable_quality_signals():
         },
         "traffic": {
             "total": 10,
-            "routes": {"fast": 8, "strong": 2},
+            "routes": {"lite": 8, "deep": 2},
             "reasons": {"low_confidence": 7},
             "low_confidence_rate": 0.7,
             "not_ok": 1,
@@ -224,11 +224,11 @@ def test_main_writes_json_and_markdown(tmp_path: Path):
     json_path = tmp_path / "report.json"
     md_path = tmp_path / "report.md"
     eval_path.write_text(
-        "PASS\tfast\tfast\tcheap-router\tlow_confidence\t翻译成中文\n",
+        "PASS\tfast\tfast\tyour-lite-model\tlow_confidence\t翻译成中文\n",
         encoding="utf-8",
     )
     summary_path.write_text(
-        json.dumps({"total": 1, "routes": {"fast": 1}, "reasons": {"low_confidence": 1}}),
+        json.dumps({"total": 1, "routes": {"lite": 1}, "reasons": {"low_confidence": 1}}),
         encoding="utf-8",
     )
 

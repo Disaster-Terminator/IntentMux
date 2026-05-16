@@ -110,6 +110,9 @@ SECRET_PATTERNS = (
     re.compile(r"\b[A-Za-z0-9+/]{80,}={0,2}\b"),
 )
 
+SAFE_REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+UNSAFE_REQUEST_ID_SUBSTRINGS = ("bearer", "sk-", "api_key", "authorization")
+
 
 def redact_prompt_text(text: str) -> str:
     redacted = text
@@ -216,16 +219,30 @@ def request_identity_from_request(
     metadata_request_id = None
     if isinstance(metadata, dict):
         metadata_request_id = metadata.get("semantic_router_request_id")
-    if headers.get("x-request-id"):
-        return RequestIdentity(headers["x-request-id"], "x-request-id")
-    if headers.get("x-correlation-id"):
-        return RequestIdentity(headers["x-correlation-id"], "x-correlation-id")
+    request_id = safe_request_id(headers.get("x-request-id"))
+    if request_id:
+        return RequestIdentity(request_id, "x-request-id")
+    correlation_id = safe_request_id(headers.get("x-correlation-id"))
+    if correlation_id:
+        return RequestIdentity(correlation_id, "x-correlation-id")
     trace_id = trace_id_from_traceparent(headers.get("traceparent"))
     if trace_id:
         return RequestIdentity(trace_id, "traceparent")
+    metadata_request_id = safe_request_id(metadata_request_id)
     if metadata_request_id:
         return RequestIdentity(metadata_request_id, "metadata.semantic_router_request_id")
     return RequestIdentity(str(uuid.uuid4()), "generated")
+
+
+def safe_request_id(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    if not SAFE_REQUEST_ID_RE.fullmatch(value):
+        return None
+    lowered = value.lower()
+    if any(token in lowered for token in UNSAFE_REQUEST_ID_SUBSTRINGS):
+        return None
+    return value
 
 
 def trace_id_from_traceparent(traceparent: str | None) -> str | None:
@@ -332,9 +349,30 @@ def log_route_error(
         format_signals=format_signals,
     )
     record.update(
-        {"error_type": type(error).__name__}
+        {
+            "error_class": error_class_for(error, upstream_status),
+            "error_type": type(error).__name__,
+        }
     )
     emit_route_record(logger, record, audit_logger)
+
+
+def error_class_for(error: BaseException, upstream_status: int | None) -> str:
+    if upstream_status == 401:
+        return "upstream_auth_error"
+    if upstream_status == 429:
+        return "upstream_rate_limited"
+    if upstream_status is not None and upstream_status >= 500:
+        return "upstream_server_error"
+
+    error_type = type(error).__name__
+    if error_type in {"TimeoutError", "ReadTimeout", "ConnectTimeout", "PoolTimeout"}:
+        return "upstream_timeout"
+    if error_type in {"RemoteProtocolError", "ConnectError", "NetworkError"}:
+        return "upstream_network_error"
+    if error_type == "UpstreamStatusError":
+        return "upstream_bad_response"
+    return "gateway_internal_error"
 
 
 def route_record(
@@ -366,6 +404,7 @@ def route_record(
         "second_score": decision.second_score,
         "source_model": decision.source_model,
         "stream": stream,
+        "status": upstream_status,
         "target_model": decision.target_model,
         "ts": datetime.now(UTC).isoformat(),
     }

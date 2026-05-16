@@ -54,8 +54,8 @@ def decision_router_settings() -> RouterSettings:
         threshold=0.5,
         margin=0.05,
         routes={
-            "fast": RouteSpec(target_model="cheap-router", description="fast", utterances=["翻译", "总结"]),
-            "strong": RouteSpec(target_model="pro-router", description="strong", utterances=["线上", "PR审查"]),
+            "fast": RouteSpec(target_model="lite-upstream", description="fast", utterances=["翻译", "总结"]),
+            "strong": RouteSpec(target_model="deep-upstream", description="strong", utterances=["线上", "PR审查"]),
         },
         hard_rules=[{"route_id": "strong", "keywords": ["线上", "PR"]}],
     )
@@ -197,7 +197,7 @@ class UpstreamStatusStreamProxy(FakeProxy):
 def test_health_reports_ready():
     app = create_app(
         router=FakeRouter(
-            RoutingDecision("cheap-router", "test", rewrite=True, source_model="smart-router")
+            RoutingDecision("lite-upstream", "test", rewrite=True, source_model="smart-router")
         ),
         proxy=FakeProxy(),
     )
@@ -208,6 +208,45 @@ def test_health_reports_ready():
     assert response.json() == {"status": "ok"}
 
 
+def test_models_lists_only_canonical_synthetic_entries_without_targets():
+    app = create_app(
+        settings=RouterSettings(
+            route_model="semantic-router",
+            fallback_route_id="lite",
+            routes={
+                "lite": RouteSpec(
+                    target_model="local-lite-model",
+                    description="lite",
+                    utterances=["翻译"],
+                ),
+                "deep": RouteSpec(
+                    target_model="local-deep-model",
+                    description="deep",
+                    utterances=["代码审查"],
+                ),
+            },
+        ),
+        router=FakeRouter(RoutingDecision("local-lite-model", "test", rewrite=True, route_id="lite")),
+        proxy=FakeProxy(),
+    )
+
+    response = TestClient(app).get("/v1/models")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "object": "list",
+        "data": [
+            {"id": "auto", "object": "model"},
+            {"id": "lite", "object": "model"},
+            {"id": "deep", "object": "model"},
+        ],
+    }
+    response_text = response.text
+    assert "semantic-router" not in response_text
+    assert "local-lite-model" not in response_text
+    assert "local-deep-model" not in response_text
+
+
 def test_main_disables_uvicorn_access_log_by_default(monkeypatch):
     captured: dict[str, Any] = {}
 
@@ -215,9 +254,9 @@ def test_main_disables_uvicorn_access_log_by_default(monkeypatch):
         "router.app.load_settings",
         lambda: RouterSettings(
             route_model="semantic-router",
-            default_route="cheap-router",
+            default_route="lite-upstream",
             routes={
-                "cheap-router": RouteSpec(
+                "lite-upstream": RouteSpec(
                     description="cheap",
                     utterances=["hello"],
                 )
@@ -240,7 +279,7 @@ def test_chat_completion_rewrites_smart_router_before_forwarding():
     app = create_app(
         router=FakeRouter(
             RoutingDecision(
-                "pro-router",
+                "deep-upstream",
                 "hard_rule:线上",
                 rewrite=True,
                 source_model="smart-router",
@@ -260,9 +299,9 @@ def test_chat_completion_rewrites_smart_router_before_forwarding():
     )
 
     assert response.status_code == 200
-    assert proxy.payloads[0]["model"] == "pro-router"
+    assert proxy.payloads[0]["model"] == "deep-upstream"
     assert proxy.headers[0]["authorization"] == "Bearer litellm-test"
-    assert response.headers["x-router-target-model"] == "pro-router"
+    assert response.headers["x-router-target-model"] == "deep-upstream"
     assert response.headers["x-router-reason"] == "hard_rule:%E7%BA%BF%E4%B8%8A"
     assert "x-router-route-id" not in response.headers
     assert "x-router-policy-id" not in response.headers
@@ -319,7 +358,7 @@ def test_decision_endpoint_hard_rule_returns_contract_without_forwarding():
     assert response.json() == {
         "source_model": "semantic-router",
         "route_id": "strong",
-        "target_model": "pro-router",
+        "target_model": "deep-upstream",
         "policy_id": "hard_rule",
         "reason": "hard_rule:线上",
         "rewrite": True,
@@ -345,7 +384,7 @@ def test_decision_endpoint_explicit_route_override_returns_explicit_policy():
 
     assert response.status_code == 200
     assert response.json()["route_id"] == "strong"
-    assert response.json()["target_model"] == "pro-router"
+    assert response.json()["target_model"] == "deep-upstream"
     assert response.json()["policy_id"] == "explicit"
     assert proxy.forward_called is False
     assert proxy.stream_called is False
@@ -357,9 +396,9 @@ def test_decision_endpoint_requires_inbound_api_key_when_configured():
             route_model="semantic-router",
             fallback_route_id="fast",
             inbound_api_key="sk-intentmux",
-            routes={"fast": RouteSpec(target_model="cheap-router", description="fast", utterances=["hi"])},
+            routes={"fast": RouteSpec(target_model="lite-upstream", description="fast", utterances=["hi"])},
         ),
-        router=FakeRouter(RoutingDecision("cheap-router", "test", rewrite=True, route_id="fast")),
+        router=FakeRouter(RoutingDecision("lite-upstream", "test", rewrite=True, route_id="fast")),
         proxy=FakeProxy(),
     )
     client = TestClient(app)
@@ -387,9 +426,9 @@ def test_chat_completion_requires_inbound_api_key_when_configured():
             route_model="semantic-router",
             fallback_route_id="fast",
             inbound_api_key="sk-intentmux",
-            routes={"fast": RouteSpec(target_model="cheap-router", description="fast", utterances=["hi"])},
+            routes={"fast": RouteSpec(target_model="lite-upstream", description="fast", utterances=["hi"])},
         ),
-        router=FakeRouter(RoutingDecision("cheap-router", "test", rewrite=True, route_id="fast")),
+        router=FakeRouter(RoutingDecision("lite-upstream", "test", rewrite=True, route_id="fast")),
         proxy=FakeProxy(),
     )
     client = TestClient(app)
@@ -421,9 +460,9 @@ def test_chat_completion_does_not_write_prompt_review_log_by_default(tmp_path: P
             route_model="semantic-router",
             fallback_route_id="fast",
             prompt_log_dir=str(prompt_dir),
-            routes={"fast": RouteSpec(target_model="cheap-router", description="fast", utterances=["hi"])},
+            routes={"fast": RouteSpec(target_model="lite-upstream", description="fast", utterances=["hi"])},
         ),
-        router=FakeRouter(RoutingDecision("cheap-router", "test", rewrite=True, route_id="fast")),
+        router=FakeRouter(RoutingDecision("lite-upstream", "test", rewrite=True, route_id="fast")),
         proxy=FakeProxy(),
     )
 
@@ -447,9 +486,9 @@ def test_chat_completion_writes_raw_local_prompt_review_log(tmp_path: Path):
             fallback_route_id="fast",
             prompt_log_mode="raw_local",
             prompt_log_dir=str(prompt_dir),
-            routes={"fast": RouteSpec(target_model="cheap-router", description="fast", utterances=["hi"])},
+            routes={"fast": RouteSpec(target_model="lite-upstream", description="fast", utterances=["hi"])},
         ),
-        router=FakeRouter(RoutingDecision("cheap-router", "test", rewrite=True, route_id="fast")),
+        router=FakeRouter(RoutingDecision("lite-upstream", "test", rewrite=True, route_id="fast")),
         proxy=FakeProxy(),
     )
 
@@ -470,7 +509,7 @@ def test_chat_completion_writes_raw_local_prompt_review_log(tmp_path: Path):
     assert record["mode"] == "raw_local"
     assert record["latest_user_text"] == "请分析回滚方案"
     assert record["route_id"] == "fast"
-    assert record["target_model"] == "cheap-router"
+    assert record["target_model"] == "lite-upstream"
 
 
 def test_chat_completion_redacted_prompt_review_log_masks_credentials(tmp_path: Path):
@@ -481,9 +520,9 @@ def test_chat_completion_redacted_prompt_review_log_masks_credentials(tmp_path: 
             fallback_route_id="fast",
             prompt_log_mode="redacted",
             prompt_log_dir=str(prompt_dir),
-            routes={"fast": RouteSpec(target_model="cheap-router", description="fast", utterances=["hi"])},
+            routes={"fast": RouteSpec(target_model="lite-upstream", description="fast", utterances=["hi"])},
         ),
-        router=FakeRouter(RoutingDecision("cheap-router", "test", rewrite=True, route_id="fast")),
+        router=FakeRouter(RoutingDecision("lite-upstream", "test", rewrite=True, route_id="fast")),
         proxy=FakeProxy(),
     )
 
@@ -508,9 +547,9 @@ def test_health_and_ready_do_not_require_inbound_api_key():
             route_model="semantic-router",
             fallback_route_id="fast",
             inbound_api_key="sk-intentmux",
-            routes={"fast": RouteSpec(target_model="cheap-router", description="fast", utterances=["hi"])},
+            routes={"fast": RouteSpec(target_model="lite-upstream", description="fast", utterances=["hi"])},
         ),
-        router=FakeRouter(RoutingDecision("cheap-router", "test", rewrite=True, route_id="fast")),
+        router=FakeRouter(RoutingDecision("lite-upstream", "test", rewrite=True, route_id="fast")),
         proxy=FakeProxy(),
         readiness_checker=FakeReadinessChecker(
             ReadinessReport(
@@ -541,7 +580,7 @@ def test_decision_endpoint_low_confidence_uses_fallback_route_id():
 
     assert response.status_code == 200
     assert response.json()["route_id"] == "fast"
-    assert response.json()["target_model"] == "cheap-router"
+    assert response.json()["target_model"] == "lite-upstream"
     assert response.json()["policy_id"] == "low_confidence"
     assert proxy.forward_called is False
     assert proxy.stream_called is False
@@ -558,7 +597,7 @@ def test_decision_endpoint_embedding_error_uses_fallback_route_id_and_policy():
 
     assert response.status_code == 200
     assert response.json()["route_id"] == "fast"
-    assert response.json()["target_model"] == "cheap-router"
+    assert response.json()["target_model"] == "lite-upstream"
     assert response.json()["policy_id"] == "embedding_error"
     assert proxy.forward_called is False
     assert proxy.stream_called is False
@@ -606,7 +645,7 @@ def test_decision_endpoint_passthrough_keeps_model_without_inventing_route_id_an
 def test_decision_endpoint_returns_400_for_invalid_json_without_leaking_input():
     proxy = NoUpstreamProxy()
     app = create_app(
-        router=FakeRouter(RoutingDecision("cheap-router", "passthrough", rewrite=False)),
+        router=FakeRouter(RoutingDecision("lite-upstream", "passthrough", rewrite=False)),
         proxy=proxy,
     )
     client = TestClient(app)
@@ -631,7 +670,7 @@ def test_decision_endpoint_returns_400_for_invalid_json_without_leaking_input():
 def test_chat_completion_returns_400_for_invalid_json_without_leaking_input():
     proxy = NoUpstreamProxy()
     app = create_app(
-        router=FakeRouter(RoutingDecision("cheap-router", "passthrough", rewrite=False)),
+        router=FakeRouter(RoutingDecision("lite-upstream", "passthrough", rewrite=False)),
         proxy=proxy,
     )
     client = TestClient(app)
@@ -656,7 +695,7 @@ def test_chat_completion_returns_400_for_invalid_json_without_leaking_input():
 def test_chat_completion_returns_400_for_non_object_payload_without_leaking_input():
     proxy = NoUpstreamProxy()
     app = create_app(
-        router=FakeRouter(RoutingDecision("cheap-router", "passthrough", rewrite=False)),
+        router=FakeRouter(RoutingDecision("lite-upstream", "passthrough", rewrite=False)),
         proxy=proxy,
     )
     client = TestClient(app)
@@ -678,7 +717,7 @@ def test_chat_completion_returns_400_for_non_object_payload_without_leaking_inpu
 def test_decision_endpoint_returns_400_for_non_object_payload_without_leaking_input():
     proxy = NoUpstreamProxy()
     app = create_app(
-        router=FakeRouter(RoutingDecision("cheap-router", "passthrough", rewrite=False)),
+        router=FakeRouter(RoutingDecision("lite-upstream", "passthrough", rewrite=False)),
         proxy=proxy,
     )
     client = TestClient(app)
@@ -701,7 +740,7 @@ def test_decision_endpoint_missing_model_and_messages_preserves_router_semantics
     proxy = NoUpstreamProxy()
     router = FakeRouter(
         RoutingDecision(
-            target_model="cheap-router",
+            target_model="lite-upstream",
             reason="passthrough",
             rewrite=False,
             source_model=None,
@@ -717,7 +756,7 @@ def test_decision_endpoint_missing_model_and_messages_preserves_router_semantics
     assert response.json() == {
         "source_model": None,
         "route_id": None,
-        "target_model": "cheap-router",
+        "target_model": "lite-upstream",
         "policy_id": None,
         "reason": "passthrough",
         "rewrite": False,
@@ -733,7 +772,7 @@ def test_streaming_chat_completion_uses_stream_proxy():
     app = create_app(
         router=FakeRouter(
             RoutingDecision(
-                "pro-router",
+                "deep-upstream",
                 "hard_rule:线上",
                 rewrite=True,
                 route_id="strong",
@@ -756,10 +795,10 @@ def test_streaming_chat_completion_uses_stream_proxy():
         body = response.read()
 
     assert response.status_code == 200
-    assert proxy.payloads[0]["model"] == "pro-router"
+    assert proxy.payloads[0]["model"] == "deep-upstream"
     assert proxy.payloads[0]["stream"] is True
     assert response.headers["content-type"].startswith("text/event-stream")
-    assert response.headers["x-router-target-model"] == "pro-router"
+    assert response.headers["x-router-target-model"] == "deep-upstream"
     assert response.headers["x-router-route-id"] == "strong"
     assert response.headers["x-router-policy-id"] == "hard_rule"
     assert body == b"data: first\n\ndata: [DONE]\n\n"
@@ -770,7 +809,7 @@ def test_chat_completion_emits_structured_log_without_sensitive_payload(caplog):
     app = create_app(
         router=FakeRouter(
             RoutingDecision(
-                "pro-router",
+                "deep-upstream",
                 "hard_rule:线上",
                 rewrite=True,
                 route_id="strong",
@@ -835,8 +874,9 @@ def test_chat_completion_emits_structured_log_without_sensitive_payload(caplog):
                 "score": None,
                 "second_score": None,
                 "source_model": "smart-router",
+                "status": 200,
                 "stream": False,
-                "target_model": "pro-router",
+                "target_model": "deep-upstream",
                 "ts": route_logs[0]["ts"],
                 "upstream_ms": route_logs[0]["upstream_ms"],
                 "upstream_status": 200,
@@ -851,7 +891,7 @@ def test_chat_completion_emits_structured_log_without_sensitive_payload(caplog):
 
 def test_chat_completion_audit_log_includes_format_signals_without_content(caplog):
     proxy = FakeProxy()
-    router = FakeRouter(RoutingDecision("cheap-router", "test", rewrite=True, route_id="fast"))
+    router = FakeRouter(RoutingDecision("lite-upstream", "test", rewrite=True, route_id="fast"))
     app = create_app(
         router=router,
         proxy=proxy,
@@ -905,7 +945,7 @@ def test_chat_completion_writes_redacted_audit_log(tmp_path):
         fallback_route_id="fast",
         routes={
             "fast": RouteSpec(
-                target_model="cheap-router",
+                target_model="lite-upstream",
                 description="fast",
                 utterances=["hello"],
             )
@@ -917,7 +957,7 @@ def test_chat_completion_writes_redacted_audit_log(tmp_path):
         settings=settings,
         router=FakeRouter(
             RoutingDecision(
-                "cheap-router",
+                "lite-upstream",
                 "embedding",
                 rewrite=True,
                 route_id="fast",
@@ -977,8 +1017,9 @@ def test_chat_completion_writes_redacted_audit_log(tmp_path):
             "score": 0.7,
             "second_score": 0.2,
             "source_model": "semantic-router",
+            "status": 200,
             "stream": False,
-            "target_model": "cheap-router",
+            "target_model": "lite-upstream",
             "ts": records[0]["ts"],
             "upstream_ms": records[0]["upstream_ms"],
             "upstream_status": 200,
@@ -995,7 +1036,7 @@ def test_chat_completion_marks_upstream_4xx_as_unhealthy_without_gateway_rewrite
     app = create_app(
         router=FakeRouter(
             RoutingDecision(
-                "cheap-router",
+                "lite-upstream",
                 "low_confidence",
                 rewrite=True,
                 route_id="fast",
@@ -1033,7 +1074,7 @@ def test_chat_completion_uses_metadata_request_id_when_header_is_not_forwarded(c
     app = create_app(
         router=FakeRouter(
             RoutingDecision(
-                "pro-router",
+                "deep-upstream",
                 "hard_rule:线上",
                 rewrite=True,
                 source_model="semantic-router",
@@ -1068,7 +1109,7 @@ def test_chat_completion_strips_router_private_metadata_before_forwarding():
     app = create_app(
         router=FakeRouter(
             RoutingDecision(
-                "pro-router",
+                "deep-upstream",
                 "metadata.route_id",
                 rewrite=True,
                 source_model="semantic-router",
@@ -1105,7 +1146,7 @@ def test_chat_completion_does_not_use_user_field_as_request_id(caplog):
     app = create_app(
         router=FakeRouter(
             RoutingDecision(
-                "pro-router",
+                "deep-upstream",
                 "hard_rule:线上",
                 rewrite=True,
                 source_model="semantic-router",
@@ -1132,12 +1173,47 @@ def test_chat_completion_does_not_use_user_field_as_request_id(caplog):
     assert route_logs[0]["request_id_source"] == "generated"
 
 
+def test_chat_completion_rejects_unsafe_request_id_header(caplog):
+    proxy = FakeProxy()
+    app = create_app(
+        router=FakeRouter(
+            RoutingDecision(
+                "deep-upstream",
+                "hard_rule:线上",
+                rewrite=True,
+                source_model="semantic-router",
+            )
+        ),
+        proxy=proxy,
+    )
+
+    with caplog.at_level(logging.INFO, logger="intentmux"):
+        response = TestClient(app).post(
+            "/v1/chat/completions",
+            headers={"x-request-id": "Bearer sk-secret-token"},
+            json={
+                "model": "semantic-router",
+                "messages": [{"role": "user", "content": "这个线上 bug 为什么偶发"}],
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.headers["x-router-request-id"] != "Bearer sk-secret-token"
+    assert proxy.headers[0]["x-request-id"] == response.headers["x-router-request-id"]
+    records = [json.loads(record.message) for record in caplog.records]
+    route_logs = [record for record in records if record["event"] == "route_complete"]
+    assert route_logs[0]["request_id"] == response.headers["x-router-request-id"]
+    assert route_logs[0]["request_id_source"] == "generated"
+    serialized = "\n".join(record.message for record in caplog.records)
+    assert "sk-secret-token" not in serialized
+
+
 def test_chat_completion_uses_traceparent_when_request_id_headers_are_absent(caplog):
     proxy = FakeProxy()
     app = create_app(
         router=FakeRouter(
             RoutingDecision(
-                "pro-router",
+                "deep-upstream",
                 "hard_rule:线上",
                 rewrite=True,
                 source_model="semantic-router",
@@ -1168,13 +1244,13 @@ def test_chat_completion_uses_traceparent_when_request_id_headers_are_absent(cap
 def test_embedding_degraded_readiness_but_chat_falls_back_to_default_route(caplog):
     settings = RouterSettings(
         route_model="semantic-router",
-        default_route="cheap-router",
+        default_route="lite-upstream",
         routes={
-            "cheap-router": RouteSpec(
+            "lite-upstream": RouteSpec(
                 description="low risk",
                 utterances=["解释一下这个概念"],
             ),
-            "pro-router": RouteSpec(
+            "deep-upstream": RouteSpec(
                 description="high risk",
                 utterances=["分析这个线上 bug"],
             ),
@@ -1222,15 +1298,15 @@ def test_embedding_degraded_readiness_but_chat_falls_back_to_default_route(caplo
         )
 
     assert response.status_code == 200
-    assert proxy.payloads[0]["model"] == "cheap-router"
-    assert response.headers["x-router-target-model"] == "cheap-router"
+    assert proxy.payloads[0]["model"] == "lite-upstream"
+    assert response.headers["x-router-target-model"] == "lite-upstream"
     records = [json.loads(record.message) for record in caplog.records]
     route_complete = [record for record in records if record["event"] == "route_complete"]
     route_errors = [record for record in records if record["event"] == "route_error"]
     assert route_errors == []
     assert len(route_complete) == 1
     assert route_complete[0]["request_id"] == "embedding-degraded-1"
-    assert route_complete[0]["target_model"] == "cheap-router"
+    assert route_complete[0]["target_model"] == "lite-upstream"
     assert route_complete[0]["reason"] == "embedding_error"
     serialized = "\n".join(record.message for record in caplog.records)
     assert "敏感 prompt" not in serialized
@@ -1240,7 +1316,7 @@ def test_chat_completion_logs_structured_route_error_without_sensitive_payload(c
     app = create_app(
         router=FakeRouter(
             RoutingDecision(
-                "cheap-router",
+                "lite-upstream",
                 "embedding",
                 rewrite=True,
                 source_model="semantic-router",
@@ -1273,8 +1349,10 @@ def test_chat_completion_logs_structured_route_error_without_sensitive_payload(c
     route_logs = [record for record in records if record["event"] == "route_error"]
     assert len(route_logs) == 1
     assert route_logs[0]["request_id"] == "error-request-1"
-    assert route_logs[0]["target_model"] == "cheap-router"
+    assert route_logs[0]["target_model"] == "lite-upstream"
+    assert route_logs[0]["error_class"] == "upstream_timeout"
     assert route_logs[0]["error_type"] == "TimeoutError"
+    assert route_logs[0]["status"] is None
     serialized = "\n".join(record.message for record in caplog.records)
     assert "敏感 prompt" not in serialized
     assert "Bearer litellm-test" not in serialized
@@ -1284,7 +1362,7 @@ def test_chat_completion_maps_upstream_5xx_to_redacted_route_error(caplog):
     app = create_app(
         router=FakeRouter(
             RoutingDecision(
-                "cheap-router",
+                "lite-upstream",
                 "embedding",
                 rewrite=True,
                 source_model="semantic-router",
@@ -1319,8 +1397,10 @@ def test_chat_completion_maps_upstream_5xx_to_redacted_route_error(caplog):
     assert route_complete == []
     assert len(route_errors) == 1
     assert route_errors[0]["request_id"] == "status-error-request-1"
-    assert route_errors[0]["target_model"] == "cheap-router"
+    assert route_errors[0]["target_model"] == "lite-upstream"
+    assert route_errors[0]["error_class"] == "upstream_server_error"
     assert route_errors[0]["error_type"] == "UpstreamStatusError"
+    assert route_errors[0]["status"] == 503
     assert route_errors[0]["upstream_status"] == 503
     serialized = "\n".join(record.message for record in caplog.records)
     assert "敏感 prompt" not in serialized
@@ -1333,7 +1413,7 @@ def test_streaming_chat_completion_returns_gateway_error_when_upstream_disconnec
     app = create_app(
         router=FakeRouter(
             RoutingDecision(
-                "pro-router",
+                "deep-upstream",
                 "hard_rule:PR",
                 rewrite=True,
                 source_model="semantic-router",
@@ -1356,7 +1436,7 @@ def test_streaming_chat_completion_returns_gateway_error_when_upstream_disconnec
 
     assert response.status_code == 502
     assert response.headers["x-router-request-id"] == "stream-error-request-1"
-    assert response.headers["x-router-target-model"] == "pro-router"
+    assert response.headers["x-router-target-model"] == "deep-upstream"
     assert response.headers["x-router-reason"] == "hard_rule:PR"
     assert "x-router-route-id" not in response.headers
     assert "x-router-policy-id" not in response.headers
@@ -1376,7 +1456,7 @@ def test_streaming_chat_completion_maps_upstream_5xx_to_redacted_route_error(cap
     app = create_app(
         router=FakeRouter(
             RoutingDecision(
-                "pro-router",
+                "deep-upstream",
                 "hard_rule:PR",
                 rewrite=True,
                 source_model="semantic-router",
@@ -1399,7 +1479,7 @@ def test_streaming_chat_completion_maps_upstream_5xx_to_redacted_route_error(cap
 
     assert response.status_code == 502
     assert response.headers["x-router-request-id"] == "stream-status-error-request-1"
-    assert response.headers["x-router-target-model"] == "pro-router"
+    assert response.headers["x-router-target-model"] == "deep-upstream"
     assert response.headers["x-router-reason"] == "hard_rule:PR"
     assert "x-router-route-id" not in response.headers
     assert "x-router-policy-id" not in response.headers
@@ -1426,7 +1506,7 @@ def test_streaming_chat_completion_logs_after_body_iteration(caplog):
     app = create_app(
         router=FakeRouter(
             RoutingDecision(
-                "pro-router",
+                "deep-upstream",
                 "hard_rule:线上",
                 rewrite=True,
                 source_model="smart-router",
@@ -1454,7 +1534,7 @@ def test_streaming_chat_completion_logs_after_body_iteration(caplog):
     assert len(route_logs) == 1
     assert route_logs[0]["request_id"] == "stream-request-1"
     assert route_logs[0]["request_id_source"] == "x-request-id"
-    assert route_logs[0]["target_model"] == "pro-router"
+    assert route_logs[0]["target_model"] == "deep-upstream"
     assert route_logs[0]["stream"] is True
     assert route_logs[0]["upstream_status"] == 200
 
@@ -1480,7 +1560,7 @@ async def test_streaming_chat_completion_logs_when_client_closes_early(caplog):
             request_id="stream-request-closed",
             request_id_source="x-request-id",
             decision=RoutingDecision(
-                "pro-router",
+                "deep-upstream",
                 "hard_rule:线上",
                 rewrite=True,
                 source_model="smart-router",
@@ -1520,7 +1600,7 @@ async def test_streaming_chat_completion_logs_route_error_when_body_iteration_fa
             request_id="stream-body-error",
             request_id_source="x-request-id",
             decision=RoutingDecision(
-                "pro-router",
+                "deep-upstream",
                 "hard_rule:PR",
                 rewrite=True,
                 source_model="semantic-router",

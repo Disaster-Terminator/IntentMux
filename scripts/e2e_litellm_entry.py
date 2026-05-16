@@ -30,23 +30,23 @@ class Probe:
 
 DEFAULT_PROBES = [
     Probe(
-        name="pro_nonstream",
+        name="deep_nonstream",
         prompt="这个线上 bug 为什么偶发？只回答 OK",
-        expected_route="strong",
-        expected_target_model="pro-router",
+        expected_route="deep",
+        expected_target_model="your-deep-model",
     ),
     Probe(
-        name="pro_stream",
+        name="deep_stream",
         prompt="这个线上 bug 为什么偶发？只回答 OK",
-        expected_route="strong",
-        expected_target_model="pro-router",
+        expected_route="deep",
+        expected_target_model="your-deep-model",
         stream=True,
     ),
     Probe(
-        name="cheap_nonstream",
+        name="lite_nonstream",
         prompt="帮我把这段话润色一下，只回答 OK",
-        expected_route="fast",
-        expected_target_model="cheap-router",
+        expected_route="lite",
+        expected_target_model="your-lite-model",
     ),
 ]
 

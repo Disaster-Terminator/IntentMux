@@ -125,7 +125,7 @@ def test_tracked_example_route_bank_is_small_and_auditable():
     assert payload["generated"]["commit"]
     assert payload["generated"]["source_manifest_sha256"]
     assert payload["sources"]
-    assert set(payload["routes"]) == {"fast", "strong"}
+    assert set(payload["routes"]) == {"lite", "deep"}
     for source in payload["sources"]:
         assert source["name"]
         assert source["homepage"]

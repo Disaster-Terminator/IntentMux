@@ -1,6 +1,6 @@
 INFO:     127.0.0.1:1 - "GET /health HTTP/1.1" 200 OK
-{"event":"route_complete","route_id":"fast","target_model":"cheap-router","policy_id":"embedding","reason":"embedding","stream":false,"duration_ms":210}
-{"event":"route_complete","route_id":"strong","target_model":"pro-router","policy_id":"hard_rule","reason":"hard_rule:vip","stream":true,"duration_ms":390}
-{"event":"route_error","route_id":"strong","target_model":"pro-router","policy_id":"embedding_error","reason":"embedding_error","stream":true,"error_type":"UpstreamStatusError","upstream_status":503,"duration_ms":480}
+{"event":"route_complete","route_id":"lite","target_model":"your-lite-model","policy_id":"embedding","reason":"embedding","stream":false,"duration_ms":210}
+{"event":"route_complete","route_id":"deep","target_model":"your-deep-model","policy_id":"hard_rule","reason":"hard_rule:vip","stream":true,"duration_ms":390}
+{"event":"route_error","route_id":"deep","target_model":"your-deep-model","policy_id":"embedding_error","reason":"embedding_error","stream":true,"error_type":"UpstreamStatusError","upstream_status":503,"duration_ms":480}
 {"event":"startup"}
 {"event":"route_error",

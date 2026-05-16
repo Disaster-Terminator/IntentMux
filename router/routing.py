@@ -176,7 +176,7 @@ class Router:
             return None
         if route in self.settings.routes:
             return route
-        alias_target = self.settings.route_id_aliases.get(route)
+        alias_target = self.settings.resolve_route_id_alias(route)
         if alias_target in self.settings.routes:
             return alias_target
         return None

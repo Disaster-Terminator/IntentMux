@@ -7,26 +7,26 @@ from typing import Any
 import yaml
 
 KNOWN_SLICES = {
-    "fast_general_zh",
-    "fast_intent_zh",
-    "strong_code_zh",
-    "strong_reasoning_zh",
-    "strong_long_context_zh",
+    "lite_general_zh",
+    "lite_intent_zh",
+    "deep_code_zh",
+    "deep_reasoning_zh",
+    "deep_long_context_zh",
     "high_risk_zh",
     "borderline_zh",
 }
 
-KNOWN_ROUTES = {"fast", "strong"}
+KNOWN_ROUTES = {"lite", "deep"}
 DERIVED_PROMPT_POLICIES = {"allowed", "review_required", "forbidden"}
 COMMIT_POLICIES = {"sample_only", "manifest_only", "never"}
 EXPECTED_ROUTES_BY_SLICE = {
-    "fast_general_zh": {"fast"},
-    "fast_intent_zh": {"fast"},
-    "strong_code_zh": {"strong"},
-    "strong_reasoning_zh": {"strong"},
-    "strong_long_context_zh": {"strong"},
-    "high_risk_zh": {"strong"},
-    "borderline_zh": {"fast", "strong"},
+    "lite_general_zh": {"lite"},
+    "lite_intent_zh": {"lite"},
+    "deep_code_zh": {"deep"},
+    "deep_reasoning_zh": {"deep"},
+    "deep_long_context_zh": {"deep"},
+    "high_risk_zh": {"deep"},
+    "borderline_zh": {"lite", "deep"},
 }
 LONG_CONTEXT_POLICIES = {"preserved_length", "summarized", "schema_reserved"}
 
@@ -86,7 +86,7 @@ def load_curated_samples(path: Path) -> list[dict[str, Any]]:
         if sample.get("slice") not in KNOWN_SLICES:
             raise ValueError(f"sample #{index}: unknown slice {sample.get('slice')!r}")
         if sample.get("expect") not in KNOWN_ROUTES:
-            raise ValueError(f"sample #{index}: expect must be fast or strong")
+            raise ValueError(f"sample #{index}: expect must be lite or deep")
         allowed_routes = EXPECTED_ROUTES_BY_SLICE[str(sample["slice"])]
         if sample["expect"] not in allowed_routes:
             raise ValueError(
@@ -105,7 +105,7 @@ def load_curated_samples(path: Path) -> list[dict[str, Any]]:
             raise ValueError(
                 f"sample #{index}: borderline_zh requires manual_review_required"
             )
-        if sample["slice"] == "strong_long_context_zh":
+        if sample["slice"] == "deep_long_context_zh":
             validate_long_context_metadata(sample, index)
         validated.append(dict(sample))
     return validated
@@ -115,7 +115,7 @@ def validate_long_context_metadata(sample: dict[str, Any], index: int) -> None:
     context_policy = sample.get("context_policy")
     if context_policy not in LONG_CONTEXT_POLICIES:
         raise ValueError(
-            f"sample #{index}: strong_long_context_zh requires context_policy"
+            f"sample #{index}: deep_long_context_zh requires context_policy"
         )
     if context_policy == "preserved_length":
         if not isinstance(sample.get("input_chars"), int) or sample["input_chars"] <= 0:

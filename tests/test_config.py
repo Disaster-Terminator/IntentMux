@@ -51,7 +51,7 @@ route_model: semantic-router
 fallback_route_id: fast
 routes:
   fast:
-    target_model: cheap-router
+    target_model: lite-upstream
     description: low risk
     utterances:
       - hi
@@ -73,7 +73,7 @@ route_model: semantic-router
 fallback_route_id: fast
 routes:
   fast:
-    target_model: cheap-router
+    target_model: lite-upstream
     description: low risk
     utterances:
       - hi
@@ -96,7 +96,7 @@ fallback_route_id: fast
 litellm_api_key: sk-configured
 routes:
   fast:
-    target_model: cheap-router
+    target_model: lite-upstream
     description: low risk
     utterances:
       - hi
@@ -116,16 +116,16 @@ def test_load_settings_merges_seed_utterances_with_route_bank(tmp_path: Path):
     routes_path.write_text(
         """
 route_model: smart-router
-default_route: cheap-router
+default_route: lite-upstream
 threshold: 0.55
 margin: 0.04
 route_bank_path: route_bank.yaml
 routes:
-  cheap-router:
+  lite-upstream:
     description: seed cheap
     utterances:
       - seed cheap utterance
-  pro-router:
+  deep-upstream:
     description: seed pro
     utterances:
       - seed pro utterance
@@ -136,13 +136,13 @@ routes:
         """
 version: 1
 routes:
-  cheap-router:
+  lite-upstream:
     utterances:
       - text: generated cheap utterance
         source: massive_zh_cn_general
       - text: seed cheap utterance
         source: duplicate
-  pro-router:
+  deep-upstream:
     utterances:
       - text: generated pro utterance
         source: swebench_issue_resolution
@@ -156,11 +156,11 @@ routes:
 
     settings = load_settings(routes_path)
 
-    assert settings.routes["cheap-router"].utterances == [
+    assert settings.routes["lite-upstream"].utterances == [
         "seed cheap utterance",
         "generated cheap utterance",
     ]
-    assert settings.routes["pro-router"].utterances == [
+    assert settings.routes["deep-upstream"].utterances == [
         "seed pro utterance",
         "generated pro utterance",
     ]
@@ -172,10 +172,10 @@ def test_load_settings_ignores_missing_route_bank_by_default(tmp_path: Path):
     routes_path.write_text(
         """
 route_model: smart-router
-default_route: cheap-router
+default_route: lite-upstream
 route_bank_path: missing.yaml
 routes:
-  cheap-router:
+  lite-upstream:
     description: seed cheap
     utterances:
       - seed cheap utterance
@@ -185,7 +185,7 @@ routes:
 
     settings = load_settings(routes_path)
 
-    assert settings.routes["cheap-router"].utterances == ["seed cheap utterance"]
+    assert settings.routes["lite-upstream"].utterances == ["seed cheap utterance"]
 
 
 def test_load_settings_requires_route_bank_when_enabled(tmp_path: Path):
@@ -193,11 +193,11 @@ def test_load_settings_requires_route_bank_when_enabled(tmp_path: Path):
     routes_path.write_text(
         """
 route_model: smart-router
-default_route: cheap-router
+default_route: lite-upstream
 require_route_bank: true
 route_bank_path: missing.yaml
 routes:
-  cheap-router:
+  lite-upstream:
     description: seed cheap
     utterances:
       - seed cheap utterance
@@ -215,11 +215,11 @@ def test_load_settings_requires_route_bank_to_provide_declared_route_utterances(
     routes_path.write_text(
         """
 route_model: smart-router
-default_route: cheap-router
+default_route: lite-upstream
 require_route_bank: true
 route_bank_path: route_bank.yaml
 routes:
-  cheap-router:
+  lite-upstream:
     description: seed cheap
     utterances:
       - seed cheap utterance
@@ -247,11 +247,11 @@ def test_load_settings_required_route_bank_accepts_duplicate_utterances(tmp_path
     routes_path.write_text(
         """
 route_model: smart-router
-default_route: cheap-router
+default_route: lite-upstream
 require_route_bank: true
 route_bank_path: route_bank.yaml
 routes:
-  cheap-router:
+  lite-upstream:
     description: seed cheap
     utterances:
       - seed cheap utterance
@@ -262,7 +262,7 @@ routes:
         """
 version: 1
 routes:
-  cheap-router:
+  lite-upstream:
     utterances:
       - text: seed cheap utterance
         source: duplicate
@@ -273,7 +273,7 @@ routes:
     settings = load_settings(routes_path)
 
     assert settings.route_bank_loaded is True
-    assert settings.routes["cheap-router"].utterances == ["seed cheap utterance"]
+    assert settings.routes["lite-upstream"].utterances == ["seed cheap utterance"]
 
 
 def test_load_settings_requires_route_bank_via_environment(monkeypatch, tmp_path: Path):
@@ -281,10 +281,10 @@ def test_load_settings_requires_route_bank_via_environment(monkeypatch, tmp_path
     routes_path.write_text(
         """
 route_model: smart-router
-default_route: cheap-router
+default_route: lite-upstream
 route_bank_path: missing.yaml
 routes:
-  cheap-router:
+  lite-upstream:
     description: seed cheap
     utterances:
       - seed cheap utterance
@@ -309,10 +309,10 @@ def test_load_settings_resolves_route_bank_from_cwd_when_not_next_to_config(
     routes_path.write_text(
         """
 route_model: smart-router
-default_route: cheap-router
+default_route: lite-upstream
 route_bank_path: data/semantic_sets/route_bank.yaml
 routes:
-  cheap-router:
+  lite-upstream:
     description: seed cheap
     utterances:
       - seed cheap utterance
@@ -323,7 +323,7 @@ routes:
         """
 version: 1
 routes:
-  cheap-router:
+  lite-upstream:
     utterances:
       - text: generated cheap utterance
         source: cwd_bank
@@ -334,7 +334,7 @@ routes:
 
     settings = load_settings(routes_path)
 
-    assert settings.routes["cheap-router"].utterances == [
+    assert settings.routes["lite-upstream"].utterances == [
         "seed cheap utterance",
         "generated cheap utterance",
     ]
@@ -348,9 +348,9 @@ def test_embedding_api_key_and_headers_can_come_from_environment(
     routes_path.write_text(
         """
 route_model: semantic-router
-default_route: cheap-router
+default_route: lite-upstream
 routes:
-  cheap-router:
+  lite-upstream:
     description: seed cheap
     utterances:
       - seed cheap utterance
@@ -373,10 +373,10 @@ def test_empty_embedding_api_key_env_does_not_clear_configured_key(
     routes_path.write_text(
         """
 route_model: semantic-router
-default_route: cheap-router
+default_route: lite-upstream
 embedding_api_key: sk-configured
 routes:
-  cheap-router:
+  lite-upstream:
     description: seed cheap
     utterances:
       - seed cheap utterance
@@ -395,9 +395,9 @@ def test_invalid_embedding_headers_json_env_fails_loudly(monkeypatch, tmp_path: 
     routes_path.write_text(
         """
 route_model: semantic-router
-default_route: cheap-router
+default_route: lite-upstream
 routes:
-  cheap-router:
+  lite-upstream:
     description: seed cheap
     utterances:
       - seed cheap utterance
@@ -410,7 +410,7 @@ routes:
         load_settings(routes_path)
 
 
-def test_default_hard_rules_keep_only_high_precision_strong_escalations():
+def test_default_hard_rules_keep_only_high_precision_deep_escalations():
     settings = load_settings("config/routes.yaml")
 
     keywords = [keyword for hard_rule in settings.hard_rules for keyword in hard_rule.keywords]
@@ -427,7 +427,7 @@ def test_default_hard_rules_keep_only_high_precision_strong_escalations():
     assert "密钥" in keywords
     assert "bearer token" in keywords
     assert "安全漏洞" in keywords
-    assert settings.hard_rules[0].route_id == "strong"
+    assert settings.hard_rules[0].route_id == "deep"
 
 
 def test_router_settings_defaults_entry_model_to_semantic_router():
@@ -455,9 +455,9 @@ def test_load_settings_reads_litellm_timeout_override(tmp_path: Path, monkeypatc
     routes_path.write_text(
         """
 route_model: semantic-router
-default_route: cheap-router
+default_route: lite-upstream
 routes:
-  cheap-router:
+  lite-upstream:
     description: seed cheap
     utterances:
       - seed cheap utterance
@@ -513,9 +513,9 @@ def test_load_settings_reads_audit_log_overrides(tmp_path: Path, monkeypatch):
     routes_path.write_text(
         """
 route_model: semantic-router
-default_route: cheap-router
+default_route: lite-upstream
 routes:
-  cheap-router:
+  lite-upstream:
     description: seed cheap
     utterances:
       - seed cheap utterance
@@ -539,9 +539,9 @@ def test_load_settings_reads_prompt_review_log_overrides(tmp_path: Path, monkeyp
     routes_path.write_text(
         """
 route_model: semantic-router
-default_route: cheap-router
+default_route: lite-upstream
 routes:
-  cheap-router:
+  lite-upstream:
     description: seed cheap
     utterances:
       - seed cheap utterance
@@ -566,9 +566,9 @@ def test_load_settings_revalidates_prompt_review_log_env_overrides(
     routes_path.write_text(
         """
 route_model: semantic-router
-default_route: cheap-router
+default_route: lite-upstream
 routes:
-  cheap-router:
+  lite-upstream:
     description: seed cheap
     utterances:
       - seed cheap utterance
@@ -589,7 +589,7 @@ def test_router_settings_rejects_prompt_review_log_without_directory():
             prompt_log_mode="raw_local",
             routes={
                 "fast": RouteSpec(
-                    target_model="cheap-router",
+                    target_model="lite-upstream",
                     description="seed cheap",
                     utterances=["seed cheap utterance"],
                 )
@@ -602,9 +602,9 @@ def test_load_settings_disables_access_log_by_default(tmp_path: Path):
     routes_path.write_text(
         """
 route_model: semantic-router
-default_route: cheap-router
+default_route: lite-upstream
 routes:
-  cheap-router:
+  lite-upstream:
     description: seed cheap
     utterances:
       - seed cheap utterance
@@ -622,9 +622,9 @@ def test_load_settings_reads_access_log_override(tmp_path: Path, monkeypatch):
     routes_path.write_text(
         """
 route_model: semantic-router
-default_route: cheap-router
+default_route: lite-upstream
 routes:
-  cheap-router:
+  lite-upstream:
     description: seed cheap
     utterances:
       - seed cheap utterance
@@ -643,9 +643,9 @@ def test_load_settings_reads_readiness_timeout_override(tmp_path: Path, monkeypa
     routes_path.write_text(
         """
 route_model: semantic-router
-default_route: cheap-router
+default_route: lite-upstream
 routes:
-  cheap-router:
+  lite-upstream:
     description: seed cheap
     utterances:
       - seed cheap utterance
@@ -665,7 +665,7 @@ def test_router_settings_rejects_default_route_that_points_back_to_entry_model()
             route_model="semantic-router",
             default_route="semantic-router",
             routes={
-                "cheap-router": RouteSpec(
+                "lite-upstream": RouteSpec(
                     description="seed cheap",
                     utterances=["seed cheap utterance"],
                 )
@@ -677,13 +677,13 @@ def test_router_settings_rejects_recursive_route_target():
     with pytest.raises(ValidationError, match="recursive"):
         RouterSettings(
             route_model="semantic-router",
-            default_route="cheap-router",
+            default_route="lite-upstream",
             routes={
                 "semantic-router": RouteSpec(
                     description="recursive target",
                     utterances=["send back to entry model"],
                 ),
-                "cheap-router": RouteSpec(
+                "lite-upstream": RouteSpec(
                     description="seed cheap",
                     utterances=["seed cheap utterance"],
                 ),
@@ -800,6 +800,57 @@ def test_router_settings_defaults_agent_signal_to_strong_when_present():
 
     assert settings.agent_signal_route_id is None
     assert settings.effective_agent_signal_route_id == "strong"
+
+
+def test_router_settings_defaults_agent_signal_to_deep_when_present():
+    settings = RouterSettings.model_validate(
+        {
+            "fallback_route_id": "lite",
+            "routes": {
+                "lite": {"description": "low risk", "utterances": ["x"]},
+                "deep": {"description": "high risk", "utterances": ["y"]},
+            },
+        }
+    )
+
+    assert settings.agent_signal_route_id is None
+    assert settings.effective_agent_signal_route_id == "deep"
+
+
+def test_router_settings_accepts_legacy_route_aliases_with_canonical_routes():
+    settings = RouterSettings.model_validate(
+        {
+            "fallback_route_id": "fast",
+            "agent_signal_route_id": "strong",
+            "routes": {
+                "lite": {"description": "low risk", "utterances": ["x"]},
+                "deep": {"description": "high risk", "utterances": ["y"]},
+            },
+            "hard_rules": [{"route_id": "strong", "keywords": ["prod"]}],
+        }
+    )
+
+    assert settings.fallback_route_id == "lite"
+    assert settings.agent_signal_route_id == "deep"
+    assert settings.hard_rules[0].route_id == "deep"
+
+
+def test_router_settings_accepts_canonical_route_aliases_with_legacy_routes():
+    settings = RouterSettings.model_validate(
+        {
+            "fallback_route_id": "lite",
+            "agent_signal_route_id": "deep",
+            "routes": {
+                "fast": {"description": "low risk", "utterances": ["x"]},
+                "strong": {"description": "high risk", "utterances": ["y"]},
+            },
+            "hard_rules": [{"route_id": "deep", "keywords": ["prod"]}],
+        }
+    )
+
+    assert settings.fallback_route_id == "fast"
+    assert settings.agent_signal_route_id == "strong"
+    assert settings.hard_rules[0].route_id == "strong"
 
 
 def test_router_settings_disables_agent_signal_when_strong_is_absent_by_default():

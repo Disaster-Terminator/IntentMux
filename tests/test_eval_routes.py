@@ -15,8 +15,8 @@ def test_validate_case_route_ids_accepts_known_route_id():
 
 
 def test_validate_case_route_ids_rejects_target_model_name():
-    with pytest.raises(ValueError, match="pro-router"):
-        validate_case_route_ids([EvalCase(text="hi", expect="pro-router")], {"fast", "strong"})
+    with pytest.raises(ValueError, match="deep-upstream"):
+        validate_case_route_ids([EvalCase(text="hi", expect="deep-upstream")], {"fast", "strong"})
 
 
 def test_load_cases_ignores_eval_builder_metadata(tmp_path: Path):
@@ -82,10 +82,10 @@ def test_eval_routes_json_output_includes_id_slice_and_scores(tmp_path: Path):
     cases.write_text(
         """
 cases:
-  - id: strong_code_001
-    slice: strong_code_zh
+  - id: deep_code_001
+    slice: deep_code_zh
     text: 这个 PR 会不会引入回归
-    expect: strong
+    expect: deep
     source: test
 """,
         encoding="utf-8",
@@ -108,10 +108,10 @@ cases:
 
     payload = json.loads(output.read_text(encoding="utf-8"))
     assert payload["schema"] == "intentmux-route-eval-v1"
-    assert payload["cases"][0]["id"] == "strong_code_001"
-    assert payload["cases"][0]["slice"] == "strong_code_zh"
-    assert payload["cases"][0]["expect"] == "strong"
-    assert payload["cases"][0]["actual_route"] == "strong"
+    assert payload["cases"][0]["id"] == "deep_code_001"
+    assert payload["cases"][0]["slice"] == "deep_code_zh"
+    assert payload["cases"][0]["expect"] == "deep"
+    assert payload["cases"][0]["actual_route"] == "deep"
     assert payload["cases"][0]["passed"] is True
     assert "score" in payload["cases"][0]
     assert "second_score" in payload["cases"][0]
@@ -124,9 +124,9 @@ def test_eval_routes_json_output_preserves_long_context_metadata(tmp_path: Path)
         """
 cases:
   - id: long_001
-    slice: strong_long_context_zh
+    slice: deep_long_context_zh
     text: 线上长文档分析是否存在数据损坏风险
-    expect: strong
+    expect: deep
     source: test
     input_chars: 12000
     message_count: 3
@@ -151,7 +151,7 @@ cases:
     )
 
     case = json.loads(output.read_text(encoding="utf-8"))["cases"][0]
-    assert case["slice"] == "strong_long_context_zh"
+    assert case["slice"] == "deep_long_context_zh"
     assert case["input_chars"] == 12000
     assert case["message_count"] == 3
     assert case["context_policy"] == "preserved_length"
@@ -163,10 +163,10 @@ def test_mock_eval_keeps_generic_advice_on_fast(tmp_path: Path):
     cases.write_text(
         """
 cases:
-  - id: fast_general_advice_001
-    slice: fast_general_zh
+  - id: lite_general_advice_001
+    slice: lite_general_zh
     text: 这个学习计划靠谱吗？
-    expect: fast
+    expect: lite
     source: regression
 """,
         encoding="utf-8",
@@ -188,4 +188,4 @@ cases:
     )
 
     case = json.loads(output.read_text(encoding="utf-8"))["cases"][0]
-    assert case["actual_route"] == "fast"
+    assert case["actual_route"] == "lite"

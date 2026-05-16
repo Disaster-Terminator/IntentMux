@@ -29,9 +29,16 @@ class RouterSettings(BaseModel):
         default="semantic-router",
         validation_alias=AliasChoices("route_model", "entry_model"),
     )
-    entry_model_aliases: list[str] = Field(default_factory=lambda: ["semantic-router"])
+    entry_model_aliases: list[str] = Field(
+        default_factory=lambda: ["auto", "semantic-router"]
+    )
     route_id_aliases: dict[str, str] = Field(
-        default_factory=lambda: {"fast": "lite", "strong": "deep"}
+        default_factory=lambda: {
+            "fast": "lite",
+            "strong": "deep",
+            "lite": "fast",
+            "deep": "strong",
+        }
     )
     fallback_route_id: str = Field(
         default="fast",
@@ -72,6 +79,14 @@ class RouterSettings(BaseModel):
 
     @model_validator(mode="after")
     def validate_route_contract(self) -> "RouterSettings":
+        self.fallback_route_id = self.resolve_route_id_alias(self.fallback_route_id)
+        if self.agent_signal_route_id is not None:
+            self.agent_signal_route_id = self.resolve_route_id_alias(
+                self.agent_signal_route_id
+            )
+        for hard_rule in self.hard_rules:
+            hard_rule.route_id = self.resolve_route_id_alias(hard_rule.route_id)
+
         if self.fallback_route_id == self.route_model:
             raise ValueError("fallback_route_id must not point back to route_model")
         if self.route_model in self.routes:
@@ -104,6 +119,14 @@ class RouterSettings(BaseModel):
         if self.prompt_log_max_chars <= 0:
             raise ValueError("prompt_log_max_chars must be positive")
         return self
+
+    def resolve_route_id_alias(self, route_id: str) -> str:
+        if route_id in self.routes:
+            return route_id
+        alias_target = self.route_id_aliases.get(route_id)
+        if alias_target in self.routes:
+            return alias_target
+        return route_id
 
     @property
     def default_route(self) -> str:

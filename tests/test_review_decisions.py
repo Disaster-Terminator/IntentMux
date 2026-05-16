@@ -174,10 +174,10 @@ def test_format_result_row_supports_pass_fail_and_na():
 def test_validate_expected_routes_rejects_target_model_name():
     cases = [
         review_decisions.ReviewCase(
-            name="bad", payload={"model": DEFAULT_ROUTE_MODEL, "messages": []}, expected_route="pro-router"
+            name="bad", payload={"model": DEFAULT_ROUTE_MODEL, "messages": []}, expected_route="deep-upstream"
         )
     ]
-    with pytest.raises(ValueError, match="pro-router"):
+    with pytest.raises(ValueError, match="deep-upstream"):
         validate_expected_routes(cases, {"fast", "strong"})
 
 
@@ -229,7 +229,7 @@ cases:
         "call_decision_endpoint",
         lambda endpoint, payload, timeout_s: {
             "route_id": "fast",
-            "target_model": "cheap-router",
+            "target_model": "lite-upstream",
             "reason": "semantic_similarity",
         },
     )
@@ -260,13 +260,13 @@ cases:
         [
             {
                 "route_id": "fast",
-                "target_model": "cheap-router",
+                "target_model": "lite-upstream",
                 "reason": "semantic_similarity",
                 "score": 0.88,
             },
             {
                 "route_id": "strong",
-                "target_model": "pro-router",
+                "target_model": "deep-upstream",
                 "reason": "semantic_similarity",
                 "scores": {"fast": 0.2},
             },
@@ -282,7 +282,7 @@ cases:
         "case": "expected match",
         "expected_route": "fast",
         "actual_route": "fast",
-        "target_model": "cheap-router",
+        "target_model": "lite-upstream",
         "status": "pass",
         "reason": "semantic_similarity",
         "request_payload_model": DEFAULT_ROUTE_MODEL,
@@ -311,7 +311,7 @@ cases:
         "call_decision_endpoint",
         lambda *_args: {
             "route_id": "strong",
-            "target_model": "pro-router",
+            "target_model": "deep-upstream",
             "reason": "semantic_similarity",
         },
     )
@@ -394,7 +394,7 @@ cases:
             fake_call.calls += 1
             return {
                 "route_id": "fast",
-                "target_model": "cheap-router",
+                "target_model": "lite-upstream",
                 "reason": "semantic_similarity",
             }
         raise RuntimeError("boom")
@@ -433,7 +433,7 @@ cases:
             fake_call.calls += 1
             return {
                 "route_id": "strong",
-                "target_model": "pro-router",
+                "target_model": "deep-upstream",
                 "reason": "semantic_similarity",
             }
         raise RuntimeError("boom")

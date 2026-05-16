@@ -12,12 +12,12 @@ def test_cli_emits_stable_config_section(capsys):
     output = capsys.readouterr().out
     assert exit_code == 0
     assert "[router_config]" in output
-    assert "entry_model: semantic-router" in output
-    assert "fallback_route_id: fast" in output
+    assert "entry_model: auto" in output
+    assert "fallback_route_id: lite" in output
     assert "route_targets:" in output
-    assert "  fast: cheap-router" in output
-    assert "  strong: pro-router" in output
-    assert "hard_rule_route_ids: strong" in output
+    assert "  lite: your-lite-model" in output
+    assert "  deep: your-deep-model" in output
+    assert "hard_rule_route_ids: deep" in output
 
 
 def test_cli_with_logs_includes_summary_and_budget_and_redacts_payload(tmp_path, capsys):
@@ -25,8 +25,8 @@ def test_cli_with_logs_includes_summary_and_budget_and_redacts_payload(tmp_path,
     logs_path.write_text(
         "\n".join(
             [
-                '{"event":"route_complete","route_id":"fast","target_model":"cheap-router","reason":"embedding","stream":false}',
-                '{"event":"route_error","route_id":"strong","target_model":"pro-router","reason":"hard_rule:debug","stream":true,"error_type":"TimeoutError","upstream_status":503,"messages":"secret-prompt","authorization":"Bearer abc"}',
+                '{"event":"route_complete","route_id":"fast","target_model":"lite-upstream","reason":"embedding","stream":false}',
+                '{"event":"route_error","route_id":"strong","target_model":"deep-upstream","reason":"hard_rule:debug","stream":true,"error_type":"TimeoutError","upstream_status":503,"messages":"secret-prompt","authorization":"Bearer abc"}',
             ]
         ),
         encoding="utf-8",

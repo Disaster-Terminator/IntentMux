@@ -82,7 +82,7 @@ def test_convert_review_samples_validates_expect_against_routes_config():
 
 def test_convert_review_samples_rejects_target_model_name_when_routes_validation_enabled():
     raw_lines = [
-        '{"text":"非法","expect":"pro-router","redacted":true}',
+        '{"text":"非法","expect":"deep-upstream","redacted":true}',
     ]
 
     with pytest.raises(ReviewSampleError, match="not found in routes config"):
@@ -210,20 +210,20 @@ def test_synthetic_redacted_fixture_is_strictly_redacted_and_route_id_based():
         assert sample.get("redacted") is True
         assert isinstance(sample.get("text"), str) and sample["text"].strip()
         assert isinstance(sample.get("expect"), str) and sample["expect"].strip()
-        assert sample["expect"] != "pro-router"
+        assert sample["expect"] != "deep-upstream"
 
 
 def test_synthetic_redacted_fixture_converts_with_route_validation():
     fixture_path = Path("tests/samples/redacted_review_samples.synthetic.jsonl")
     lines = fixture_path.read_text(encoding="utf-8").splitlines()
 
-    result = convert_review_samples(lines, allowed_route_ids={"fast", "strong"})
+    result = convert_review_samples(lines, allowed_route_ids={"lite", "deep"})
 
     assert result == {
         "cases": [
             {
                 "text": "[REDACTED] incident triage summary",
-                "expect": "strong",
+                "expect": "deep",
                 "source": "production_review:synthetic",
                 "note": "operator sanity check",
             }

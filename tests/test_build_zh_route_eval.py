@@ -19,8 +19,8 @@ def test_validate_source_manifest_requires_known_slices():
         "sources": [
             {
                 "name": "massive_zh_general",
-                "slice": "fast_general_zh",
-                "route": "fast",
+                "slice": "lite_general_zh",
+                "route": "lite",
                 "kind": "huggingface",
                 "homepage": "https://example.test",
                 "license_id": "CC-BY-4.0",
@@ -42,7 +42,7 @@ def test_validate_source_manifest_rejects_unknown_slice():
             {
                 "name": "bad",
                 "slice": "misc",
-                "route": "fast",
+                "route": "lite",
                 "kind": "manual",
                 "homepage": "https://example.test",
                 "license_id": "unknown",
@@ -70,8 +70,8 @@ def test_validate_source_manifest_rejects_non_enum_prompt_policy():
         "sources": [
             {
                 "name": "bad_policy",
-                "slice": "fast_general_zh",
-                "route": "fast",
+                "slice": "lite_general_zh",
+                "route": "lite",
                 "kind": "manual",
                 "homepage": "https://example.test",
                 "license_id": "unknown",
@@ -96,7 +96,7 @@ samples:
   - id: borderline_001
     slice: borderline_zh
     text: 这个网关方案会不会导致上下文泄漏、路由回归或成本失控？
-    expect: strong
+    expect: deep
     source: curated_borderline_zh
     label_policy: manual_review_required
     rationale: 工程风险、隐私和成本回归需要强模型复核。
@@ -110,7 +110,7 @@ samples:
             "id": "borderline_001",
             "slice": "borderline_zh",
             "text": "这个网关方案会不会导致上下文泄漏、路由回归或成本失控？",
-            "expect": "strong",
+            "expect": "deep",
             "source": "curated_borderline_zh",
             "label_policy": "manual_review_required",
             "rationale": "工程风险、隐私和成本回归需要强模型复核。",
@@ -127,9 +127,9 @@ samples:
   - id: risk_001
     slice: high_risk_zh
     text: 线上服务偶发卡死，帮我定位根因
-    expect: fast
+    expect: lite
     source: curated_high_risk_zh
-    rationale: 高风险生产事故不应标为 fast。
+    rationale: 高风险生产事故不应标为 lite。
     redacted: true
 """,
         encoding="utf-8",
@@ -142,21 +142,21 @@ samples:
 def test_build_eval_payload_rejects_duplicate_ids():
     samples = [
         {
-            "id": "fast_001",
-            "slice": "fast_general_zh",
+            "id": "lite_001",
+            "slice": "lite_general_zh",
             "text": "帮我总结这段话",
-            "expect": "fast",
+            "expect": "lite",
             "source": "curated",
-            "rationale": "普通总结请求低风险，适合 fast。",
+            "rationale": "普通总结请求低风险，适合 lite。",
             "redacted": True,
         },
         {
-            "id": "fast_001",
-            "slice": "fast_intent_zh",
+            "id": "lite_001",
+            "slice": "lite_intent_zh",
             "text": "查一下天气",
-            "expect": "fast",
+            "expect": "lite",
             "source": "curated",
-            "rationale": "普通意图请求低风险，适合 fast。",
+            "rationale": "普通意图请求低风险，适合 lite。",
             "redacted": True,
         },
     ]
@@ -170,9 +170,9 @@ def test_build_eval_payload_preserves_long_context_metadata():
         [
             {
                 "id": "long_001",
-                "slice": "strong_long_context_zh",
+                "slice": "deep_long_context_zh",
                 "text": "请基于长文档定位冲突结论",
-                "expect": "strong",
+                "expect": "deep",
                 "source": "curated",
                 "rationale": "长上下文证据需要强模型。",
                 "redacted": True,
@@ -194,12 +194,12 @@ def test_build_zh_route_eval_cli_writes_eval_yaml(tmp_path: Path):
     sample.write_text(
         """
 samples:
-  - id: fast_001
-    slice: fast_general_zh
+  - id: lite_001
+    slice: lite_general_zh
     text: 帮我总结这段话
-    expect: fast
+    expect: lite
     source: curated
-    rationale: 普通总结请求低风险，适合 fast。
+    rationale: 普通总结请求低风险，适合 lite。
     redacted: true
 """,
         encoding="utf-8",
@@ -220,4 +220,4 @@ samples:
     )
 
     assert "wrote" in result.stdout
-    assert "fast_001" in output.read_text(encoding="utf-8")
+    assert "lite_001" in output.read_text(encoding="utf-8")

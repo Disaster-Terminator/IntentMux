@@ -49,7 +49,7 @@ def test_keep_preserves_slow_request_rows_without_truncating():
     slow_row = (
         "- duration_ms=117919.39 timestamp=2026-05-12T06:32:48.781826+00:00 "
         "request_id=95647be4-11e1-4d16-9d69-d085c0bb9720 route=fast "
-        "target=cheap-router reason=low_confidence upstream_status=200"
+        "target=lite-upstream reason=low_confidence upstream_status=200"
     )
     summary = "\n".join(
         [

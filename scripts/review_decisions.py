@@ -11,7 +11,7 @@ from urllib import error, request
 
 import yaml
 
-DEFAULT_ROUTE_MODEL = "semantic-router"
+DEFAULT_ROUTE_MODEL = "auto"
 
 
 @dataclass(frozen=True)

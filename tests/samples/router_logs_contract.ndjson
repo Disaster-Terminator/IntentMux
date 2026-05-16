@@ -1,6 +1,6 @@
 INFO:     127.0.0.1:1 - "GET /health HTTP/1.1" 200 OK
-{"event":"route_complete","route_id":"chat.strong","target_model":"pro-router","policy_id":"hard_rule","reason":"hard_rule:vip","request_id":"req_001","stream":true,"duration_ms":312.5,"upstream_status":200}
-{"event":"route_error","route_id":"chat.strong","target_model":"pro-router","policy_id":"embedding_error","reason":"embedding_error","request_id":"req_002","stream":true,"duration_ms":489,"error_type":"UpstreamStatusError","upstream_status":503,"upstream_error":"gateway_timeout"}
+{"event":"route_complete","route_id":"chat.deep","target_model":"your-deep-model","policy_id":"hard_rule","reason":"hard_rule:vip","request_id":"req_001","stream":true,"duration_ms":312.5,"upstream_status":200}
+{"event":"route_error","route_id":"chat.deep","target_model":"your-deep-model","policy_id":"embedding_error","reason":"embedding_error","request_id":"req_002","stream":true,"duration_ms":489,"error_type":"UpstreamStatusError","upstream_status":503,"upstream_error":"gateway_timeout"}
 {"event":"route_complete","route_id":null,"target_model":"base-router","policy_id":"passthrough","reason":"passthrough","request_id":"req_003","stream":false,"duration_ms":142,"upstream_status":200}
 {"event":"route_error","target_model":"legacy-router","policy_id":"hard_rule","reason":"hard_rule:legacy","request_id":"req_004","stream":false,"duration_ms":220,"error_type":"RemoteProtocolError","upstream_status":502,"upstream_error":"legacy_bad_gateway"}
 {"event":"startup"}

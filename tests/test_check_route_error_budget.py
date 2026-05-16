@@ -17,8 +17,8 @@ def test_check_budget_passes_when_no_route_errors():
     records = records_from_text(
         "\n".join(
             [
-                '{"event":"route_complete","target_model":"pro-router","stream":true}',
-                '{"event":"route_complete","target_model":"cheap-router","stream":false}',
+                '{"event":"route_complete","target_model":"deep-upstream","stream":true}',
+                '{"event":"route_complete","target_model":"lite-upstream","stream":false}',
             ]
         )
     )
@@ -37,8 +37,8 @@ def test_check_budget_fails_when_error_rate_exceeds_budget():
     records = records_from_text(
         "\n".join(
             [
-                '{"event":"route_complete","target_model":"pro-router","stream":true}',
-                '{"event":"route_error","target_model":"pro-router","stream":true,"error_type":"RemoteProtocolError"}',
+                '{"event":"route_complete","target_model":"deep-upstream","stream":true}',
+                '{"event":"route_error","target_model":"deep-upstream","stream":true,"error_type":"RemoteProtocolError"}',
             ]
         )
     )
@@ -61,8 +61,8 @@ def test_check_budget_fails_when_not_ok_rate_exceeds_budget():
     records = records_from_text(
         "\n".join(
             [
-                '{"event":"route_complete","target_model":"cheap-router","ok":true,"outcome":"success","upstream_status":200}',
-                '{"event":"route_complete","target_model":"cheap-router","ok":false,"outcome":"upstream_non_200","upstream_status":400}',
+                '{"event":"route_complete","target_model":"lite-upstream","ok":true,"outcome":"success","upstream_status":200}',
+                '{"event":"route_complete","target_model":"lite-upstream","ok":false,"outcome":"upstream_non_200","upstream_status":400}',
             ]
         )
     )
@@ -88,8 +88,8 @@ def test_check_budget_fails_when_target_error_rate_exceeds_budget():
     records = records_from_text(
         "\n".join(
             [
-                '{"event":"route_complete","target_model":"pro-router","stream":true}',
-                '{"event":"route_error","target_model":"cheap-router","stream":true,"error_type":"TimeoutError"}',
+                '{"event":"route_complete","target_model":"deep-upstream","stream":true}',
+                '{"event":"route_error","target_model":"lite-upstream","stream":true,"error_type":"TimeoutError"}',
             ]
         )
     )
@@ -104,9 +104,9 @@ def test_check_budget_fails_when_target_error_rate_exceeds_budget():
     )
 
     assert result.passed is False
-    assert result.target_error_rates == {"pro-router": 0.0, "cheap-router": 1.0}
+    assert result.target_error_rates == {"deep-upstream": 0.0, "lite-upstream": 1.0}
     assert result.reasons == [
-        "target cheap-router error_rate 1.0000 exceeds max_target_error_rate 0.0000"
+        "target lite-upstream error_rate 1.0000 exceeds max_target_error_rate 0.0000"
     ]
 
 
@@ -114,9 +114,9 @@ def test_check_budget_includes_route_error_rates_and_handles_missing_route_id():
     records = records_from_text(
         "\n".join(
             [
-                '{"event":"route_complete","route_id":"chat.default","target_model":"pro-router"}',
-                '{"event":"route_error","route_id":"chat.default","target_model":"cheap-router","error_type":"TimeoutError"}',
-                '{"event":"route_error","target_model":"cheap-router","error_type":"TimeoutError"}',
+                '{"event":"route_complete","route_id":"chat.default","target_model":"deep-upstream"}',
+                '{"event":"route_error","route_id":"chat.default","target_model":"lite-upstream","error_type":"TimeoutError"}',
+                '{"event":"route_error","target_model":"lite-upstream","error_type":"TimeoutError"}',
             ]
         )
     )
@@ -142,11 +142,11 @@ def test_check_budget_fails_when_reason_rate_exceeds_budget():
         "\n".join(
             [
                 (
-                    '{"event":"route_complete","target_model":"cheap-router",'
+                    '{"event":"route_complete","target_model":"lite-upstream",'
                     '"reason":"embedding_error"}'
                 ),
                 (
-                    '{"event":"route_complete","target_model":"pro-router",'
+                    '{"event":"route_complete","target_model":"deep-upstream",'
                     '"reason":"hard_rule:线上"}'
                 ),
             ]
@@ -174,8 +174,8 @@ def test_format_budget_result_is_stable_for_runbooks():
     records = records_from_text(
         "\n".join(
             [
-                '{"event":"route_complete","target_model":"pro-router","stream":true}',
-                '{"event":"route_error","route_id":"chat.default","target_model":"cheap-router","stream":true,"error_type":"TimeoutError"}',
+                '{"event":"route_complete","target_model":"deep-upstream","stream":true}',
+                '{"event":"route_error","route_id":"chat.default","target_model":"lite-upstream","stream":true,"error_type":"TimeoutError"}',
             ]
         )
     )
@@ -188,7 +188,7 @@ def test_format_budget_result_is_stable_for_runbooks():
         [
             "PASS route_error_budget",
             "total=2 completed=1 errors=1 error_rate=0.5000 not_ok=1 not_ok_rate=0.5000",
-            "target_error_rates: cheap-router=1.0000, pro-router=0.0000",
+            "target_error_rates: deep-upstream=0.0000, lite-upstream=1.0000",
             "route_error_rates: chat.default=1.0000, unknown=0.0000",
             "reason_rates: none",
             "outcome_rates: route_error=0.5000, success=0.5000",
@@ -219,7 +219,7 @@ def test_cli_returns_zero_when_budget_passes(monkeypatch, capsys):
         sys,
         "stdin",
         [
-            '{"event":"route_complete","target_model":"pro-router","stream":true}\n',
+            '{"event":"route_complete","target_model":"deep-upstream","stream":true}\n',
         ],
     )
 
@@ -235,7 +235,7 @@ def test_cli_returns_nonzero_when_budget_fails(monkeypatch, capsys):
         sys,
         "stdin",
         [
-            '{"event":"route_error","target_model":"pro-router","stream":true,"error_type":"RemoteProtocolError"}\n',
+            '{"event":"route_error","target_model":"deep-upstream","stream":true,"error_type":"RemoteProtocolError"}\n',
         ],
     )
 
@@ -253,11 +253,11 @@ def test_cli_accepts_repeatable_reason_rate_budgets(monkeypatch, capsys):
         "stdin",
         [
             (
-                '{"event":"route_complete","target_model":"cheap-router",'
+                '{"event":"route_complete","target_model":"lite-upstream",'
                 '"reason":"embedding_error"}\n'
             ),
             (
-                '{"event":"route_complete","target_model":"pro-router",'
+                '{"event":"route_complete","target_model":"deep-upstream",'
                 '"reason":"hard_rule:线上"}\n'
             ),
         ],
@@ -284,11 +284,11 @@ def test_cli_accepts_embedding_error_budget_alias(monkeypatch, capsys):
         "stdin",
         [
             (
-                '{"event":"route_complete","target_model":"cheap-router",'
+                '{"event":"route_complete","target_model":"lite-upstream",'
                 '"reason":"embedding_error"}\n'
             ),
             (
-                '{"event":"route_complete","target_model":"pro-router",'
+                '{"event":"route_complete","target_model":"deep-upstream",'
                 '"reason":"low_confidence"}\n'
             ),
         ],
@@ -317,7 +317,7 @@ def test_script_file_execution_works_from_repo_root():
             "--min-total",
             "1",
         ],
-        input='{"event":"route_complete","target_model":"pro-router"}\n',
+        input='{"event":"route_complete","target_model":"deep-upstream"}\n',
         text=True,
         capture_output=True,
         check=False,
@@ -332,8 +332,8 @@ def test_script_file_execution_accepts_log_file_path(tmp_path: Path):
     log_path.write_text(
         "\n".join(
             [
-                '{"event":"route_complete","target_model":"cheap-router","ok":true,"outcome":"success","upstream_status":200}',
-                '{"event":"route_complete","target_model":"cheap-router","ok":false,"outcome":"upstream_non_200","upstream_status":400}',
+                '{"event":"route_complete","target_model":"lite-upstream","ok":true,"outcome":"success","upstream_status":200}',
+                '{"event":"route_complete","target_model":"lite-upstream","ok":false,"outcome":"upstream_non_200","upstream_status":400}',
             ]
         ),
         encoding="utf-8",
@@ -363,8 +363,8 @@ def test_cli_reports_parse_diagnostics_for_malformed_or_partial_logs(monkeypatch
         sys,
         "stdin",
         [
-            '{"event":"route_complete","target_model":"pro-router"}\n',
-            '{"target_model":"cheap-router"}\n',
+            '{"event":"route_complete","target_model":"deep-upstream"}\n',
+            '{"target_model":"lite-upstream"}\n',
             '{"event":"route_error",\n',
         ],
     )
@@ -378,7 +378,7 @@ def test_cli_reports_parse_diagnostics_for_malformed_or_partial_logs(monkeypatch
 
 
 def test_parse_diagnostic_thresholds_disabled_by_default():
-    records = records_from_text('{"event":"route_complete","target_model":"pro-router"}')
+    records = records_from_text('{"event":"route_complete","target_model":"deep-upstream"}')
     result = check_budget(
         records,
         BudgetConfig(min_total=1, max_error_rate=0.0),
@@ -395,7 +395,7 @@ def test_parse_diagnostic_thresholds_disabled_by_default():
 
 
 def test_check_budget_fails_when_malformed_json_exceeds_budget():
-    records = records_from_text('{"event":"route_complete","target_model":"pro-router"}')
+    records = records_from_text('{"event":"route_complete","target_model":"deep-upstream"}')
     result = check_budget(
         records,
         BudgetConfig(min_total=1, max_error_rate=0.0, max_malformed_json=0),
@@ -407,7 +407,7 @@ def test_check_budget_fails_when_malformed_json_exceeds_budget():
 
 
 def test_check_budget_fails_when_missing_event_exceeds_budget():
-    records = records_from_text('{"event":"route_complete","target_model":"pro-router"}')
+    records = records_from_text('{"event":"route_complete","target_model":"deep-upstream"}')
     result = check_budget(
         records,
         BudgetConfig(min_total=1, max_error_rate=0.0, max_missing_event=0),
@@ -419,7 +419,7 @@ def test_check_budget_fails_when_missing_event_exceeds_budget():
 
 
 def test_check_budget_fails_when_unknown_event_exceeds_budget():
-    records = records_from_text('{"event":"route_complete","target_model":"pro-router"}')
+    records = records_from_text('{"event":"route_complete","target_model":"deep-upstream"}')
     result = check_budget(
         records,
         BudgetConfig(min_total=1, max_error_rate=0.0, max_unknown_event=0),
@@ -431,7 +431,7 @@ def test_check_budget_fails_when_unknown_event_exceeds_budget():
 
 
 def test_check_budget_fails_when_ignored_records_exceeds_budget():
-    records = records_from_text('{"event":"route_complete","target_model":"pro-router"}')
+    records = records_from_text('{"event":"route_complete","target_model":"deep-upstream"}')
     result = check_budget(
         records,
         BudgetConfig(min_total=1, max_error_rate=0.0, max_ignored_records=2),
@@ -452,7 +452,7 @@ def test_cli_fails_when_parse_diagnostics_threshold_exceeded(monkeypatch, capsys
         sys,
         "stdin",
         [
-            '{"event":"route_complete","target_model":"pro-router"}\n',
+            '{"event":"route_complete","target_model":"deep-upstream"}\n',
             '{"event":"route_error",\n',
         ],
     )
@@ -468,7 +468,7 @@ def test_cli_json_output_on_passing_budget(monkeypatch, capsys):
     monkeypatch.setattr(
         sys,
         "stdin",
-        ['{"event":"route_complete","route_id":"chat.default","target_model":"pro-router","reason":"hard_rule:x"}\n'],
+        ['{"event":"route_complete","route_id":"chat.default","target_model":"deep-upstream","reason":"hard_rule:x"}\n'],
     )
 
     exit_code = main(["--min-total", "1", "--output", "json"])
@@ -481,7 +481,7 @@ def test_cli_json_output_on_passing_budget(monkeypatch, capsys):
     assert payload["completed"] == 1
     assert payload["errors"] == 0
     assert payload["error_rate"] == 0.0
-    assert payload["target_error_rates"] == {"pro-router": 0.0}
+    assert payload["target_error_rates"] == {"deep-upstream": 0.0}
     assert payload["route_error_rates"] == {"chat.default": 0.0}
     assert payload["reason_rates"] == {"hard_rule:x": 1.0}
     assert payload["error_types"] == {}
@@ -499,7 +499,7 @@ def test_cli_json_output_on_failing_budget(monkeypatch, capsys):
         sys,
         "stdin",
         [
-            '{"event":"route_error","target_model":"pro-router","error_type":"RemoteProtocolError"}\n',
+            '{"event":"route_error","target_model":"deep-upstream","error_type":"RemoteProtocolError"}\n',
         ],
     )
 
@@ -511,7 +511,7 @@ def test_cli_json_output_on_failing_budget(monkeypatch, capsys):
     assert payload["passed"] is False
     assert payload["reasons"] == [
         "error_rate 1.0000 exceeds max_error_rate 0.0000",
-        "target pro-router error_rate 1.0000 exceeds max_target_error_rate 0.0000",
+        "target deep-upstream error_rate 1.0000 exceeds max_target_error_rate 0.0000",
     ]
 
 
@@ -520,8 +520,8 @@ def test_cli_json_output_includes_parse_diagnostics(monkeypatch, capsys):
         sys,
         "stdin",
         [
-            '{"event":"route_complete","target_model":"pro-router"}\n',
-            '{"target_model":"cheap-router"}\n',
+            '{"event":"route_complete","target_model":"deep-upstream"}\n',
+            '{"target_model":"lite-upstream"}\n',
             '{"event":"route_error",\n',
         ],
     )
@@ -543,7 +543,7 @@ def test_cli_json_mode_preserves_nonzero_exit_on_budget_failure(monkeypatch, cap
     monkeypatch.setattr(
         sys,
         "stdin",
-        ['{"event":"route_complete","target_model":"pro-router"}\n', '{"event":"route_error",\n'],
+        ['{"event":"route_complete","target_model":"deep-upstream"}\n', '{"event":"route_error",\n'],
     )
 
     exit_code = main(
@@ -557,7 +557,7 @@ def test_cli_json_mode_preserves_nonzero_exit_on_budget_failure(monkeypatch, cap
     assert "malformed_json 1 exceeds max_malformed_json 0" in payload["reasons"]
 
 def test_check_budget_passes_when_parse_diagnostic_thresholds_are_met():
-    records = records_from_text('{"event":"route_complete","target_model":"pro-router"}')
+    records = records_from_text('{"event":"route_complete","target_model":"deep-upstream"}')
     result = check_budget(
         records,
         BudgetConfig(
@@ -583,9 +583,9 @@ def test_check_budget_passes_when_reason_rate_is_within_budget():
     records = records_from_text(
         "\n".join(
             [
-                '{"event":"route_complete","target_model":"pro-router","reason":"hard_rule:a"}',
-                '{"event":"route_complete","target_model":"cheap-router","reason":"hard_rule:b"}',
-                '{"event":"route_complete","target_model":"cheap-router","reason":"hard_rule:b"}',
+                '{"event":"route_complete","target_model":"deep-upstream","reason":"hard_rule:a"}',
+                '{"event":"route_complete","target_model":"lite-upstream","reason":"hard_rule:b"}',
+                '{"event":"route_complete","target_model":"lite-upstream","reason":"hard_rule:b"}',
             ]
         )
     )
@@ -609,8 +609,8 @@ def test_check_budget_fails_when_upstream_status_rate_exceeds_budget():
     records = records_from_text(
         "\n".join(
             [
-                '{"event":"route_complete","target_model":"cheap-router","upstream_status":200}',
-                '{"event":"route_complete","target_model":"cheap-router","upstream_status":400}',
+                '{"event":"route_complete","target_model":"lite-upstream","upstream_status":200}',
+                '{"event":"route_complete","target_model":"lite-upstream","upstream_status":400}',
             ]
         )
     )
@@ -636,8 +636,8 @@ def test_check_budget_fails_when_route_error_rate_exceeds_global_budget():
     records = records_from_text(
         "\n".join(
             [
-                '{"event":"route_complete","route_id":"chat.default","target_model":"pro-router"}',
-                '{"event":"route_error","route_id":"chat.default","target_model":"pro-router","error_type":"RemoteProtocolError"}',
+                '{"event":"route_complete","route_id":"chat.default","target_model":"deep-upstream"}',
+                '{"event":"route_error","route_id":"chat.default","target_model":"deep-upstream","error_type":"RemoteProtocolError"}',
             ]
         )
     )
@@ -661,8 +661,8 @@ def test_cli_supports_route_specific_error_rate_budget(monkeypatch, capsys):
         sys,
         "stdin",
         [
-            '{"event":"route_complete","route_id":"chat.default","target_model":"pro-router"}\n',
-            '{"event":"route_error","route_id":"chat.default","target_model":"pro-router","error_type":"RemoteProtocolError"}\n',
+            '{"event":"route_complete","route_id":"chat.default","target_model":"deep-upstream"}\n',
+            '{"event":"route_error","route_id":"chat.default","target_model":"deep-upstream","error_type":"RemoteProtocolError"}\n',
         ],
     )
     exit_code = main(
@@ -687,8 +687,8 @@ def test_cli_accepts_repeatable_upstream_status_rate_budgets(monkeypatch, capsys
         sys,
         "stdin",
         [
-            '{"event":"route_complete","target_model":"cheap-router","upstream_status":200}\n',
-            '{"event":"route_complete","target_model":"cheap-router","upstream_status":400}\n',
+            '{"event":"route_complete","target_model":"lite-upstream","upstream_status":200}\n',
+            '{"event":"route_complete","target_model":"lite-upstream","upstream_status":400}\n',
         ],
     )
 
@@ -717,7 +717,7 @@ def test_script_file_execution_returns_nonzero_for_failing_budget():
             "--max-error-rate",
             "0",
         ],
-        input='{"event":"route_error","target_model":"pro-router","error_type":"RemoteProtocolError"}\n',
+        input='{"event":"route_error","target_model":"deep-upstream","error_type":"RemoteProtocolError"}\n',
         text=True,
         capture_output=True,
         check=False,
@@ -742,9 +742,9 @@ def test_contract_fixture_budget_includes_route_and_target_buckets():
     assert result.target_error_rates == {
         "base-router": 0.0,
         "legacy-router": 1.0,
-        "pro-router": 0.5,
+        "your-deep-model": 0.5,
     }
-    assert result.route_error_rates == {"chat.strong": 0.5, "unknown": 0.5}
+    assert result.route_error_rates == {"chat.deep": 0.5, "unknown": 0.5}
     assert result.error_types == {"RemoteProtocolError": 1, "UpstreamStatusError": 1}
     assert result.parse_diagnostics.malformed_json_lines == 1
     assert result.parse_diagnostics.unknown_event_records == 1

@@ -21,13 +21,13 @@ def verify_route_contract(routes_path: Path, cases_path: Path) -> list[str]:
     routes = raw.get("routes", {}) or {}
     route_ids = set(routes)
 
-    entry_model = raw.get("entry_model", raw.get("route_model", "semantic-router"))
+    entry_model = raw.get("entry_model", raw.get("route_model", "auto"))
     if entry_model in route_ids:
         errors.append(
             f"entry model '{entry_model}' must not also be a route_id in routes"
         )
 
-    fallback_route_id = raw.get("fallback_route_id", raw.get("default_route", "fast"))
+    fallback_route_id = raw.get("fallback_route_id", raw.get("default_route", "lite"))
     if fallback_route_id not in route_ids:
         errors.append(
             f"fallback_route_id '{fallback_route_id}' must be present in routes"

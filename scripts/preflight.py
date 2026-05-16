@@ -31,6 +31,18 @@ def require_header(
     return CheckResult(name, True, f"{key}={value}")
 
 
+def require_header_present(
+    *,
+    name: str,
+    headers: dict[str, str],
+    key: str,
+) -> CheckResult:
+    value = headers.get(key)
+    if value is None:
+        return CheckResult(name, False, f"missing header {key}")
+    return CheckResult(name, True, f"{key}={value}")
+
+
 def require_json_field(
     *,
     name: str,
@@ -61,23 +73,51 @@ def ready_payload_result(payload: dict) -> CheckResult:
     return CheckResult("ready_payload", ready_value is True, detail)
 
 
-def validate_nonstream_chat_response(response: httpx.Response) -> list[CheckResult]:
+def target_model_check(
+    *,
+    name: str,
+    headers: dict[str, str],
+    expected_target_model: str | None,
+) -> CheckResult:
+    if expected_target_model:
+        return require_header(
+            name=name,
+            headers=headers,
+            key="x-router-target-model",
+            expected=expected_target_model,
+        )
+    return require_header_present(
+        name=name,
+        headers=headers,
+        key="x-router-target-model",
+    )
+
+
+def validate_nonstream_chat_response(
+    response: httpx.Response,
+    *,
+    expected_target_model: str | None = None,
+) -> list[CheckResult]:
     return [
         CheckResult(
             "nonstream_status",
             response.status_code == 200,
             f"status={response.status_code}",
         ),
-        require_header(
+        target_model_check(
             name="nonstream_route",
             headers={key.lower(): value for key, value in response.headers.items()},
-            key="x-router-target-model",
-            expected="pro-router",
+            expected_target_model=expected_target_model,
         ),
     ]
 
 
-def validate_streaming_sse_response(response: httpx.Response, body_head: bytes) -> list[CheckResult]:
+def validate_streaming_sse_response(
+    response: httpx.Response,
+    body_head: bytes,
+    *,
+    expected_target_model: str | None = None,
+) -> list[CheckResult]:
     starts_with_data = body_head.startswith(b"data:")
     return [
         CheckResult(
@@ -85,11 +125,10 @@ def validate_streaming_sse_response(response: httpx.Response, body_head: bytes) 
             response.status_code == 200,
             f"status={response.status_code}",
         ),
-        require_header(
+        target_model_check(
             name="stream_route",
             headers={key.lower(): value for key, value in response.headers.items()},
-            key="x-router-target-model",
-            expected="pro-router",
+            expected_target_model=expected_target_model,
         ),
         CheckResult(
             "stream_body",
@@ -142,9 +181,9 @@ def summarize_results(results: list[CheckResult]) -> None:
         raise SystemExit(1)
 
 
-def chat_payload(stream: bool) -> dict:
+def chat_payload(stream: bool, *, model: str = "auto") -> dict:
     return {
-        "model": "semantic-router",
+        "model": model,
         "stream": stream,
         "messages": [
             {
@@ -162,6 +201,8 @@ def run_preflight(
     timeout: float,
     ready_attempts: int = 3,
     ready_interval: float = 1.0,
+    expected_target_model: str | None = None,
+    model: str = "auto",
 ) -> list[CheckResult]:
     base_url = router_base_url.rstrip("/")
     headers = (
@@ -198,18 +239,29 @@ def run_preflight(
         nonstream = client.post(
             f"{base_url}/v1/chat/completions",
             headers=headers,
-            json=chat_payload(stream=False),
+            json=chat_payload(stream=False, model=model),
         )
-        results.extend(validate_nonstream_chat_response(nonstream))
+        results.extend(
+            validate_nonstream_chat_response(
+                nonstream,
+                expected_target_model=expected_target_model,
+            )
+        )
 
         with client.stream(
             "POST",
             f"{base_url}/v1/chat/completions",
             headers=headers,
-            json=chat_payload(stream=True),
+            json=chat_payload(stream=True, model=model),
         ) as stream_response:
             body_head = next(stream_response.iter_bytes(), b"")
-            results.extend(validate_streaming_sse_response(stream_response, body_head))
+            results.extend(
+                validate_streaming_sse_response(
+                    stream_response,
+                    body_head,
+                    expected_target_model=expected_target_model,
+                )
+            )
 
     return results
 
@@ -234,6 +286,19 @@ def main(argv: list[str] | None = None) -> None:
         ),
     )
     parser.add_argument("--timeout", type=float, default=45.0)
+    parser.add_argument(
+        "--expected-target-model",
+        default=os.getenv("INTENTMUX_PREFLIGHT_EXPECTED_TARGET_MODEL"),
+        help=(
+            "Optional deployment-specific target model assertion. "
+            "If omitted, preflight only requires the route header to be present."
+        ),
+    )
+    parser.add_argument(
+        "--model",
+        default=os.getenv("INTENTMUX_PREFLIGHT_MODEL", "auto"),
+        help="Model name used by chat probes. Default: auto.",
+    )
     parser.add_argument("--ready-attempts", type=int, default=3)
     parser.add_argument("--ready-interval", type=float, default=1.0)
     args = parser.parse_args(argv)
@@ -251,6 +316,8 @@ def main(argv: list[str] | None = None) -> None:
             args.timeout,
             ready_attempts=args.ready_attempts,
             ready_interval=args.ready_interval,
+            expected_target_model=args.expected_target_model,
+            model=args.model,
         )
     )
 

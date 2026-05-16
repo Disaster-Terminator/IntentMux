@@ -25,11 +25,11 @@ route_model: semantic-router
 fallback_route_id: fast
 routes:
   fast:
-    target_model: cheap-router
+    target_model: lite-upstream
     description: low risk
     utterances: [hello]
   strong:
-    target_model: pro-router
+    target_model: deep-upstream
     description: high risk
     utterances: [debug]
 hard_rules:
@@ -59,7 +59,7 @@ route_model: semantic-router
 fallback_route_id: missing
 routes:
   semantic-router:
-    target_model: cheap-router
+    target_model: lite-upstream
     description: bad recursion
     utterances: [hello]
   strong:
@@ -76,7 +76,7 @@ hard_rules:
         """
 cases:
   - text: hello
-    expect: cheap-router
+    expect: lite-upstream
 """,
     )
 
@@ -96,7 +96,7 @@ route_model: semantic-router
 fallback_route_id: fast
 routes:
   fast:
-    target_model: cheap-router
+    target_model: lite-upstream
     description: low risk
     utterances: [hello]
 """,
@@ -106,7 +106,7 @@ routes:
         """
 cases:
   - text: hello
-    expect: cheap-router
+    expect: lite-upstream
 """,
     )
 
@@ -122,10 +122,10 @@ def test_verify_route_contract_rejects_route_bank_target_model_keys(tmp_path: Pa
         """
 version: 1
 routes:
-  cheap-router:
+  lite-upstream:
     utterances:
       - text: hello
-  pro-router:
+  deep-upstream:
     utterances:
       - text: debug
 """,
@@ -139,11 +139,11 @@ fallback_route_id: fast
 route_bank_path: semantic_sets/route_bank.yaml
 routes:
   fast:
-    target_model: cheap-router
+    target_model: lite-upstream
     description: low risk
     utterances: [hello]
   strong:
-    target_model: pro-router
+    target_model: deep-upstream
     description: high risk
     utterances: [debug]
 """,
@@ -160,8 +160,8 @@ cases:
     errors = verify_route_contract(routes_path, cases_path)
 
     assert any("has no route_id keys matching routes" in error for error in errors)
-    assert any("unknown route_id 'cheap-router'" in error for error in errors)
-    assert any("unknown route_id 'pro-router'" in error for error in errors)
+    assert any("unknown route_id 'lite-upstream'" in error for error in errors)
+    assert any("unknown route_id 'deep-upstream'" in error for error in errors)
 
 
 def test_verify_route_contract_allows_route_bank_route_id_keys(tmp_path: Path):
@@ -188,11 +188,11 @@ fallback_route_id: fast
 route_bank_path: semantic_sets/route_bank.yaml
 routes:
   fast:
-    target_model: cheap-router
+    target_model: lite-upstream
     description: low risk
     utterances: [hello]
   strong:
-    target_model: pro-router
+    target_model: deep-upstream
     description: high risk
     utterances: [debug]
 """,

@@ -53,8 +53,8 @@ def test_parse_route_records_ignores_access_logs_and_non_route_json():
         [
             'INFO:     127.0.0.1:1 - "GET /health HTTP/1.1" 200 OK',
             '{"event":"startup","status":"ok"}',
-            '{"event":"route_complete","route_id":"strong","target_model":"pro-router","stream":true,"duration_ms":1200}',
-            '{"event":"route_error","target_model":"pro-router","stream":true,"error_type":"RemoteProtocolError","upstream_status":503,"duration_ms":1400}',
+            '{"event":"route_complete","route_id":"strong","target_model":"deep-upstream","stream":true,"duration_ms":1200}',
+            '{"event":"route_error","target_model":"deep-upstream","stream":true,"error_type":"RemoteProtocolError","upstream_status":503,"duration_ms":1400}',
             "not json",
         ]
     )
@@ -65,13 +65,13 @@ def test_parse_route_records_ignores_access_logs_and_non_route_json():
         {
             "event": "route_complete",
             "route_id": "strong",
-            "target_model": "pro-router",
+            "target_model": "deep-upstream",
             "stream": True,
             "duration_ms": 1200,
         },
         {
             "event": "route_error",
-            "target_model": "pro-router",
+            "target_model": "deep-upstream",
             "stream": True,
             "error_type": "RemoteProtocolError",
             "upstream_status": 503,
@@ -83,9 +83,9 @@ def test_parse_route_records_ignores_access_logs_and_non_route_json():
 def test_parse_route_records_collects_diagnostics_for_malformed_and_partial_records():
     logs = "\n".join(
         [
-            '{"event":"route_complete","target_model":"pro-router"}',
+            '{"event":"route_complete","target_model":"deep-upstream"}',
             '{"event":"startup"}',
-            '{"target_model":"cheap-router"}',
+            '{"target_model":"lite-upstream"}',
             '{"event":"route_error",',
         ]
     )
@@ -105,7 +105,7 @@ def test_parse_route_records_reports_trailing_malformed_json_after_last_route():
     records = list(
         parse_route_records(
             [
-                '{"event":"route_complete","target_model":"pro-router"}',
+                '{"event":"route_complete","target_model":"deep-upstream"}',
                 '{"event":"route_error",',
             ],
             diagnostics=diagnostics,
@@ -121,7 +121,7 @@ def test_summarize_records_counts_routes_errors_and_latency():
         {
             "event": "route_complete",
             "route_id": "strong",
-            "target_model": "pro-router",
+            "target_model": "deep-upstream",
             "reason": "hard_rule:线上",
             "stream": True,
             "duration_ms": 1200,
@@ -129,7 +129,7 @@ def test_summarize_records_counts_routes_errors_and_latency():
         {
             "event": "route_complete",
             "route_id": "fast",
-            "target_model": "cheap-router",
+            "target_model": "lite-upstream",
             "reason": "embedding_error",
             "stream": False,
             "duration_ms": 300,
@@ -137,7 +137,7 @@ def test_summarize_records_counts_routes_errors_and_latency():
         {
             "event": "route_error",
             "route_id": "strong",
-            "target_model": "pro-router",
+            "target_model": "deep-upstream",
             "reason": "embedding",
             "stream": True,
             "error_type": "RemoteProtocolError",
@@ -153,7 +153,7 @@ def test_summarize_records_counts_routes_errors_and_latency():
     assert summary.errors == 1
     assert summary.streams == 2
     assert summary.nonstreams == 1
-    assert summary.targets == {"pro-router": 2, "cheap-router": 1}
+    assert summary.targets == {"deep-upstream": 2, "lite-upstream": 1}
     assert summary.routes == {"strong": 2, "fast": 1}
     assert summary.reasons == {
         "embedding": 1,
@@ -165,7 +165,7 @@ def test_summarize_records_counts_routes_errors_and_latency():
     assert summary.outcomes == {"success": 2, "upstream_non_200": 1}
     assert summary.not_ok == 1
     assert summary.upstream_non_200 == {
-        "status=503 target=pro-router reason=embedding stream=true": 1
+        "status=503 target=deep-upstream reason=embedding stream=true": 1
     }
     assert summary.max_duration_ms == 1400
     assert summary.duration_percentiles_ms == {
@@ -188,7 +188,7 @@ def test_summarize_records_limits_slow_request_samples_and_preserves_context():
             "timestamp": "2026-05-12T00:00:00Z",
             "request_id": "req-fast",
             "route_id": "fast",
-            "target_model": "cheap-router",
+            "target_model": "lite-upstream",
             "reason": "low_confidence",
             "stream": True,
             "upstream_status": 200,
@@ -201,7 +201,7 @@ def test_summarize_records_limits_slow_request_samples_and_preserves_context():
             "ts": "2026-05-12T00:00:01Z",
             "request_id": "req-slow",
             "route_id": "strong",
-            "target_model": "pro-router",
+            "target_model": "deep-upstream",
             "reason": "hard_rule:安全",
             "stream": True,
             "upstream_status": 400,
@@ -216,7 +216,7 @@ def test_summarize_records_limits_slow_request_samples_and_preserves_context():
             "timestamp": "2026-05-12T00:00:02Z",
             "request_id": "req-mid",
             "route_id": "fast",
-            "target_model": "cheap-router",
+            "target_model": "lite-upstream",
             "reason": "embedding_error",
             "stream": False,
             "upstream_status": 200,
@@ -253,7 +253,7 @@ def test_summarize_records_limits_slow_request_samples_and_preserves_context():
             "req-slow",
             2500.0,
             "strong",
-            "pro-router",
+            "deep-upstream",
             "hard_rule:安全",
             400,
             2.5,
@@ -266,7 +266,7 @@ def test_summarize_records_limits_slow_request_samples_and_preserves_context():
             "req-mid",
             1200.0,
             "fast",
-            "cheap-router",
+            "lite-upstream",
             "embedding_error",
             200,
             None,
@@ -283,7 +283,7 @@ def test_format_summary_is_stable_for_runbooks():
             {
                 "event": "route_error",
                 "route_id": "strong",
-                "target_model": "pro-router",
+                "target_model": "deep-upstream",
                 "reason": "embedding_error",
                 "stream": True,
                 "error_type": "RemoteProtocolError",
@@ -297,17 +297,17 @@ def test_format_summary_is_stable_for_runbooks():
         [
             "total=1 completed=0 errors=1 streams=1 nonstreams=0",
             "routes: strong=1",
-            "targets: pro-router=1",
+            "targets: deep-upstream=1",
             "reasons: embedding_error=1",
             "error_types: RemoteProtocolError=1",
             "outcomes: upstream_non_200=1",
             "not_ok=1",
             "upstream_statuses: 503=1",
-            "upstream_non_200: status=503 target=pro-router reason=embedding_error stream=true=1",
+            "upstream_non_200: status=503 target=deep-upstream reason=embedding_error stream=true=1",
             "max_duration_ms=1400.00",
             "duration_percentiles_ms: p50=1400.00, p90=1400.00, p95=1400.00, p99=1400.00",
             "slow_requests:",
-            "- duration_ms=1400.00 timestamp=unknown request_id=unknown route=strong target=pro-router reason=embedding_error upstream_status=503",
+            "- duration_ms=1400.00 timestamp=unknown request_id=unknown route=strong target=deep-upstream reason=embedding_error upstream_status=503",
         ]
     )
 
@@ -333,13 +333,13 @@ def test_format_summary_json_is_deterministic_and_includes_diagnostics():
         [
             {
                 "event": "route_complete",
-                "target_model": "cheap-router",
+                "target_model": "lite-upstream",
                 "reason": "embedding",
                 "stream": False,
             },
             {
                 "event": "route_error",
-                "target_model": "pro-router",
+                "target_model": "deep-upstream",
                 "reason": "hard_rule",
                 "stream": True,
                 "error_type": "RemoteProtocolError",
@@ -373,10 +373,10 @@ def test_format_summary_json_is_deterministic_and_includes_diagnostics():
         "route_error": 1,
         "routes": {},
         "streams": 1,
-        "targets": {"cheap-router": 1, "pro-router": 1},
+        "targets": {"lite-upstream": 1, "deep-upstream": 1},
         "total": 2,
         "upstream_non_200": {
-            "status=503 target=pro-router reason=hard_rule stream=true": 1
+            "status=503 target=deep-upstream reason=hard_rule stream=true": 1
         },
         "upstream_statuses": {"503": 1},
         "slow_requests": [
@@ -386,7 +386,7 @@ def test_format_summary_json_is_deterministic_and_includes_diagnostics():
                 "reason": "hard_rule",
                 "request_id": None,
                 "route_id": None,
-                "target_model": "pro-router",
+                "target_model": "deep-upstream",
                 "timestamp": None,
                 "upstream_body_ms": None,
                 "upstream_headers_ms": None,
@@ -401,8 +401,8 @@ def test_main_json_output_parses_mixed_stream_and_ignores_access_logs():
     logs = "\n".join(
         [
             'INFO:     127.0.0.1:1 - "GET /health HTTP/1.1" 200 OK',
-            '{"event":"route_complete","target_model":"cheap-router","reason":"embedding","stream":false}',
-            '{"event":"route_error","target_model":"pro-router","reason":"hard_rule","stream":true,"error_type":"UpstreamStatusError","upstream_status":503}',
+            '{"event":"route_complete","target_model":"lite-upstream","reason":"embedding","stream":false}',
+            '{"event":"route_error","target_model":"deep-upstream","reason":"hard_rule","stream":true,"error_type":"UpstreamStatusError","upstream_status":503}',
             '{"event":"startup"}',
             '{"event":"route_error",',
         ]
@@ -420,13 +420,13 @@ def test_main_json_output_parses_mixed_stream_and_ignores_access_logs():
     assert payload["total"] == 2
     assert payload["route_complete"] == 1
     assert payload["route_error"] == 1
-    assert payload["targets"] == {"cheap-router": 1, "pro-router": 1}
+    assert payload["targets"] == {"lite-upstream": 1, "deep-upstream": 1}
     assert payload["reasons"] == {"embedding": 1, "hard_rule": 1}
     assert payload["upstream_statuses"] == {"503": 1}
     assert payload["outcomes"] == {"success": 1, "upstream_non_200": 1}
     assert payload["not_ok"] == 1
     assert payload["upstream_non_200"] == {
-        "status=503 target=pro-router reason=hard_rule stream=true": 1
+        "status=503 target=deep-upstream reason=hard_rule stream=true": 1
     }
     assert payload["ignored_records"] == {
         "malformed_json": 1,
@@ -518,8 +518,8 @@ def test_contract_fixture_summary_separates_routes_and_targets():
     assert summary.total == 4
     assert summary.completed == 2
     assert summary.errors == 2
-    assert summary.routes == {"chat.strong": 2}
-    assert summary.targets == {"base-router": 1, "legacy-router": 1, "pro-router": 2}
+    assert summary.routes == {"chat.deep": 2}
+    assert summary.targets == {"base-router": 1, "legacy-router": 1, "your-deep-model": 2}
     assert summary.error_types == {"RemoteProtocolError": 1, "UpstreamStatusError": 1}
     assert summary.parse_diagnostics.malformed_json_lines == 1
     assert summary.parse_diagnostics.unknown_event_records == 1
@@ -530,8 +530,8 @@ def test_main_accepts_log_file_paths(tmp_path: Path):
     log_path.write_text(
         "\n".join(
             [
-                '{"event":"route_complete","target_model":"cheap-router","ok":true,"outcome":"success","upstream_status":200}',
-                '{"event":"route_complete","target_model":"cheap-router","ok":false,"outcome":"upstream_non_200","upstream_status":400}',
+                '{"event":"route_complete","target_model":"lite-upstream","ok":true,"outcome":"success","upstream_status":200}',
+                '{"event":"route_complete","target_model":"lite-upstream","ok":false,"outcome":"upstream_non_200","upstream_status":400}',
             ]
         ),
         encoding="utf-8",

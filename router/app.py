@@ -80,6 +80,17 @@ def create_app(
     async def health() -> dict[str, str]:
         return {"status": "ok"}
 
+    @app.get("/v1/models")
+    async def models() -> dict[str, list[dict[str, str]] | str]:
+        return {
+            "object": "list",
+            "data": [
+                {"id": "auto", "object": "model"},
+                {"id": "lite", "object": "model"},
+                {"id": "deep", "object": "model"},
+            ],
+        }
+
     @app.get("/ready")
     async def ready() -> JSONResponse:
         report = await readiness_checker.check()

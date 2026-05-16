@@ -45,6 +45,7 @@ class FakeClient:
     def __init__(self):
         self.urls: list[str] = []
         self.post_headers: list[dict[str, str]] = []
+        self.post_payloads: list[dict] = []
 
     def __enter__(self):
         return self
@@ -61,15 +62,17 @@ class FakeClient:
     def post(self, url: str, *, headers: dict, json: dict) -> FakeResponse:
         self.urls.append(url)
         self.post_headers.append(headers)
+        self.post_payloads.append(json)
         return FakeResponse(
-            headers={"x-router-target-model": "pro-router"},
+            headers={"x-router-target-model": "your-deep-model"},
         )
 
     def stream(self, method: str, url: str, *, headers: dict, json: dict) -> FakeResponse:
         self.urls.append(url)
         self.post_headers.append(headers)
+        self.post_payloads.append(json)
         return FakeResponse(
-            headers={"x-router-target-model": "pro-router"},
+            headers={"x-router-target-model": "your-deep-model"},
             body=b"data: first\n\n",
         )
 
@@ -118,12 +121,12 @@ class FlakyReadyClient(FakeClient):
 def test_require_header_returns_pass_for_expected_header():
     result = require_header(
         name="nonstream_route",
-        headers={"x-router-target-model": "pro-router"},
+        headers={"x-router-target-model": "your-deep-model"},
         key="x-router-target-model",
-        expected="pro-router",
+        expected="your-deep-model",
     )
 
-    assert result == CheckResult("nonstream_route", True, "x-router-target-model=pro-router")
+    assert result == CheckResult("nonstream_route", True, "x-router-target-model=your-deep-model")
 
 
 def test_require_header_returns_failure_for_missing_header():
@@ -131,7 +134,7 @@ def test_require_header_returns_failure_for_missing_header():
         name="stream_route",
         headers={},
         key="x-router-target-model",
-        expected="pro-router",
+        expected="your-deep-model",
     )
 
     assert result.ok is False
@@ -182,8 +185,32 @@ def test_run_preflight_checks_layered_readiness(monkeypatch):
         {"Authorization": "Bearer test-key"},
         {"Authorization": "Bearer test-key"},
     ]
+    assert [payload["model"] for payload in fake_client.post_payloads] == ["auto", "auto"]
     assert CheckResult("ready_status", True, "status=200") in results
     assert CheckResult("ready_payload", True, "ready=True") in results
+
+
+def test_run_preflight_can_probe_legacy_sidecar_entry(monkeypatch):
+    fake_client = FakeClient()
+
+    monkeypatch.setattr(
+        "scripts.preflight.httpx.Client",
+        lambda timeout: fake_client,
+    )
+
+    run_preflight(
+        "http://router.local",
+        intentmux_api_key=None,
+        timeout=5,
+        ready_attempts=1,
+        ready_interval=0,
+        model="semantic-router",
+    )
+
+    assert [payload["model"] for payload in fake_client.post_payloads] == [
+        "semantic-router",
+        "semantic-router",
+    ]
 
 
 def test_run_preflight_reports_degraded_readiness_components(monkeypatch):
@@ -281,7 +308,7 @@ def test_preflight_accepts_deprecated_api_key_alias(monkeypatch, capsys):
 def test_validate_nonstream_chat_response_fixture_pass_and_fail():
     passed = FakeResponse(
         status_code=200,
-        headers={"x-router-target-model": "pro-router"},
+        headers={"x-router-target-model": "your-deep-model"},
     )
     failed = FakeResponse(
         status_code=200,
@@ -297,8 +324,33 @@ def test_validate_nonstream_chat_response_fixture_pass_and_fail():
     assert "missing header x-router-target-model" == fail_by_name["nonstream_route"].detail
 
 
+def test_validate_nonstream_chat_response_can_assert_expected_target_model():
+    response = FakeResponse(
+        status_code=200,
+        headers={"x-router-target-model": "your-deep-model"},
+    )
+
+    passed = {
+        r.name: r
+        for r in validate_nonstream_chat_response(
+            response,
+            expected_target_model="your-deep-model",
+        )
+    }
+    failed = {
+        r.name: r
+        for r in validate_nonstream_chat_response(
+            response,
+            expected_target_model="other-model",
+        )
+    }
+
+    assert passed["nonstream_route"].ok is True
+    assert failed["nonstream_route"].ok is False
+
+
 def test_validate_streaming_sse_response_fixture_pass_and_fail():
-    response = FakeResponse(status_code=200, headers={"x-router-target-model": "pro-router"})
+    response = FakeResponse(status_code=200, headers={"x-router-target-model": "your-deep-model"})
 
     pass_by_name = {r.name: r for r in validate_streaming_sse_response(response, b"data: {\"x\":1}\n\n")}
     fail_by_name = {r.name: r for r in validate_streaming_sse_response(response, b"{\"x\":1}")}

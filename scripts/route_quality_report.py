@@ -182,20 +182,20 @@ def product_metrics(
     margin: float | None,
 ) -> dict[str, float | int | None]:
     total = len(cases)
-    fast_general = [case for case in cases if case.get("slice") == "fast_general_zh"]
-    actual_fast = [case for case in cases if case.get("actual_route") == "fast"]
+    lite_general = [case for case in cases if case.get("slice") == "lite_general_zh"]
+    actual_lite = [case for case in cases if case.get("actual_route") == "lite"]
     high_risk = [case for case in cases if case.get("slice") == "high_risk_zh"]
-    code = [case for case in cases if case.get("slice") == "strong_code_zh"]
+    code = [case for case in cases if case.get("slice") == "deep_code_zh"]
     near_margin = near_margin_metrics(cases, margin)
     long_context = long_context_metrics(cases)
     return {
-        "fast_general_keep_rate": route_rate(fast_general, "fast"),
-        "fast_precision": expected_rate(actual_fast, "fast"),
-        "strong_recall_high_risk": route_rate(high_risk, "strong"),
-        "strong_recall_code": route_rate(code, "strong"),
+        "lite_general_keep_rate": route_rate(lite_general, "lite"),
+        "lite_precision": expected_rate(actual_lite, "lite"),
+        "deep_recall_high_risk": route_rate(high_risk, "deep"),
+        "deep_recall_code": route_rate(code, "deep"),
         "low_confidence_rate": reason_rate(cases, "low_confidence"),
         "hard_rule_hit_rate": hard_rule_rate(cases),
-        "strong_call_rate": route_rate(cases, "strong"),
+        "deep_call_rate": route_rate(cases, "deep"),
         "near_margin_rate": near_margin["near_margin_rate"],
         "near_margin_measured_count": near_margin["near_margin_measured_count"],
         "near_margin_total_count": total,
@@ -270,7 +270,7 @@ def near_margin_metrics(
 
 def long_context_metrics(cases: list[dict[str, Any]]) -> dict[str, int]:
     long_context = [
-        case for case in cases if case.get("slice") == "strong_long_context_zh"
+        case for case in cases if case.get("slice") == "deep_long_context_zh"
     ]
     measured = 0
     schema_reserved = 0

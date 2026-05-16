@@ -46,14 +46,14 @@ def test_parse_route_logs_ignores_non_json_lines():
     logs = "\n".join(
         [
             'INFO:     127.0.0.1:1 - "GET /health HTTP/1.1" 200 OK',
-            '{"event":"route_complete","request_id":"req-1","target_model":"pro-router"}',
-            '{"event":"route_error","request_id":"req-2","target_model":"cheap-router"}',
+            '{"event":"route_complete","request_id":"req-1","target_model":"your-deep-model"}',
+            '{"event":"route_error","request_id":"req-2","target_model":"your-lite-model"}',
         ]
     )
 
     assert parse_route_logs(logs) == [
-        {"event": "route_complete", "request_id": "req-1", "target_model": "pro-router"},
-        {"event": "route_error", "request_id": "req-2", "target_model": "cheap-router"},
+        {"event": "route_complete", "request_id": "req-1", "target_model": "your-deep-model"},
+        {"event": "route_error", "request_id": "req-2", "target_model": "your-lite-model"},
     ]
 
 
@@ -63,13 +63,13 @@ def test_find_route_log_matches_request_id_and_stream_mode():
             "event": "route_complete",
             "request_id": "req-1",
             "stream": False,
-            "target_model": "cheap-router",
+            "target_model": "your-lite-model",
         },
         {
             "event": "route_complete",
             "request_id": "req-2",
             "stream": True,
-            "target_model": "pro-router",
+            "target_model": "your-deep-model",
         },
     ]
 
@@ -82,16 +82,16 @@ def test_find_matching_route_log_matches_recent_route_shape_once():
         {
             "event": "route_complete",
             "source_model": "semantic-router",
-                "route_id": "strong",
-            "target_model": "pro-router",
+                "route_id": "deep",
+            "target_model": "your-deep-model",
             "stream": False,
             "upstream_status": 200,
         },
         {
             "event": "route_complete",
             "source_model": "semantic-router",
-                "route_id": "strong",
-            "target_model": "pro-router",
+                "route_id": "deep",
+            "target_model": "your-deep-model",
             "stream": True,
             "upstream_status": 200,
         },
@@ -100,7 +100,7 @@ def test_find_matching_route_log_matches_recent_route_shape_once():
 
     match = find_matching_route_log(
         logs,
-        probe=Probe("pro_stream", "prompt", "strong", "pro-router", stream=True),
+        probe=Probe("deep_stream", "prompt", "deep", "your-deep-model", stream=True),
         used_indexes=used_indexes,
     )
 
@@ -114,15 +114,15 @@ def _log_line(record: dict) -> str:
 
 
 def test_validate_route_logs_strict_request_id_match():
-    probe = Probe("p1", "safe prompt", "strong", "pro-router", stream=False)
+    probe = Probe("p1", "safe prompt", "deep", "your-deep-model", stream=False)
     raw_logs = _log_line(
         {
             "event": "route_complete",
             "request_id": "rid-1",
             "stream": False,
             "source_model": "semantic-router",
-                "route_id": "strong",
-            "target_model": "pro-router",
+                "route_id": "deep",
+            "target_model": "your-deep-model",
             "upstream_status": 200,
         }
     )
@@ -135,15 +135,15 @@ def test_validate_route_logs_strict_request_id_match():
 
 
 def test_validate_route_logs_fallback_route_shape_match():
-    probe = Probe("p1", "safe prompt", "strong", "pro-router", stream=False)
+    probe = Probe("p1", "safe prompt", "deep", "your-deep-model", stream=False)
     raw_logs = _log_line(
         {
             "event": "route_complete",
             "request_id": "other-id",
             "stream": False,
             "source_model": "semantic-router",
-                "route_id": "strong",
-            "target_model": "pro-router",
+                "route_id": "deep",
+            "target_model": "your-deep-model",
             "upstream_status": 200,
         }
     )
@@ -157,8 +157,8 @@ def test_validate_route_logs_fallback_route_shape_match():
 
 def test_validate_route_logs_duplicate_route_shape_records_are_not_reused():
     probes = [
-        (Probe("p1", "safe prompt", "strong", "pro-router", stream=False), "rid-1"),
-        (Probe("p2", "safe prompt", "strong", "pro-router", stream=False), "rid-2"),
+        (Probe("p1", "safe prompt", "deep", "your-deep-model", stream=False), "rid-1"),
+        (Probe("p2", "safe prompt", "deep", "your-deep-model", stream=False), "rid-2"),
     ]
     raw_logs = _log_line(
         {
@@ -166,8 +166,8 @@ def test_validate_route_logs_duplicate_route_shape_records_are_not_reused():
             "request_id": "other-id",
             "stream": False,
             "source_model": "semantic-router",
-                "route_id": "strong",
-            "target_model": "pro-router",
+                "route_id": "deep",
+            "target_model": "your-deep-model",
             "upstream_status": 200,
         }
     )
@@ -181,15 +181,15 @@ def test_validate_route_logs_duplicate_route_shape_records_are_not_reused():
 
 
 def test_validate_route_logs_require_request_id_match_fails_on_fallback():
-    probe = Probe("p1", "safe prompt", "strong", "pro-router", stream=False)
+    probe = Probe("p1", "safe prompt", "deep", "your-deep-model", stream=False)
     raw_logs = _log_line(
         {
             "event": "route_complete",
             "request_id": "other-id",
             "stream": False,
             "source_model": "semantic-router",
-                "route_id": "strong",
-            "target_model": "pro-router",
+                "route_id": "deep",
+            "target_model": "your-deep-model",
             "upstream_status": 200,
         }
     )
@@ -205,7 +205,7 @@ def test_validate_route_logs_require_request_id_match_fails_on_fallback():
 
 
 def test_validate_route_logs_redaction_detects_prompt_and_bearer_token_leaks():
-    probe = Probe("p1", "my secret prompt", "strong", "pro-router", stream=False)
+    probe = Probe("p1", "my secret prompt", "deep", "your-deep-model", stream=False)
     raw_logs = "\n".join(
         [
             "Bearer top-secret-token",
@@ -215,8 +215,8 @@ def test_validate_route_logs_redaction_detects_prompt_and_bearer_token_leaks():
                     "request_id": "rid-1",
                     "stream": False,
                     "source_model": "semantic-router",
-                "route_id": "strong",
-                    "target_model": "pro-router",
+                "route_id": "deep",
+                    "target_model": "your-deep-model",
                     "upstream_status": 200,
                 }
             ),
@@ -231,7 +231,7 @@ def test_validate_route_logs_redaction_detects_prompt_and_bearer_token_leaks():
 
 
 def test_validate_nonstream_probe_response_detects_missing_model_field():
-    probe = Probe("p1", "prompt", "strong", "pro-router", stream=False)
+    probe = Probe("p1", "prompt", "deep", "your-deep-model", stream=False)
     passed = FakeResponse(
         status_code=200,
         headers={"content-type": "application/json"},
@@ -258,7 +258,7 @@ def test_validate_nonstream_probe_response_detects_missing_model_field():
 
 
 def test_validate_nonstream_probe_response_extracts_provider_router_request_id():
-    probe = Probe("p1", "prompt", "fast", "cheap-router", stream=False)
+    probe = Probe("p1", "prompt", "lite", "your-lite-model", stream=False)
     response = FakeResponse(
         status_code=200,
         headers={
@@ -278,7 +278,7 @@ def test_validate_nonstream_probe_response_extracts_provider_router_request_id()
 
 
 def test_validate_streaming_probe_response_detects_missing_sse_marker():
-    probe = Probe("p1", "prompt", "strong", "pro-router", stream=True)
+    probe = Probe("p1", "prompt", "deep", "your-deep-model", stream=True)
     response = FakeResponse(status_code=200)
 
     pass_by_name = {
@@ -335,9 +335,9 @@ def test_run_e2e_uses_provider_router_request_id_for_strict_log_match(monkeypatc
                 }
             )
             for probe in [
-                Probe("pro_nonstream", "prompt", "strong", "pro-router"),
-                Probe("pro_stream", "prompt", "strong", "pro-router", stream=True),
-                Probe("cheap_nonstream", "prompt", "fast", "cheap-router"),
+                Probe("deep_nonstream", "prompt", "deep", "your-deep-model"),
+                Probe("deep_stream", "prompt", "deep", "your-deep-model", stream=True),
+                Probe("lite_nonstream", "prompt", "lite", "your-lite-model"),
             ]
         ),
     )
@@ -390,14 +390,14 @@ def test_run_e2e_emits_progress_before_each_probe(monkeypatch):
     )
 
     assert [result.name for result in results] == [
-        "pro_nonstream_stub",
-        "pro_stream_stub",
-        "cheap_nonstream_stub",
+        "deep_nonstream_stub",
+        "deep_stream_stub",
+        "lite_nonstream_stub",
     ]
     assert [line.split("\t")[:2] for line in progress] == [
-        ["RUN", "pro_nonstream"],
-        ["RUN", "pro_stream"],
-        ["RUN", "cheap_nonstream"],
+        ["RUN", "deep_nonstream"],
+        ["RUN", "deep_stream"],
+        ["RUN", "lite_nonstream"],
     ]
 
 
@@ -433,8 +433,8 @@ def test_run_e2e_does_not_shape_match_logs_for_failed_probe(monkeypatch):
                 "request_id": "old-request",
                 "stream": False,
                 "source_model": "semantic-router",
-                "route_id": "strong",
-                "target_model": "pro-router",
+                "route_id": "deep",
+                "target_model": "your-deep-model",
                 "upstream_status": 200,
             }
         ),
@@ -452,5 +452,5 @@ def test_run_e2e_does_not_shape_match_logs_for_failed_probe(monkeypatch):
     )
 
     by_name = {result.name: result for result in results}
-    assert by_name["pro_nonstream_route_log_present"].ok is False
-    assert "skipped_due_to_failed_probe" in by_name["pro_nonstream_route_log_present"].detail
+    assert by_name["deep_nonstream_route_log_present"].ok is False
+    assert "skipped_due_to_failed_probe" in by_name["deep_nonstream_route_log_present"].detail

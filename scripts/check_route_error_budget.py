@@ -413,7 +413,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help=(
             "Shortcut for --max-reason-rate embedding_error=RATE. "
             "Useful for production patrols because embedding failures silently "
-            "fall back to the configured fast route."
+            "fall back to the configured fallback route, normally lite."
         ),
     )
     parser.add_argument(
