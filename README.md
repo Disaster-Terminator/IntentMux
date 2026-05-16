@@ -400,6 +400,14 @@ uv run python scripts/intentmux_daily_health.py \
 `--timezone` 默认读取 `INTENTMUX_TIMEZONE`，未设置时使用 `Asia/Shanghai`；也可以用
 `--date YYYY-MM-DD` 明确指定要巡检的审计日志日期。
 
+daily health 还会输出 `log_consistency`，用于审计今天的 route audit log 和可选
+prompt review log 是否能按 `request_id` 对齐。它会统计重复 `request_id`、缺失
+`request_id`、`route_without_prompt` 和 `prompt_without_route`。这些字段用于判断日志证据
+是否足够支撑人工复核；prompt review log 是本地私有补充证据，因此该检查默认只写入报告，
+不改变 readiness 或错误预算结论。正在处理中的请求可能已经写入 prompt review、但尚未写入
+route audit；这类新近记录会计入 `prompt_recent_in_grace`，不会立即算作
+`prompt_without_route`。
+
 审计 `request_id` 来源只使用 `x-request-id`、`x-correlation-id`、`traceparent` 或
 `metadata.semantic_router_request_id`。OpenAI `user` 字段可能包含真实用户标识，IntentMux 不会把它写入 audit log 的 `request_id`。
 

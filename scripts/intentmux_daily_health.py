@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import json
 import os
 import shlex
@@ -126,6 +127,131 @@ def count_route_records(day_log: Path) -> int:
         return sum(1 for _ in parse_route_records(fh))
 
 
+def log_consistency_from_day_logs(
+    route_log: Path,
+    prompt_log: Path,
+    *,
+    now: datetime | None = None,
+    prompt_grace_seconds: int = 300,
+) -> dict[str, Any]:
+    route_ids: list[str] = []
+    route_missing_request_id = 0
+    route_records = 0
+    if route_log.exists():
+        with route_log.open("r", encoding="utf-8") as fh:
+            for record in parse_route_records(fh):
+                route_records += 1
+                request_id = record.get("request_id")
+                if isinstance(request_id, str) and request_id:
+                    route_ids.append(request_id)
+                else:
+                    route_missing_request_id += 1
+
+    prompt_ids: list[str] = []
+    prompt_ids_outside_grace: list[str] = []
+    prompt_missing_request_id = 0
+    prompt_records = 0
+    prompt_recent_in_grace = 0
+    prompt_log_exists = prompt_log.exists()
+    current = now or datetime.now(UTC)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=UTC)
+    if prompt_log_exists:
+        with prompt_log.open("r", encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line or "{" not in line:
+                    continue
+                try:
+                    record = json.loads(line[line.find("{") :])
+                except json.JSONDecodeError:
+                    continue
+                if record.get("event") != "prompt_review":
+                    continue
+                prompt_records += 1
+                request_id = record.get("request_id")
+                if isinstance(request_id, str) and request_id:
+                    prompt_ids.append(request_id)
+                    ts = timestamp_from_record(record)
+                    in_grace = (
+                        ts is not None
+                        and prompt_grace_seconds > 0
+                        and (current - ts).total_seconds() < prompt_grace_seconds
+                    )
+                    if in_grace:
+                        prompt_recent_in_grace += 1
+                    else:
+                        prompt_ids_outside_grace.append(request_id)
+                else:
+                    prompt_missing_request_id += 1
+
+    route_counts = Counter(route_ids)
+    prompt_counts = Counter(prompt_ids)
+    prompt_counts_outside_grace = Counter(prompt_ids_outside_grace)
+    route_set = set(route_counts)
+    prompt_set = set(prompt_counts)
+    prompt_set_outside_grace = set(prompt_counts_outside_grace)
+    route_duplicate_request_ids = sum(1 for count in route_counts.values() if count > 1)
+    prompt_duplicate_request_ids = sum(1 for count in prompt_counts.values() if count > 1)
+    route_duplicate_records = sum(count - 1 for count in route_counts.values() if count > 1)
+    prompt_duplicate_records = sum(count - 1 for count in prompt_counts.values() if count > 1)
+    route_without_prompt = len(route_set - prompt_set) if prompt_log_exists else 0
+    prompt_without_route = len(prompt_set_outside_grace - route_set)
+
+    ok = (
+        route_duplicate_request_ids == 0
+        and prompt_duplicate_request_ids == 0
+        and route_missing_request_id == 0
+        and prompt_missing_request_id == 0
+        and route_without_prompt == 0
+        and prompt_without_route == 0
+    )
+    detail = "ok"
+    if not prompt_log_exists:
+        detail = "prompt_log_missing_or_disabled"
+        ok = (
+            route_duplicate_request_ids == 0
+            and route_missing_request_id == 0
+            and prompt_duplicate_request_ids == 0
+            and prompt_missing_request_id == 0
+            and prompt_without_route == 0
+        )
+    elif not ok:
+        detail = "duplicates_or_mismatches_detected"
+
+    return {
+        "route_records": route_records,
+        "route_unique_request_ids": len(route_counts),
+        "route_duplicate_request_ids": route_duplicate_request_ids,
+        "route_duplicate_records": route_duplicate_records,
+        "route_missing_request_id": route_missing_request_id,
+        "prompt_records": prompt_records,
+        "prompt_unique_request_ids": len(prompt_counts),
+        "prompt_duplicate_request_ids": prompt_duplicate_request_ids,
+        "prompt_duplicate_records": prompt_duplicate_records,
+        "prompt_missing_request_id": prompt_missing_request_id,
+        "prompt_recent_in_grace": prompt_recent_in_grace,
+        "route_without_prompt": route_without_prompt,
+        "prompt_without_route": prompt_without_route,
+        "prompt_log_exists": prompt_log_exists,
+        "ok": ok,
+        "detail": detail,
+    }
+
+
+def timestamp_from_record(record: dict[str, Any]) -> datetime | None:
+    value = record.get("ts") or record.get("timestamp")
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
+
+
 def traffic_evidence_from_day_log(day_log: Path, *, min_records: int) -> dict[str, Any]:
     today_records = count_route_records(day_log)
     if min_records <= 0:
@@ -224,6 +350,29 @@ def render_md(report: dict[str, Any]) -> str:
             f"- today_records: {traffic['today_records']}",
             f"- min_records: {traffic['min_records']}",
             f"- detail: {traffic['detail']}",
+        ]
+
+    consistency = r.get("log_consistency")
+    if consistency:
+        lines += [
+            "",
+            "## log_consistency",
+            f"- ok: {consistency['ok']}",
+            f"- detail: {consistency['detail']}",
+            f"- route_records: {consistency['route_records']}",
+            f"- route_unique_request_ids: {consistency['route_unique_request_ids']}",
+            f"- route_duplicate_request_ids: {consistency['route_duplicate_request_ids']}",
+            f"- route_duplicate_records: {consistency['route_duplicate_records']}",
+            f"- route_missing_request_id: {consistency['route_missing_request_id']}",
+            f"- prompt_log_exists: {consistency['prompt_log_exists']}",
+            f"- prompt_records: {consistency['prompt_records']}",
+            f"- prompt_unique_request_ids: {consistency['prompt_unique_request_ids']}",
+            f"- prompt_duplicate_request_ids: {consistency['prompt_duplicate_request_ids']}",
+            f"- prompt_duplicate_records: {consistency['prompt_duplicate_records']}",
+            f"- prompt_missing_request_id: {consistency['prompt_missing_request_id']}",
+            f"- prompt_recent_in_grace: {consistency['prompt_recent_in_grace']}",
+            f"- route_without_prompt: {consistency['route_without_prompt']}",
+            f"- prompt_without_route: {consistency['prompt_without_route']}",
         ]
 
     lines += [
@@ -385,6 +534,8 @@ def main() -> int:
         day_log,
         min_records=args.min_route_records,
     )
+    prompt_day_log = log_dir / "prompts" / f"{day}.jsonl"
+    log_consistency = log_consistency_from_day_logs(day_log, prompt_day_log)
 
     if budget_no_samples(day_log):
         strict = {"ok": True, "exit_code": 0, "stdout": "no_samples", "stderr": ""}
@@ -456,6 +607,7 @@ def main() -> int:
             "glob": route_all_glob,
         },
         "traffic_evidence": traffic_evidence,
+        "log_consistency": log_consistency,
         "strict_budget": {
             "exit_code": strict["exit_code"],
             "reasons": strict_reasons,
@@ -501,6 +653,9 @@ def main() -> int:
                 "tolerant_exit": report["tolerant_budget"]["exit_code"],
                 "traffic_evidence_ok": report["traffic_evidence"]["ok"],
                 "today_records": report["traffic_evidence"]["today_records"],
+                "log_consistency_ok": report["log_consistency"]["ok"],
+                "route_without_prompt": report["log_consistency"]["route_without_prompt"],
+                "prompt_without_route": report["log_consistency"]["prompt_without_route"],
                 "e2e_mode": report["e2e"]["mode"],
                 "e2e_exit": report["e2e"]["exit_code"],
                 "json": str(json_path),

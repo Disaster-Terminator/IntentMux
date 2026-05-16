@@ -92,6 +92,7 @@ The daily health report includes:
 - `route_summary_today`
 - `route_summary_all_logs`
 - `traffic_evidence`
+- `log_consistency`
 - `strict_budget`
 - `tolerant_budget`
 - `e2e`
@@ -103,6 +104,16 @@ and compares it with `--min-route-records`. Malformed JSON, missing events, and
 unknown events do not count as traffic evidence. "Today" defaults to `Asia/Shanghai`, matching the
 default audit-log partition timezone. Use `--date YYYY-MM-DD` for an explicit
 file date. `route_summary_all_logs` is only historical context.
+
+`log_consistency` compares today's route audit log with the optional prompt
+review log for the same date. It reports duplicate `request_id` counts, missing
+`request_id` counts, `route_without_prompt`, and `prompt_without_route`.
+Schedulers may alert or annotate reports from these fields, but should treat
+them as auditability signals rather than core service readiness: prompt review
+logging is optional and can have boundary cases around stream cancellation,
+process restart, or date partition edges. Recent prompt review records are
+counted under `prompt_recent_in_grace` and excluded from `prompt_without_route`
+for a short in-flight grace window.
 
 Slow request rows include:
 

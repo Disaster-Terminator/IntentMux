@@ -5,6 +5,7 @@ from pathlib import Path
 
 from scripts.intentmux_daily_health import (
     build_e2e_cmd,
+    log_consistency_from_day_logs,
     traffic_evidence_from_day_log,
     keep,
     parse_ready,
@@ -87,6 +88,24 @@ def test_render_md_nests_slow_request_rows():
             "min_records": 10,
             "detail": "insufficient_samples: today_records=0 min_records=10",
         },
+        "log_consistency": {
+            "ok": False,
+            "detail": "duplicates_or_mismatches_detected",
+            "route_records": 2,
+            "route_unique_request_ids": 2,
+            "route_duplicate_request_ids": 0,
+            "route_duplicate_records": 0,
+            "route_missing_request_id": 0,
+            "prompt_records": 3,
+            "prompt_unique_request_ids": 3,
+            "prompt_duplicate_request_ids": 0,
+            "prompt_duplicate_records": 0,
+            "prompt_missing_request_id": 0,
+            "prompt_recent_in_grace": 0,
+            "route_without_prompt": 0,
+            "prompt_without_route": 1,
+            "prompt_log_exists": True,
+        },
         "strict_budget": {"exit_code": 1, "reasons": []},
         "tolerant_budget": {"exit_code": 0, "reasons": []},
         "e2e": {"mode": "skipped", "exit_code": 0, "highlights": []},
@@ -99,6 +118,8 @@ def test_render_md_nests_slow_request_rows():
     assert "## traffic_evidence" in md
     assert "- ok: False" in md
     assert "- detail: insufficient_samples: today_records=0 min_records=10" in md
+    assert "## log_consistency" in md
+    assert "- prompt_without_route: 1" in md
 
 
 def test_traffic_evidence_passes_when_min_valid_route_records_is_met(tmp_path: Path):
@@ -150,6 +171,144 @@ def test_traffic_evidence_is_not_required_by_default(tmp_path: Path):
         "min_records": 0,
         "detail": "not_required",
     }
+
+
+def test_log_consistency_counts_duplicates_and_prompt_mismatches(tmp_path: Path):
+    routes = tmp_path / "routes.jsonl"
+    prompts = tmp_path / "prompts.jsonl"
+    routes.write_text(
+        "\n".join(
+            [
+                '{"event":"route_complete","request_id":"req-1"}',
+                '{"event":"route_error","request_id":"req-1"}',
+                '{"event":"route_complete","request_id":"req-route-only"}',
+                '{"event":"route_complete"}',
+            ]
+        ),
+        encoding="utf-8",
+    )
+    prompts.write_text(
+        "\n".join(
+            [
+                '{"event":"prompt_review","request_id":"req-1","latest_user_text":"secret prompt"}',
+                '{"event":"prompt_review","request_id":"req-prompt-only","latest_user_text":"private"}',
+                '{"event":"prompt_review","request_id":"req-prompt-only","latest_user_text":"private duplicate"}',
+                '{"event":"other","request_id":"ignored"}',
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    consistency = log_consistency_from_day_logs(routes, prompts)
+
+    assert consistency == {
+        "route_records": 4,
+        "route_unique_request_ids": 2,
+        "route_duplicate_request_ids": 1,
+        "route_duplicate_records": 1,
+        "route_missing_request_id": 1,
+        "prompt_records": 3,
+        "prompt_unique_request_ids": 2,
+        "prompt_duplicate_request_ids": 1,
+        "prompt_duplicate_records": 1,
+        "prompt_missing_request_id": 0,
+        "prompt_recent_in_grace": 0,
+        "route_without_prompt": 1,
+        "prompt_without_route": 1,
+        "prompt_log_exists": True,
+        "ok": False,
+        "detail": "duplicates_or_mismatches_detected",
+    }
+
+
+def test_log_consistency_treats_missing_prompt_log_as_optional(tmp_path: Path):
+    routes = tmp_path / "routes.jsonl"
+    prompts = tmp_path / "missing-prompts.jsonl"
+    routes.write_text(
+        "\n".join(
+            [
+                '{"event":"route_complete","request_id":"req-1"}',
+                '{"event":"route_complete","request_id":"req-2"}',
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    consistency = log_consistency_from_day_logs(routes, prompts)
+
+    assert consistency["ok"] is True
+    assert consistency["detail"] == "prompt_log_missing_or_disabled"
+    assert consistency["prompt_log_exists"] is False
+    assert consistency["prompt_recent_in_grace"] == 0
+    assert consistency["route_without_prompt"] == 0
+    assert consistency["prompt_without_route"] == 0
+
+
+def test_log_consistency_output_does_not_include_prompt_text(tmp_path: Path):
+    routes = tmp_path / "routes.jsonl"
+    prompts = tmp_path / "prompts.jsonl"
+    routes.write_text('{"event":"route_complete","request_id":"req-1"}\n', encoding="utf-8")
+    prompts.write_text(
+        '{"event":"prompt_review","request_id":"req-1","latest_user_text":"do not leak"}\n',
+        encoding="utf-8",
+    )
+
+    consistency = log_consistency_from_day_logs(routes, prompts)
+    rendered = render_md(
+        {
+            "time": "2026-05-12T21:00:00+08:00",
+            "repo": "/repo",
+            "commit": "abc123",
+            "ready": {"ok": True, "summary": "ready=True"},
+            "route_summary_today": {"exit_code": 0, "highlights": []},
+            "route_summary_all_logs": {"exit_code": 0, "highlights": []},
+            "traffic_evidence": {
+                "ok": True,
+                "today_records": 1,
+                "min_records": 0,
+                "detail": "not_required",
+            },
+            "log_consistency": consistency,
+            "strict_budget": {"exit_code": 0, "reasons": []},
+            "tolerant_budget": {"exit_code": 0, "reasons": []},
+            "e2e": {"mode": "skipped", "exit_code": 0, "highlights": []},
+            "paths": {"json": "/tmp/report.json", "md": "/tmp/report.md"},
+        }
+    )
+
+    assert "do not leak" not in rendered
+    assert "- prompt_records: 1" in rendered
+
+
+def test_log_consistency_ignores_recent_orphan_prompt_within_grace(tmp_path: Path):
+    routes = tmp_path / "routes.jsonl"
+    prompts = tmp_path / "prompts.jsonl"
+    routes.write_text('{"event":"route_complete","request_id":"req-1"}\n', encoding="utf-8")
+    prompts.write_text(
+        "\n".join(
+            [
+                (
+                    '{"event":"prompt_review","request_id":"req-recent",'
+                    '"ts":"2026-05-16T10:00:00+00:00"}'
+                ),
+                (
+                    '{"event":"prompt_review","request_id":"req-old",'
+                    '"ts":"2026-05-16T09:50:00+00:00"}'
+                ),
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    consistency = log_consistency_from_day_logs(
+        routes,
+        prompts,
+        now=datetime(2026, 5, 16, 10, 1, tzinfo=UTC),
+        prompt_grace_seconds=300,
+    )
+
+    assert consistency["prompt_recent_in_grace"] == 1
+    assert consistency["prompt_without_route"] == 1
 
 
 def test_report_day_defaults_to_beijing_time():
