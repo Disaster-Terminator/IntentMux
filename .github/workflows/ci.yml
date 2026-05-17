@@ -52,7 +52,7 @@ jobs:
             --output /tmp/intentmux-review-cases.yaml \
             --routes config/routes.yaml \
             --output-summary json 2>&1 | tee review-import.log
-          uv run python -c "from pathlib import Path; from scripts.review_decisions import load_cases, load_route_ids, validate_expected_routes; cases=load_cases(Path('/tmp/intentmux-review-cases.yaml')); validate_expected_routes(cases, load_route_ids(Path('config/routes.yaml'))); assert len(cases)==1; assert cases[0].expected_route=='strong'" 2>&1 | tee review-decisions.log
+          uv run python -c "from pathlib import Path; from scripts.review_decisions import load_cases, load_route_ids, validate_expected_routes; cases=load_cases(Path('/tmp/intentmux-review-cases.yaml')); validate_expected_routes(cases, load_route_ids(Path('config/routes.yaml'))); assert len(cases)==1; assert cases[0].expected_route=='deep'" 2>&1 | tee review-decisions.log
 
       - name: Run router log summary fixture check
         run: |
