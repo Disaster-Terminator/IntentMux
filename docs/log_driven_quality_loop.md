@@ -1,9 +1,9 @@
 # Log-Driven Quality Loop
 
 IntentMux improves routing quality from production metadata, optional local
-prompt review logs, AI-assisted review, and redacted review samples. Route
-audit logs identify routing drift, low-confidence decisions, failures, and
-latency regressions; prompt review logs provide local-only semantic evidence
+prompt review logs, external AI-assisted review, and redacted review samples.
+Route audit logs identify routing drift, low-confidence decisions, failures,
+and latency regressions; prompt review logs provide local-only semantic evidence
 when explicitly enabled. Only reviewed, redacted samples are promoted into eval
 cases or route banks.
 
@@ -43,7 +43,7 @@ audit logs
   -> daily health / route summary / route-error budget
   -> review candidate selection
   -> optional local prompt review lookup by request_id
-  -> AI review packet
+  -> AI review packet for an external reviewer
   -> human audit for escalations, uncertainty, and policy changes
   -> redacted production_review JSONL
   -> eval bank import
@@ -116,6 +116,34 @@ private prompt text. Generic agent-like structure such as `tools`,
 not a hard route decision. Treat these records as review candidates when they
 cluster around `low_confidence`, high latency, or unexpected `deep` call-rate
 changes, but do not promote request structure alone into a stronger-tier route.
+
+## AI Review Packet
+
+Generate a local-only packet for an external AI reviewer:
+
+```bash
+uv run python scripts/prepare_ai_review_packet.py \
+  --input /data/reviews/intentmux-review-candidates-YYYY-MM-DD.json \
+  --json-output /data/reviews/agent/intentmux-ai-review-packet-YYYY-MM-DD.json \
+  --markdown-output /data/reviews/agent/intentmux-ai-review-packet-YYYY-MM-DD.md
+```
+
+The default packet is metadata-only. Raw prompt excerpts require the explicit
+`--include-prompt-text raw_local` flag and should only be written under a local
+private runtime directory.
+
+Validate and summarize AI output:
+
+```bash
+uv run python scripts/summarize_ai_review.py \
+  --input /data/reviews/agent/intentmux-ai-review-result-YYYY-MM-DD.json \
+  --json-output /data/reviews/agent/intentmux-ai-review-summary-YYYY-MM-DD.json \
+  --markdown-output /data/reviews/agent/intentmux-ai-review-summary-YYYY-MM-DD.md
+```
+
+These scripts do not call an AI provider and are not part of the request-time
+routing path. The repository prepares and validates generic artifacts; local
+automation decides which external AI runner reads the packet.
 
 ## Promoting Samples
 

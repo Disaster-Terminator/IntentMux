@@ -499,6 +499,10 @@ prompt 文本推断调用框架身份。
 `hard_rule:*` 命中会优先进入候选报告，用来复核 `token`、`安全`、`权限` 等宽词是否过度升级。
 AI 可以先做候选归纳和不确定性上浮；只有经接受、脱敏且设置 `redacted: true`
 的样本才能进入 eval 或 route bank。
+仓库提供通用的本地 AI review artifact 脚本：
+`scripts/prepare_ai_review_packet.py` 把候选转成 AI 可读 packet，
+`scripts/summarize_ai_review.py` 校验并汇总 AI 输出；脚本本身不调用任何 AI
+provider，不在请求时路由路径里运行，也不依赖 Retinue、Hermes 或 OpenCode。
 
 配置 + 日志诊断摘要：
 

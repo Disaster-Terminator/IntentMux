@@ -12,11 +12,15 @@ large labeling or training project.
 ```text
 runtime logs
   -> scripts select candidates and compute baselines
-  -> AI reviews candidate packets and reports uncertainty
+  -> external AI reviewer reads candidate packets and reports uncertainty
   -> humans audit only policy, privacy, and unclear cases
   -> accepted evidence becomes redacted regression cases or route-bank assets
   -> before/after quality reports gate policy changes
 ```
+
+IntentMux does not run the AI reviewer inside the routing runtime. It exposes a
+learning interface: packet generation, schema validation, summaries, and import
+gates. Local automation can connect that interface to any AI runner.
 
 ## Boundaries
 
@@ -28,7 +32,7 @@ Keep in scope:
 - LiteLLM-first sidecar support without replacing LiteLLM provider routing,
   keys, budgets, fallback, or model pools.
 - Offline route-bank and eval-asset generation.
-- AI-first review with script guardrails and human audit.
+- External AI-first review with script guardrails and human audit.
 
 Keep out of scope:
 
@@ -38,6 +42,7 @@ Keep out of scope:
 - self-generated semantic corpora;
 - bulk-translated benchmark corpora presented as Chinese route quality;
 - treating AI-generated labels as truth without validation.
+- runtime self-modification of thresholds, hard rules, or route banks.
 
 ## Data Policy
 
