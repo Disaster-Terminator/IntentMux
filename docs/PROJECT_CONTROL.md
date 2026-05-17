@@ -66,11 +66,13 @@ Implemented:
 - smoke evals and baseline comparison: `current-router`, `always-lite`,
   `always-deep`, `hard-rule-only`;
 - quality report generation from eval JSON and route summaries.
+- generic AI review packet generation and AI review summary validation;
+- daily health quality artifacts under `<log-dir>/quality/<day>/`: route
+  summary JSON, eval baselines, quality report, review candidates, and AI
+  review packet paths.
 
 Not closed:
 
-- daily health does not yet emit the full quality report plus AI-review packet;
-- AI review is not yet a generic repo-level workflow;
 - accepted findings are not routinely imported into redacted regression cases;
 - threshold and margin are not calibrated from enough representative evidence;
 - full-history logs still include legacy `fast` / `strong`, so current policy
@@ -83,12 +85,8 @@ item is closed.
 
 1. Keep this control surface, evidence status, log-driven loop, and plan
    registry consistent.
-2. Add a generic local-only AI review packet. It must not require RayStorm,
-   Hermes, Retinue, or OpenCode.
-3. Wire daily quality artifacts into health: evals, baselines, route summary,
-   review candidates, and AI-review packet paths.
-4. Add a learning import gate for accepted redacted cases.
-5. Tune route bank, hard rules, threshold, or margin only after reports show a
+2. Add a learning import gate for accepted redacted cases.
+3. Tune route bank, hard rules, threshold, or margin only after reports show a
    repeated actionable pattern.
 
 ## Stop Conditions

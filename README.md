@@ -476,6 +476,11 @@ prompt review log 是否能按 `request_id` 对齐。它会统计重复 `request
 route audit；这类新近记录会计入 `prompt_recent_in_grace`，不会立即算作
 `prompt_without_route`。
 
+daily health 同时会在 `<log-dir>/quality/<YYYY-MM-DD>/` 写入质量闭环产物：
+当日 route summary JSON、`current-router` 和简单 baseline eval JSON、route quality
+report、review candidates，以及默认 metadata-only 的 AI review packet。它只生成通用
+artifact，不调用 AI provider，也不把 raw prompt 写进默认 packet。
+
 审计 `request_id` 来源只使用 `x-request-id`、`x-correlation-id`、`traceparent` 或
 `metadata.semantic_router_request_id`。OpenAI `user` 字段可能包含真实用户标识，IntentMux 不会把它写入 audit log 的 `request_id`。
 

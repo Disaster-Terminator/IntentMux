@@ -5,7 +5,9 @@ from pathlib import Path
 
 from scripts.intentmux_daily_health import (
     build_e2e_cmd,
+    build_quality_artifact_paths,
     log_consistency_from_day_logs,
+    run_quality_artifacts,
     traffic_evidence_from_day_log,
     keep,
     parse_ready,
@@ -109,6 +111,38 @@ def test_render_md_nests_slow_request_rows():
         "strict_budget": {"exit_code": 1, "reasons": []},
         "tolerant_budget": {"exit_code": 0, "reasons": []},
         "e2e": {"mode": "skipped", "exit_code": 0, "highlights": []},
+        "quality_artifacts": {
+            "dir": "/tmp/logs/quality/2026-05-12",
+            "route_summary_today_json": {
+                "exit_code": 0,
+                "path": "/tmp/logs/quality/2026-05-12/route-summary-today.json",
+            },
+            "evals": {
+                "current-router": {
+                    "exit_code": 0,
+                    "json": "/tmp/logs/quality/2026-05-12/eval-current-router.json",
+                },
+                "always-lite": {
+                    "exit_code": 1,
+                    "json": "/tmp/logs/quality/2026-05-12/eval-always-lite.json",
+                },
+            },
+            "route_quality_report": {
+                "exit_code": 0,
+                "json": "/tmp/logs/quality/2026-05-12/route-quality.json",
+                "md": "/tmp/logs/quality/2026-05-12/route-quality.md",
+            },
+            "review_candidates": {
+                "exit_code": 0,
+                "json": "/tmp/logs/quality/2026-05-12/review-candidates.json",
+                "md": "/tmp/logs/quality/2026-05-12/review-candidates.md",
+            },
+            "ai_review_packet": {
+                "exit_code": 0,
+                "json": "/tmp/logs/quality/2026-05-12/ai-review-packet.json",
+                "md": "/tmp/logs/quality/2026-05-12/ai-review-packet.md",
+            },
+        },
         "paths": {"json": "/tmp/report.json", "md": "/tmp/report.md"},
     }
 
@@ -120,6 +154,10 @@ def test_render_md_nests_slow_request_rows():
     assert "- detail: insufficient_samples: today_records=0 min_records=10" in md
     assert "## log_consistency" in md
     assert "- prompt_without_route: 1" in md
+    assert "## quality_artifacts" in md
+    assert "- dir: /tmp/logs/quality/2026-05-12" in md
+    assert "- current-router: exit_code=0 json=/tmp/logs/quality/2026-05-12/eval-current-router.json" in md
+    assert "- ai_review_packet: exit_code=0 json=/tmp/logs/quality/2026-05-12/ai-review-packet.json md=/tmp/logs/quality/2026-05-12/ai-review-packet.md" in md
 
 
 def test_traffic_evidence_passes_when_min_valid_route_records_is_met(tmp_path: Path):
@@ -272,6 +310,7 @@ def test_log_consistency_output_does_not_include_prompt_text(tmp_path: Path):
             "strict_budget": {"exit_code": 0, "reasons": []},
             "tolerant_budget": {"exit_code": 0, "reasons": []},
             "e2e": {"mode": "skipped", "exit_code": 0, "highlights": []},
+            "quality_artifacts": None,
             "paths": {"json": "/tmp/report.json", "md": "/tmp/report.md"},
         }
     )
@@ -372,3 +411,63 @@ def test_build_e2e_cmd_does_not_hardcode_local_litellm_env():
 
     assert "set -a;" not in cmd
     assert cmd.startswith("uv run python scripts/e2e_litellm_entry.py")
+
+
+def test_build_quality_artifact_paths_stay_under_log_dir():
+    paths = build_quality_artifact_paths(Path("/data/logs"), "2026-05-18")
+
+    assert paths["dir"] == "/data/logs/quality/2026-05-18"
+    assert paths["route_summary_today_json"] == "/data/logs/quality/2026-05-18/route-summary-today.json"
+    assert paths["eval_json"]["current-router"] == "/data/logs/quality/2026-05-18/eval-current-router.json"
+    assert paths["route_quality_json"] == "/data/logs/quality/2026-05-18/route-quality.json"
+    assert paths["review_candidates_json"] == "/data/logs/quality/2026-05-18/review-candidates.json"
+    assert paths["ai_review_packet_json"] == "/data/logs/quality/2026-05-18/ai-review-packet.json"
+
+
+def test_run_quality_artifacts_writes_generic_outputs_without_raw_prompt_mode(tmp_path: Path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    log_dir = tmp_path / "logs"
+    routes_dir = log_dir / "routes"
+    prompts_dir = log_dir / "prompts"
+    routes_dir.mkdir(parents=True)
+    prompts_dir.mkdir(parents=True)
+    day_log = routes_dir / "2026-05-18.jsonl"
+    prompt_log = prompts_dir / "2026-05-18.jsonl"
+    day_log.write_text('{"event":"route_complete","request_id":"req-1"}\n', encoding="utf-8")
+    prompt_log.write_text('{"event":"prompt_review","request_id":"req-1","latest_user_text":"private"}\n', encoding="utf-8")
+    commands: list[str] = []
+
+    def fake_runner(cmd: str, *, cwd: Path, timeout: int = 120):
+        commands.append(cmd)
+        parts = cmd.split()
+        if "router_log_summary.py" in cmd and "--json" in parts:
+            return {"ok": True, "exit_code": 0, "stdout": '{"total": 1}', "stderr": "", "cmd": cmd}
+        for option in ("--json-output", "--markdown-output"):
+            if option in parts:
+                output = Path(parts[parts.index(option) + 1])
+                output.parent.mkdir(parents=True, exist_ok=True)
+                output.write_text("{}\n", encoding="utf-8")
+        return {"ok": True, "exit_code": 0, "stdout": "", "stderr": "", "cmd": cmd}
+
+    artifacts = run_quality_artifacts(
+        repo=repo,
+        log_dir=log_dir,
+        day="2026-05-18",
+        day_log=day_log,
+        prompt_day_log=prompt_log,
+        slow_request_limit=10,
+        runner=fake_runner,
+    )
+
+    assert artifacts["route_summary_today_json"]["exit_code"] == 0
+    assert artifacts["review_candidates"]["exit_code"] == 0
+    assert artifacts["ai_review_packet"]["exit_code"] == 0
+    assert artifacts["evals"]["current-router"]["exit_code"] == 0
+    assert artifacts["route_quality_report"]["exit_code"] == 0
+    assert Path(artifacts["ai_review_packet"]["json"]).exists()
+    assert any("scripts/eval_routes.py" in cmd and "--baseline current-router" in cmd for cmd in commands)
+    assert any("scripts/route_quality_report.py" in cmd for cmd in commands)
+    assert any("scripts/select_review_candidates.py" in cmd and "--prompt-path" in cmd for cmd in commands)
+    assert any("scripts/prepare_ai_review_packet.py" in cmd for cmd in commands)
+    assert not any("--include-prompt-text raw_local" in cmd for cmd in commands)

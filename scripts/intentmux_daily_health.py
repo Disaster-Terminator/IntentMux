@@ -25,6 +25,7 @@ DEFAULT_LOG_DIR = Path(os.getenv("INTENTMUX_LOG_DIR", "logs"))
 DEFAULT_ROUTER_BASE_URL = os.getenv("INTENTMUX_ROUTER_BASE_URL", "http://127.0.0.1:4001")
 DEFAULT_LITELLM_BASE_URL = os.getenv("INTENTMUX_LITELLM_BASE_URL", "http://127.0.0.1:4000")
 DEFAULT_TIMEZONE = os.getenv("INTENTMUX_TIMEZONE", DEFAULT_AUDIT_LOG_TIMEZONE)
+QUALITY_BASELINES = ("current-router", "always-lite", "always-deep", "hard-rule-only")
 
 
 def run(cmd: str, *, cwd: Path, timeout: int = 120) -> dict[str, Any]:
@@ -316,6 +317,165 @@ def build_e2e_cmd(
     return " ".join(parts)
 
 
+def build_quality_artifact_paths(log_dir: Path, day: str) -> dict[str, Any]:
+    quality_dir = log_dir / "quality" / day
+    eval_json = {
+        baseline: str(quality_dir / f"eval-{baseline}.json")
+        for baseline in QUALITY_BASELINES
+    }
+    return {
+        "dir": str(quality_dir),
+        "route_summary_today_json": str(quality_dir / "route-summary-today.json"),
+        "eval_json": eval_json,
+        "route_quality_json": str(quality_dir / "route-quality.json"),
+        "route_quality_md": str(quality_dir / "route-quality.md"),
+        "review_candidates_json": str(quality_dir / "review-candidates.json"),
+        "review_candidates_md": str(quality_dir / "review-candidates.md"),
+        "ai_review_packet_json": str(quality_dir / "ai-review-packet.json"),
+        "ai_review_packet_md": str(quality_dir / "ai-review-packet.md"),
+    }
+
+
+def run_quality_artifacts(
+    *,
+    repo: Path,
+    log_dir: Path,
+    day: str,
+    day_log: Path,
+    prompt_day_log: Path,
+    slow_request_limit: int,
+    runner=run,
+) -> dict[str, Any]:
+    paths = build_quality_artifact_paths(log_dir, day)
+    quality_dir = Path(paths["dir"])
+    quality_dir.mkdir(parents=True, exist_ok=True)
+
+    route_summary_path = Path(paths["route_summary_today_json"])
+    if day_log.exists() and day_log.stat().st_size > 0:
+        route_summary_cmd = (
+            "uv run python scripts/router_log_summary.py "
+            f"{shlex.quote(str(day_log))} "
+            f"--slow-request-limit {slow_request_limit} --json"
+        )
+        route_summary = runner(route_summary_cmd, cwd=repo, timeout=90)
+        if route_summary["exit_code"] == 0 and route_summary["stdout"]:
+            route_summary_path.write_text(route_summary["stdout"] + "\n", encoding="utf-8")
+    else:
+        route_summary = {
+            "ok": True,
+            "exit_code": 0,
+            "stdout": "no_samples",
+            "stderr": "",
+            "cmd": "skipped:no_samples",
+        }
+
+    evals: dict[str, dict[str, Any]] = {}
+    for baseline in QUALITY_BASELINES:
+        eval_path = Path(paths["eval_json"][baseline])
+        eval_cmd = (
+            "uv run python scripts/eval_routes.py "
+            "--cases config/eval_cases.yaml "
+            "--routes config/routes.yaml "
+            "--mock-embeddings "
+            f"--baseline {baseline} "
+            f"--json-output {shlex.quote(str(eval_path))}"
+        )
+        eval_result = runner(eval_cmd, cwd=repo, timeout=120)
+        evals[baseline] = {
+            "exit_code": eval_result["exit_code"],
+            "json": str(eval_path),
+        }
+
+    eval_specs = " ".join(
+        f"--eval-json {baseline}={shlex.quote(path)}"
+        for baseline, path in paths["eval_json"].items()
+        if Path(path).exists()
+    )
+    if eval_specs and route_summary_path.exists():
+        quality_cmd = (
+            "uv run python scripts/route_quality_report.py "
+            f"{eval_specs} "
+            f"--route-summary-json {shlex.quote(str(route_summary_path))} "
+            "--route-bank examples/route_bank.sample.yaml "
+            f"--json-output {shlex.quote(paths['route_quality_json'])} "
+            f"--markdown-output {shlex.quote(paths['route_quality_md'])}"
+        )
+        route_quality = runner(quality_cmd, cwd=repo, timeout=90)
+    else:
+        route_quality = {
+            "ok": True,
+            "exit_code": 0,
+            "stdout": "skipped:no_eval_or_route_summary",
+            "stderr": "",
+            "cmd": "skipped:no_eval_or_route_summary",
+        }
+
+    if day_log.exists() and day_log.stat().st_size > 0:
+        prompt_arg = (
+            f" --prompt-path {shlex.quote(str(prompt_day_log))}"
+            if prompt_day_log.exists()
+            else ""
+        )
+        review_cmd = (
+            "uv run python scripts/select_review_candidates.py "
+            f"{shlex.quote(str(day_log))} "
+            "--routes config/routes.yaml"
+            f"{prompt_arg} "
+            f"--json-output {shlex.quote(paths['review_candidates_json'])} "
+            f"--markdown-output {shlex.quote(paths['review_candidates_md'])}"
+        )
+        review_candidates = runner(review_cmd, cwd=repo, timeout=90)
+    else:
+        review_candidates = {
+            "ok": True,
+            "exit_code": 0,
+            "stdout": "skipped:no_samples",
+            "stderr": "",
+            "cmd": "skipped:no_samples",
+        }
+
+    if Path(paths["review_candidates_json"]).exists():
+        packet_cmd = (
+            "uv run python scripts/prepare_ai_review_packet.py "
+            f"--input {shlex.quote(paths['review_candidates_json'])} "
+            f"--json-output {shlex.quote(paths['ai_review_packet_json'])} "
+            f"--markdown-output {shlex.quote(paths['ai_review_packet_md'])}"
+        )
+        ai_review_packet = runner(packet_cmd, cwd=repo, timeout=90)
+    else:
+        ai_review_packet = {
+            "ok": True,
+            "exit_code": 0,
+            "stdout": "skipped:no_review_candidates",
+            "stderr": "",
+            "cmd": "skipped:no_review_candidates",
+        }
+
+    return {
+        "dir": str(quality_dir),
+        "route_summary_today_json": {
+            "exit_code": route_summary["exit_code"],
+            "path": str(route_summary_path),
+        },
+        "evals": evals,
+        "route_quality_report": {
+            "exit_code": route_quality["exit_code"],
+            "json": paths["route_quality_json"],
+            "md": paths["route_quality_md"],
+        },
+        "review_candidates": {
+            "exit_code": review_candidates["exit_code"],
+            "json": paths["review_candidates_json"],
+            "md": paths["review_candidates_md"],
+        },
+        "ai_review_packet": {
+            "exit_code": ai_review_packet["exit_code"],
+            "json": paths["ai_review_packet_json"],
+            "md": paths["ai_review_packet_md"],
+        },
+    }
+
+
 def render_md(report: dict[str, Any]) -> str:
     r = report
     lines = [
@@ -401,6 +561,27 @@ def render_md(report: dict[str, Any]) -> str:
     ]
     for ln in r["e2e"].get("highlights", []):
         append_md_highlight(lines, ln)
+
+    quality_artifacts = r.get("quality_artifacts")
+    if quality_artifacts:
+        lines += [
+            "",
+            "## quality_artifacts",
+            f"- dir: {quality_artifacts['dir']}",
+            (
+                "- route_summary_today_json: "
+                f"exit_code={quality_artifacts['route_summary_today_json']['exit_code']} "
+                f"path={quality_artifacts['route_summary_today_json']['path']}"
+            ),
+        ]
+        for baseline, result in sorted(quality_artifacts.get("evals", {}).items()):
+            lines.append(f"- {baseline}: exit_code={result['exit_code']} json={result['json']}")
+        for key in ("route_quality_report", "review_candidates", "ai_review_packet"):
+            result = quality_artifacts[key]
+            lines.append(
+                f"- {key}: exit_code={result['exit_code']} "
+                f"json={result['json']} md={result['md']}"
+            )
 
     lines += [
         "",
@@ -538,6 +719,14 @@ def main() -> int:
     )
     prompt_day_log = log_dir / "prompts" / f"{day}.jsonl"
     log_consistency = log_consistency_from_day_logs(day_log, prompt_day_log)
+    quality_artifacts = run_quality_artifacts(
+        repo=repo,
+        log_dir=log_dir,
+        day=day,
+        day_log=day_log,
+        prompt_day_log=prompt_day_log,
+        slow_request_limit=args.slow_request_limit,
+    )
 
     if budget_no_samples(day_log):
         strict = {"ok": True, "exit_code": 0, "stdout": "no_samples", "stderr": ""}
@@ -611,6 +800,7 @@ def main() -> int:
         },
         "traffic_evidence": traffic_evidence,
         "log_consistency": log_consistency,
+        "quality_artifacts": quality_artifacts,
         "strict_budget": {
             "exit_code": strict["exit_code"],
             "reasons": strict_reasons,
@@ -659,6 +849,7 @@ def main() -> int:
                 "log_consistency_ok": report["log_consistency"]["ok"],
                 "route_without_prompt": report["log_consistency"]["route_without_prompt"],
                 "prompt_without_route": report["log_consistency"]["prompt_without_route"],
+                "quality_artifacts_dir": report["quality_artifacts"]["dir"],
                 "e2e_mode": report["e2e"]["mode"],
                 "e2e_exit": report["e2e"]["exit_code"],
                 "json": str(json_path),

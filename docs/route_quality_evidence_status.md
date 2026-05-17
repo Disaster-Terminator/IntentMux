@@ -133,8 +133,8 @@ scripts/build_zh_route_eval.py
 - hard-rule + embedding + current fallback
 
 这个对比很重要。成熟路由项目通常不会只报告当前策略是否能跑，而是衡量它相对简单策略是否真的改善了成本/质量权衡。
-当前能力已经可以生成 baseline 报告，但还没有接入每日健康产物，也还没有用足够代表性的
-production review 样本做固定闭环。因此它是“可运行的回归对比工具”，不是“生产质量已经被证明”。
+baseline 报告已经接入 daily health quality artifacts，但还没有用足够代表性的
+production review 样本做固定闭环。因此它是“每日可生成的回归对比工具”，不是“生产质量已经被证明”。
 
 当前轻量质量闭环工作顺序见：
 
