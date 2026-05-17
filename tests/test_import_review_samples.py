@@ -11,8 +11,8 @@ from scripts.import_review_samples import ReviewSampleError, convert_review_samp
 
 def test_convert_review_samples_accepts_only_redacted_cases():
     raw_lines = [
-        '{"text":"这个真实问题为什么偶发","expect":"strong","redacted":true,"source":"prod_review","note":"misrouted cheap"}',
-        '{"text":"帮我润色这句话","expect":"fast","redacted":true}',
+        '{"text":"这个真实问题为什么偶发","expect":"deep","redacted":true,"source":"prod_review","note":"misrouted cheap"}',
+        '{"text":"帮我润色这句话","expect":"lite","redacted":true}',
     ]
 
     result = convert_review_samples(raw_lines)
@@ -21,13 +21,13 @@ def test_convert_review_samples_accepts_only_redacted_cases():
         "cases": [
             {
                 "text": "这个真实问题为什么偶发",
-                "expect": "strong",
+                "expect": "deep",
                 "source": "production_review:prod_review",
                 "note": "misrouted cheap",
             },
             {
                 "text": "帮我润色这句话",
-                "expect": "fast",
+                "expect": "lite",
                 "source": "production_review",
             },
         ]
@@ -36,7 +36,7 @@ def test_convert_review_samples_accepts_only_redacted_cases():
 
 def test_convert_review_samples_rejects_unredacted_cases():
     raw_lines = [
-        '{"text":"raw production prompt","expect":"strong","redacted":false}',
+        '{"text":"raw production prompt","expect":"deep","redacted":false}',
     ]
 
     with pytest.raises(ReviewSampleError, match="redacted=true"):
@@ -54,8 +54,8 @@ def test_convert_review_samples_rejects_empty_route_id():
 
 def test_convert_review_samples_deduplicates_text():
     raw_lines = [
-        '{"text":"重复样本","expect":"strong","redacted":true}',
-        '{"text":"重复样本","expect":"strong","redacted":true}',
+        '{"text":"重复样本","expect":"deep","redacted":true}',
+        '{"text":"重复样本","expect":"deep","redacted":true}',
     ]
 
     result = convert_review_samples(raw_lines)
@@ -64,7 +64,7 @@ def test_convert_review_samples_deduplicates_text():
         "cases": [
             {
                 "text": "重复样本",
-                "expect": "strong",
+                "expect": "deep",
                 "source": "production_review",
             }
         ]
@@ -73,11 +73,11 @@ def test_convert_review_samples_deduplicates_text():
 
 def test_convert_review_samples_validates_expect_against_routes_config():
     raw_lines = [
-        '{"text":"合法","expect":"fast","redacted":true}',
+        '{"text":"合法","expect":"lite","redacted":true}',
     ]
 
-    result = convert_review_samples(raw_lines, allowed_route_ids={"fast", "strong"})
-    assert result["cases"][0]["expect"] == "fast"
+    result = convert_review_samples(raw_lines, allowed_route_ids={"lite", "deep"})
+    assert result["cases"][0]["expect"] == "lite"
 
 
 def test_convert_review_samples_rejects_target_model_name_when_routes_validation_enabled():
@@ -86,7 +86,7 @@ def test_convert_review_samples_rejects_target_model_name_when_routes_validation
     ]
 
     with pytest.raises(ReviewSampleError, match="not found in routes config"):
-        convert_review_samples(raw_lines, allowed_route_ids={"fast", "strong"})
+        convert_review_samples(raw_lines, allowed_route_ids={"lite", "deep"})
 
 
 def test_main_dry_run_does_not_write_output_and_prints_summary(tmp_path, monkeypatch, capsys):
@@ -94,10 +94,10 @@ def test_main_dry_run_does_not_write_output_and_prints_summary(tmp_path, monkeyp
     output_path = tmp_path / "out.yaml"
     input_path.write_text(
         '\n'.join([
-            '{"text":"a","expect":"strong","redacted":true}',
+            '{"text":"a","expect":"deep","redacted":true}',
             '',
-            '{"text":"a","expect":"strong","redacted":true}',
-            '{"text":"b","expect":"fast","redacted":true}',
+            '{"text":"a","expect":"deep","redacted":true}',
+            '{"text":"b","expect":"lite","redacted":true}',
         ]),
         encoding="utf-8",
     )
@@ -121,7 +121,7 @@ def test_main_dry_run_does_not_write_output_and_prints_summary(tmp_path, monkeyp
     assert "accepted_cases=2" in out
     assert "duplicates=1" in out
     assert "blank_lines=1" in out
-    assert "routes=[fast=1, strong=1]" in out
+    assert "routes=[deep=1, lite=1]" in out
 
 
 def test_main_default_writes_yaml(tmp_path, monkeypatch, capsys):
@@ -187,7 +187,7 @@ def test_main_invalid_unredacted_input_fails_before_writing(tmp_path, monkeypatc
     input_path = tmp_path / "samples.jsonl"
     output_path = tmp_path / "out.yaml"
     input_path.write_text(
-        '{"text":"raw","expect":"strong","redacted":false}',
+        '{"text":"raw","expect":"deep","redacted":false}',
         encoding="utf-8",
     )
     monkeypatch.setattr(

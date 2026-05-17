@@ -13,20 +13,20 @@ def test_load_settings_supports_route_ids_mapped_to_target_models(tmp_path: Path
     routes_path.write_text(
         """
 route_model: semantic-router
-fallback_route_id: fast
+fallback_route_id: lite
 routes:
-  fast:
-    target_model: local-fast-model
+  lite:
+    target_model: local-lite-model
     description: low risk
     utterances:
-      - seed fast utterance
-  strong:
-    target_model: local-strong-model
+      - seed lite utterance
+  deep:
+    target_model: local-deep-model
     description: high risk
     utterances:
-      - seed strong utterance
+      - seed deep utterance
 hard_rules:
-  - route_id: strong
+  - route_id: deep
     keywords:
       - PR
       - 线上
@@ -36,10 +36,10 @@ hard_rules:
 
     settings = load_settings(routes_path)
 
-    assert settings.fallback_route_id == "fast"
-    assert settings.routes["fast"].target_model == "local-fast-model"
-    assert settings.routes["strong"].target_model == "local-strong-model"
-    assert settings.hard_rules[0].route_id == "strong"
+    assert settings.fallback_route_id == "lite"
+    assert settings.routes["lite"].target_model == "local-lite-model"
+    assert settings.routes["deep"].target_model == "local-deep-model"
+    assert settings.hard_rules[0].route_id == "deep"
     assert settings.hard_rules[0].keywords == ["PR", "线上"]
 
 
@@ -48,9 +48,9 @@ def test_litellm_api_key_can_come_from_environment(monkeypatch, tmp_path: Path):
     routes_path.write_text(
         """
 route_model: semantic-router
-fallback_route_id: fast
+fallback_route_id: lite
 routes:
-  fast:
+  lite:
     target_model: lite-upstream
     description: low risk
     utterances:
@@ -70,9 +70,9 @@ def test_inbound_api_key_can_come_from_environment(monkeypatch, tmp_path: Path):
     routes_path.write_text(
         """
 route_model: semantic-router
-fallback_route_id: fast
+fallback_route_id: lite
 routes:
-  fast:
+  lite:
     target_model: lite-upstream
     description: low risk
     utterances:
@@ -92,10 +92,10 @@ def test_empty_litellm_api_key_env_does_not_clear_configured_key(monkeypatch, tm
     routes_path.write_text(
         """
 route_model: semantic-router
-fallback_route_id: fast
+fallback_route_id: lite
 litellm_api_key: sk-configured
 routes:
-  fast:
+  lite:
     target_model: lite-upstream
     description: low risk
     utterances:
@@ -436,7 +436,7 @@ def test_default_hard_rules_keep_only_high_precision_deep_escalations():
 def test_router_settings_defaults_entry_model_to_semantic_router():
     settings = RouterSettings(
         routes={
-            "fast": RouteSpec(description="low risk", utterances=["x"]),
+            "lite": RouteSpec(description="low risk", utterances=["x"]),
         }
     )
     assert settings.route_model == "semantic-router"
@@ -447,7 +447,7 @@ def test_router_settings_accepts_legacy_route_model_config_key():
     settings = RouterSettings.model_validate(
         {
             "route_model": "smart-router",
-            "routes": {"fast": {"description": "low risk", "utterances": ["x"]}},
+            "routes": {"lite": {"description": "low risk", "utterances": ["x"]}},
         }
     )
     assert settings.route_model == "smart-router"
@@ -482,9 +482,9 @@ def test_load_settings_uses_router_config_env_when_path_not_supplied(
     routes_path.write_text(
         """
 route_model: runtime-router
-fallback_route_id: runtime-fast
+fallback_route_id: runtime-lite
 routes:
-  runtime-fast:
+  runtime-lite:
     target_model: runtime-target
     description: runtime config
     utterances:
@@ -497,7 +497,7 @@ routes:
     settings = load_settings()
 
     assert settings.route_model == "runtime-router"
-    assert settings.routes["runtime-fast"].target_model == "runtime-target"
+    assert settings.routes["runtime-lite"].target_model == "runtime-target"
 
 
 def test_load_settings_fails_loudly_when_router_config_env_is_missing(
@@ -588,10 +588,10 @@ def test_router_settings_rejects_prompt_review_log_without_directory():
     with pytest.raises(ValidationError, match="prompt_log_dir"):
         RouterSettings(
             route_model="semantic-router",
-            fallback_route_id="fast",
+            fallback_route_id="lite",
             prompt_log_mode="raw_local",
             routes={
-                "fast": RouteSpec(
+                "lite": RouteSpec(
                     target_model="lite-upstream",
                     description="seed cheap",
                     utterances=["seed cheap utterance"],
@@ -701,7 +701,7 @@ def test_router_settings_allows_user_defined_route_ids_and_target_models():
         routes={
             "local": RouteSpec(
                 target_model="my-local-litellm-group",
-                description="local fast target",
+                description="local lite target",
                 utterances=["quick local prompt"],
             ),
             "premium": RouteSpec(
@@ -720,9 +720,9 @@ def test_router_settings_rejects_recursive_target_model():
     with pytest.raises(ValidationError, match="target_model"):
         RouterSettings(
             route_model="semantic-router",
-            fallback_route_id="fast",
+            fallback_route_id="lite",
             routes={
-                "fast": RouteSpec(
+                "lite": RouteSpec(
                     target_model="semantic-router",
                     description="recursive target",
                     utterances=["send back to entry model"],
@@ -735,7 +735,7 @@ def test_router_settings_accepts_entry_model_alias_key():
     settings = RouterSettings.model_validate(
         {
             "entry_model": "smart-router",
-            "routes": {"fast": {"description": "low risk", "utterances": ["x"]}},
+            "routes": {"lite": {"description": "low risk", "utterances": ["x"]}},
         }
     )
     assert settings.route_model == "smart-router"
@@ -747,7 +747,7 @@ def test_router_settings_prefers_route_model_when_both_alias_keys_present():
         {
             "route_model": "route-model-wins",
             "entry_model": "entry-model-loses",
-            "routes": {"fast": {"description": "low risk", "utterances": ["x"]}},
+            "routes": {"lite": {"description": "low risk", "utterances": ["x"]}},
         }
     )
 
@@ -757,52 +757,52 @@ def test_router_settings_prefers_route_model_when_both_alias_keys_present():
 def test_router_settings_accepts_fallback_route_id_key():
     settings = RouterSettings.model_validate(
         {
-            "fallback_route_id": "fast",
-            "routes": {"fast": {"description": "low risk", "utterances": ["x"]}},
+            "fallback_route_id": "lite",
+            "routes": {"lite": {"description": "low risk", "utterances": ["x"]}},
         }
     )
 
-    assert settings.fallback_route_id == "fast"
-    assert settings.default_route == "fast"
+    assert settings.fallback_route_id == "lite"
+    assert settings.default_route == "lite"
 
 
 def test_router_settings_accepts_default_route_legacy_alias_key():
     settings = RouterSettings.model_validate(
         {
-            "default_route": "fast",
-            "routes": {"fast": {"description": "low risk", "utterances": ["x"]}},
+            "default_route": "lite",
+            "routes": {"lite": {"description": "low risk", "utterances": ["x"]}},
         }
     )
 
-    assert settings.fallback_route_id == "fast"
+    assert settings.fallback_route_id == "lite"
 
 
 def test_router_settings_defaults_target_model_to_route_id_when_omitted():
     settings = RouterSettings.model_validate(
         {
             "routes": {
-                "fast": {"description": "low risk", "utterances": ["x"]},
-                "strong": {"description": "high risk", "utterances": ["y"]},
+                "lite": {"description": "low risk", "utterances": ["x"]},
+                "deep": {"description": "high risk", "utterances": ["y"]},
             }
         }
     )
 
-    assert settings.routes["fast"].target_model == "fast"
-    assert settings.routes["strong"].target_model == "strong"
+    assert settings.routes["lite"].target_model == "lite"
+    assert settings.routes["deep"].target_model == "deep"
 
 
 def test_router_settings_defaults_agent_signal_to_strong_when_present():
     settings = RouterSettings.model_validate(
         {
             "routes": {
-                "fast": {"description": "low risk", "utterances": ["x"]},
-                "strong": {"description": "high risk", "utterances": ["y"]},
+                "lite": {"description": "low risk", "utterances": ["x"]},
+                "deep": {"description": "high risk", "utterances": ["y"]},
             }
         }
     )
 
     assert settings.agent_signal_route_id is None
-    assert settings.effective_agent_signal_route_id == "strong"
+    assert settings.effective_agent_signal_route_id == "deep"
 
 
 def test_router_settings_defaults_agent_signal_to_deep_when_present():
@@ -823,13 +823,13 @@ def test_router_settings_defaults_agent_signal_to_deep_when_present():
 def test_router_settings_accepts_legacy_route_aliases_with_canonical_routes():
     settings = RouterSettings.model_validate(
         {
-            "fallback_route_id": "fast",
-            "agent_signal_route_id": "strong",
+            "fallback_route_id": "lite",
+            "agent_signal_route_id": "deep",
             "routes": {
                 "lite": {"description": "low risk", "utterances": ["x"]},
                 "deep": {"description": "high risk", "utterances": ["y"]},
             },
-            "hard_rules": [{"route_id": "strong", "keywords": ["prod"]}],
+            "hard_rules": [{"route_id": "deep", "keywords": ["prod"]}],
         }
     )
 
@@ -844,23 +844,23 @@ def test_router_settings_accepts_canonical_route_aliases_with_legacy_routes():
             "fallback_route_id": "lite",
             "agent_signal_route_id": "deep",
             "routes": {
-                "fast": {"description": "low risk", "utterances": ["x"]},
-                "strong": {"description": "high risk", "utterances": ["y"]},
+                "lite": {"description": "low risk", "utterances": ["x"]},
+                "deep": {"description": "high risk", "utterances": ["y"]},
             },
             "hard_rules": [{"route_id": "deep", "keywords": ["prod"]}],
         }
     )
 
-    assert settings.fallback_route_id == "fast"
-    assert settings.agent_signal_route_id == "strong"
-    assert settings.hard_rules[0].route_id == "strong"
+    assert settings.fallback_route_id == "lite"
+    assert settings.agent_signal_route_id == "deep"
+    assert settings.hard_rules[0].route_id == "deep"
 
 
 def test_router_settings_disables_agent_signal_when_strong_is_absent_by_default():
     settings = RouterSettings.model_validate(
         {
             "routes": {
-                "fast": {"description": "low risk", "utterances": ["x"]},
+                "lite": {"description": "low risk", "utterances": ["x"]},
             }
         }
     )
@@ -875,7 +875,7 @@ def test_router_settings_rejects_unknown_explicit_agent_signal_route_id():
             {
                 "agent_signal_route_id": "missing",
                 "routes": {
-                    "fast": {"description": "low risk", "utterances": ["x"]},
+                    "lite": {"description": "low risk", "utterances": ["x"]},
                 },
             }
         )
@@ -887,7 +887,7 @@ def test_router_settings_rejects_missing_fallback_route_id_in_routes():
             {
                 "fallback_route_id": "missing",
                 "routes": {
-                    "fast": {"description": "low risk", "utterances": ["x"]},
+                    "lite": {"description": "low risk", "utterances": ["x"]},
                 },
             }
         )

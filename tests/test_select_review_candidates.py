@@ -19,7 +19,7 @@ def test_select_review_candidates_prioritizes_reviewable_metadata_only():
             "event": "route_complete",
             "timestamp": "2026-05-13T00:00:00Z",
             "request_id": "req-low",
-            "route_id": "fast",
+            "route_id": "lite",
             "target_model": "lite-upstream",
             "reason": "low_confidence",
             "score": 0.51,
@@ -32,7 +32,7 @@ def test_select_review_candidates_prioritizes_reviewable_metadata_only():
             "event": "route_complete",
             "timestamp": "2026-05-13T00:00:01Z",
             "request_id": "req-err",
-            "route_id": "fast",
+            "route_id": "lite",
             "target_model": "lite-upstream",
             "reason": "embedding_error",
             "duration_ms": 900,
@@ -42,7 +42,7 @@ def test_select_review_candidates_prioritizes_reviewable_metadata_only():
             "event": "route_complete",
             "timestamp": "2026-05-13T00:00:02Z",
             "request_id": "req-400",
-            "route_id": "strong",
+            "route_id": "deep",
             "target_model": "deep-upstream",
             "reason": "embedding",
             "score": 0.7,
@@ -54,7 +54,7 @@ def test_select_review_candidates_prioritizes_reviewable_metadata_only():
             "event": "route_complete",
             "timestamp": "2026-05-13T00:00:03Z",
             "request_id": "req-near-threshold",
-            "route_id": "strong",
+            "route_id": "deep",
             "target_model": "deep-upstream",
             "reason": "embedding",
             "score": 0.57,
@@ -65,7 +65,7 @@ def test_select_review_candidates_prioritizes_reviewable_metadata_only():
             "event": "route_complete",
             "timestamp": "2026-05-13T00:00:04Z",
             "request_id": "req-near-margin",
-            "route_id": "strong",
+            "route_id": "deep",
             "target_model": "deep-upstream",
             "reason": "embedding",
             "score": 0.8,
@@ -76,7 +76,7 @@ def test_select_review_candidates_prioritizes_reviewable_metadata_only():
             "event": "route_complete",
             "timestamp": "2026-05-13T00:00:05Z",
             "request_id": "req-hard-rule",
-            "route_id": "strong",
+            "route_id": "deep",
             "target_model": "deep-upstream",
             "reason": "hard_rule:token",
             "duration_ms": 500,
@@ -85,7 +85,7 @@ def test_select_review_candidates_prioritizes_reviewable_metadata_only():
             "event": "route_complete",
             "timestamp": "2026-05-13T00:00:06Z",
             "request_id": "req-slow",
-            "route_id": "fast",
+            "route_id": "lite",
             "target_model": "lite-upstream",
             "reason": "embedding",
             "score": 0.9,
@@ -96,7 +96,7 @@ def test_select_review_candidates_prioritizes_reviewable_metadata_only():
             "event": "route_complete",
             "timestamp": "2026-05-13T00:00:07Z",
             "request_id": "req-normal",
-            "route_id": "fast",
+            "route_id": "lite",
             "target_model": "lite-upstream",
             "reason": "embedding",
             "score": 0.9,
@@ -147,7 +147,7 @@ def test_build_review_candidate_report_counts_reasons_and_inputs():
             {
                 "event": "route_complete",
                 "request_id": "req-low",
-                "route_id": "fast",
+                "route_id": "lite",
                 "target_model": "lite-upstream",
                 "reason": "low_confidence",
                 "duration_ms": 100,
@@ -161,7 +161,7 @@ def test_build_review_candidate_report_counts_reasons_and_inputs():
             {
                 "event": "route_complete",
                 "request_id": "req-normal",
-                "route_id": "fast",
+                "route_id": "lite",
                 "target_model": "lite-upstream",
                 "reason": "embedding",
                 "duration_ms": 100,
@@ -176,7 +176,7 @@ def test_build_review_candidate_report_counts_reasons_and_inputs():
         "candidate_prompt_matches": 0,
         "format_signal_counts": {"tool_history": 1, "tools_present": 1},
         "review_reasons": {"low_confidence": 1},
-        "routes": {"fast": 1},
+        "routes": {"lite": 1},
         "targets": {"lite-upstream": 1},
         "hard_rules": {},
         "log_paths": ["routes.jsonl"],
@@ -198,7 +198,7 @@ def test_build_review_candidate_report_joins_prompt_reviews_without_inferring_so
                 "event": "route_complete",
                 "timestamp": "2026-05-13T00:00:00Z",
                 "request_id": "req-agent",
-                "route_id": "fast",
+                "route_id": "lite",
                 "target_model": "lite-upstream",
                 "reason": "low_confidence",
                 "duration_ms": 100,
@@ -207,7 +207,7 @@ def test_build_review_candidate_report_joins_prompt_reviews_without_inferring_so
                 "event": "route_complete",
                 "timestamp": "2026-05-13T00:00:01Z",
                 "request_id": "req-normal",
-                "route_id": "fast",
+                "route_id": "lite",
                 "target_model": "lite-upstream",
                 "reason": "low_confidence",
                 "duration_ms": 100,
@@ -249,7 +249,7 @@ def test_build_review_candidate_report_counts_hard_rule_keywords():
             {
                 "event": "route_complete",
                 "request_id": "req-token",
-                "route_id": "strong",
+                "route_id": "deep",
                 "target_model": "deep-upstream",
                 "reason": "hard_rule:token",
                 "duration_ms": 100,
@@ -257,7 +257,7 @@ def test_build_review_candidate_report_counts_hard_rule_keywords():
             {
                 "event": "route_complete",
                 "request_id": "req-security",
-                "route_id": "strong",
+                "route_id": "deep",
                 "target_model": "deep-upstream",
                 "reason": "hard_rule:安全",
                 "duration_ms": 100,
@@ -276,7 +276,7 @@ def test_load_route_thresholds_reads_routes_config(tmp_path: Path):
 threshold: 0.55
 margin: 0.07
 routes:
-  fast:
+  lite:
     utterances:
       - hi
 """,
@@ -293,7 +293,7 @@ def test_render_markdown_is_audit_friendly():
                 "input_records": 2,
                 "candidate_count": 1,
                 "review_reasons": {"low_confidence": 1},
-                "routes": {"fast": 1},
+                "routes": {"lite": 1},
                 "targets": {"lite-upstream": 1},
                 "hard_rules": {},
                 "log_paths": ["routes.jsonl"],
@@ -302,7 +302,7 @@ def test_render_markdown_is_audit_friendly():
                 {
                     "timestamp": "2026-05-13T00:00:00Z",
                     "request_id": "req-low",
-                    "route_id": "fast",
+                    "route_id": "lite",
                     "target_model": "lite-upstream",
                     "reason": "low_confidence",
                     "score": None,
@@ -317,7 +317,7 @@ def test_render_markdown_is_audit_friendly():
 
     assert "# IntentMux Review Candidates" in markdown
     assert "- candidate_count: 1" in markdown
-    assert "| req-low | fast | lite-upstream | low_confidence |" in markdown
+    assert "| req-low | lite | lite-upstream | low_confidence |" in markdown
 
 
 def test_main_writes_json_and_markdown(tmp_path: Path):
@@ -330,7 +330,7 @@ def test_main_writes_json_and_markdown(tmp_path: Path):
                 "event": "route_complete",
                 "timestamp": "2026-05-13T00:00:00Z",
                 "request_id": "req-low",
-                "route_id": "fast",
+                "route_id": "lite",
                 "target_model": "lite-upstream",
                 "reason": "low_confidence",
                 "duration_ms": 100,
@@ -369,7 +369,7 @@ def test_main_uses_default_routes_threshold(tmp_path: Path):
                 "event": "route_complete",
                 "timestamp": "2026-05-13T00:00:00Z",
                 "request_id": "req-near-config-threshold",
-                "route_id": "fast",
+                "route_id": "lite",
                 "target_model": "lite-upstream",
                 "reason": "embedding",
                 "score": 0.535,

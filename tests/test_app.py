@@ -50,14 +50,14 @@ class FakeDecisionEmbeddingClient:
 def decision_router_settings() -> RouterSettings:
     return RouterSettings(
         route_model="semantic-router",
-        fallback_route_id="fast",
+        fallback_route_id="lite",
         threshold=0.5,
         margin=0.05,
         routes={
-            "fast": RouteSpec(target_model="lite-upstream", description="fast", utterances=["翻译", "总结"]),
-            "strong": RouteSpec(target_model="deep-upstream", description="strong", utterances=["线上", "PR审查"]),
+            "lite": RouteSpec(target_model="lite-upstream", description="lite", utterances=["翻译", "总结"]),
+            "deep": RouteSpec(target_model="deep-upstream", description="deep", utterances=["线上", "PR审查"]),
         },
-        hard_rules=[{"route_id": "strong", "keywords": ["线上", "PR"]}],
+        hard_rules=[{"route_id": "deep", "keywords": ["线上", "PR"]}],
     )
 
 
@@ -357,7 +357,7 @@ def test_decision_endpoint_hard_rule_returns_contract_without_forwarding():
     assert response.status_code == 200
     assert response.json() == {
         "source_model": "semantic-router",
-        "route_id": "strong",
+        "route_id": "deep",
         "target_model": "deep-upstream",
         "policy_id": "hard_rule",
         "reason": "hard_rule:线上",
@@ -378,12 +378,12 @@ def test_decision_endpoint_explicit_route_override_returns_explicit_policy():
         json={
             "model": "semantic-router",
             "messages": [{"role": "user", "content": "无关文本"}],
-            "metadata": {"route_id": "strong"},
+            "metadata": {"route_id": "deep"},
         },
     )
 
     assert response.status_code == 200
-    assert response.json()["route_id"] == "strong"
+    assert response.json()["route_id"] == "deep"
     assert response.json()["target_model"] == "deep-upstream"
     assert response.json()["policy_id"] == "explicit"
     assert proxy.forward_called is False
@@ -394,11 +394,11 @@ def test_decision_endpoint_requires_inbound_api_key_when_configured():
     app = create_app(
         settings=RouterSettings(
             route_model="semantic-router",
-            fallback_route_id="fast",
+            fallback_route_id="lite",
             inbound_api_key="sk-intentmux",
-            routes={"fast": RouteSpec(target_model="lite-upstream", description="fast", utterances=["hi"])},
+            routes={"lite": RouteSpec(target_model="lite-upstream", description="lite", utterances=["hi"])},
         ),
-        router=FakeRouter(RoutingDecision("lite-upstream", "test", rewrite=True, route_id="fast")),
+        router=FakeRouter(RoutingDecision("lite-upstream", "test", rewrite=True, route_id="lite")),
         proxy=FakeProxy(),
     )
     client = TestClient(app)
@@ -424,11 +424,11 @@ def test_chat_completion_requires_inbound_api_key_when_configured():
     app = create_app(
         settings=RouterSettings(
             route_model="semantic-router",
-            fallback_route_id="fast",
+            fallback_route_id="lite",
             inbound_api_key="sk-intentmux",
-            routes={"fast": RouteSpec(target_model="lite-upstream", description="fast", utterances=["hi"])},
+            routes={"lite": RouteSpec(target_model="lite-upstream", description="lite", utterances=["hi"])},
         ),
-        router=FakeRouter(RoutingDecision("lite-upstream", "test", rewrite=True, route_id="fast")),
+        router=FakeRouter(RoutingDecision("lite-upstream", "test", rewrite=True, route_id="lite")),
         proxy=FakeProxy(),
     )
     client = TestClient(app)
@@ -458,11 +458,11 @@ def test_chat_completion_does_not_write_prompt_review_log_by_default(tmp_path: P
     app = create_app(
         settings=RouterSettings(
             route_model="semantic-router",
-            fallback_route_id="fast",
+            fallback_route_id="lite",
             prompt_log_dir=str(prompt_dir),
-            routes={"fast": RouteSpec(target_model="lite-upstream", description="fast", utterances=["hi"])},
+            routes={"lite": RouteSpec(target_model="lite-upstream", description="lite", utterances=["hi"])},
         ),
-        router=FakeRouter(RoutingDecision("lite-upstream", "test", rewrite=True, route_id="fast")),
+        router=FakeRouter(RoutingDecision("lite-upstream", "test", rewrite=True, route_id="lite")),
         proxy=FakeProxy(),
     )
 
@@ -483,12 +483,12 @@ def test_chat_completion_writes_raw_local_prompt_review_log(tmp_path: Path):
     app = create_app(
         settings=RouterSettings(
             route_model="semantic-router",
-            fallback_route_id="fast",
+            fallback_route_id="lite",
             prompt_log_mode="raw_local",
             prompt_log_dir=str(prompt_dir),
-            routes={"fast": RouteSpec(target_model="lite-upstream", description="fast", utterances=["hi"])},
+            routes={"lite": RouteSpec(target_model="lite-upstream", description="lite", utterances=["hi"])},
         ),
-        router=FakeRouter(RoutingDecision("lite-upstream", "test", rewrite=True, route_id="fast")),
+        router=FakeRouter(RoutingDecision("lite-upstream", "test", rewrite=True, route_id="lite")),
         proxy=FakeProxy(),
     )
 
@@ -508,7 +508,7 @@ def test_chat_completion_writes_raw_local_prompt_review_log(tmp_path: Path):
     assert record["request_id"] == "req-prompt"
     assert record["mode"] == "raw_local"
     assert record["latest_user_text"] == "请分析回滚方案"
-    assert record["route_id"] == "fast"
+    assert record["route_id"] == "lite"
     assert record["target_model"] == "lite-upstream"
 
 
@@ -517,12 +517,12 @@ def test_chat_completion_redacted_prompt_review_log_masks_credentials(tmp_path: 
     app = create_app(
         settings=RouterSettings(
             route_model="semantic-router",
-            fallback_route_id="fast",
+            fallback_route_id="lite",
             prompt_log_mode="redacted",
             prompt_log_dir=str(prompt_dir),
-            routes={"fast": RouteSpec(target_model="lite-upstream", description="fast", utterances=["hi"])},
+            routes={"lite": RouteSpec(target_model="lite-upstream", description="lite", utterances=["hi"])},
         ),
-        router=FakeRouter(RoutingDecision("lite-upstream", "test", rewrite=True, route_id="fast")),
+        router=FakeRouter(RoutingDecision("lite-upstream", "test", rewrite=True, route_id="lite")),
         proxy=FakeProxy(),
     )
 
@@ -545,11 +545,11 @@ def test_health_and_ready_do_not_require_inbound_api_key():
     app = create_app(
         settings=RouterSettings(
             route_model="semantic-router",
-            fallback_route_id="fast",
+            fallback_route_id="lite",
             inbound_api_key="sk-intentmux",
-            routes={"fast": RouteSpec(target_model="lite-upstream", description="fast", utterances=["hi"])},
+            routes={"lite": RouteSpec(target_model="lite-upstream", description="lite", utterances=["hi"])},
         ),
-        router=FakeRouter(RoutingDecision("lite-upstream", "test", rewrite=True, route_id="fast")),
+        router=FakeRouter(RoutingDecision("lite-upstream", "test", rewrite=True, route_id="lite")),
         proxy=FakeProxy(),
         readiness_checker=FakeReadinessChecker(
             ReadinessReport(
@@ -579,7 +579,7 @@ def test_decision_endpoint_low_confidence_uses_fallback_route_id():
     )
 
     assert response.status_code == 200
-    assert response.json()["route_id"] == "fast"
+    assert response.json()["route_id"] == "lite"
     assert response.json()["target_model"] == "lite-upstream"
     assert response.json()["policy_id"] == "low_confidence"
     assert proxy.forward_called is False
@@ -596,7 +596,7 @@ def test_decision_endpoint_embedding_error_uses_fallback_route_id_and_policy():
     )
 
     assert response.status_code == 200
-    assert response.json()["route_id"] == "fast"
+    assert response.json()["route_id"] == "lite"
     assert response.json()["target_model"] == "lite-upstream"
     assert response.json()["policy_id"] == "embedding_error"
     assert proxy.forward_called is False
@@ -775,7 +775,7 @@ def test_streaming_chat_completion_uses_stream_proxy():
                 "deep-upstream",
                 "hard_rule:线上",
                 rewrite=True,
-                route_id="strong",
+                route_id="deep",
                 policy_id="hard_rule",
                 source_model="smart-router",
             )
@@ -799,7 +799,7 @@ def test_streaming_chat_completion_uses_stream_proxy():
     assert proxy.payloads[0]["stream"] is True
     assert response.headers["content-type"].startswith("text/event-stream")
     assert response.headers["x-router-target-model"] == "deep-upstream"
-    assert response.headers["x-router-route-id"] == "strong"
+    assert response.headers["x-router-route-id"] == "deep"
     assert response.headers["x-router-policy-id"] == "hard_rule"
     assert body == b"data: first\n\ndata: [DONE]\n\n"
 
@@ -812,7 +812,7 @@ def test_chat_completion_emits_structured_log_without_sensitive_payload(caplog):
                 "deep-upstream",
                 "hard_rule:线上",
                 rewrite=True,
-                route_id="strong",
+                route_id="deep",
                 policy_id="hard_rule",
                 source_model="smart-router",
             )
@@ -870,7 +870,7 @@ def test_chat_completion_emits_structured_log_without_sensitive_payload(caplog):
                 "request_id": "external-request-1",
                 "request_id_source": "x-request-id",
                 "rewrite": True,
-                "route_id": "strong",
+                "route_id": "deep",
                 "score": None,
                 "second_score": None,
                 "source_model": "smart-router",
@@ -891,7 +891,7 @@ def test_chat_completion_emits_structured_log_without_sensitive_payload(caplog):
 
 def test_chat_completion_audit_log_includes_format_signals_without_content(caplog):
     proxy = FakeProxy()
-    router = FakeRouter(RoutingDecision("lite-upstream", "test", rewrite=True, route_id="fast"))
+    router = FakeRouter(RoutingDecision("lite-upstream", "test", rewrite=True, route_id="lite"))
     app = create_app(
         router=router,
         proxy=proxy,
@@ -942,11 +942,11 @@ def test_chat_completion_writes_redacted_audit_log(tmp_path):
     audit_dir = tmp_path / "logs" / "routes"
     settings = RouterSettings(
         route_model="semantic-router",
-        fallback_route_id="fast",
+        fallback_route_id="lite",
         routes={
-            "fast": RouteSpec(
+            "lite": RouteSpec(
                 target_model="lite-upstream",
-                description="fast",
+                description="lite",
                 utterances=["hello"],
             )
         },
@@ -960,7 +960,7 @@ def test_chat_completion_writes_redacted_audit_log(tmp_path):
                 "lite-upstream",
                 "embedding",
                 rewrite=True,
-                route_id="fast",
+                route_id="lite",
                 policy_id="embedding",
                 source_model="semantic-router",
                 score=0.7,
@@ -1013,7 +1013,7 @@ def test_chat_completion_writes_redacted_audit_log(tmp_path):
             "request_id": "audit-request-1",
             "request_id_source": "metadata.semantic_router_request_id",
             "rewrite": True,
-            "route_id": "fast",
+            "route_id": "lite",
             "score": 0.7,
             "second_score": 0.2,
             "source_model": "semantic-router",
@@ -1039,7 +1039,7 @@ def test_chat_completion_marks_upstream_4xx_as_unhealthy_without_gateway_rewrite
                 "lite-upstream",
                 "low_confidence",
                 rewrite=True,
-                route_id="fast",
+                route_id="lite",
                 policy_id="low_confidence",
                 source_model="semantic-router",
                 score=0.36,
@@ -1113,7 +1113,7 @@ def test_chat_completion_strips_router_private_metadata_before_forwarding():
                 "metadata.route_id",
                 rewrite=True,
                 source_model="semantic-router",
-                route_id="strong",
+                route_id="deep",
                 policy_id="explicit_override",
             )
         ),
@@ -1125,9 +1125,9 @@ def test_chat_completion_strips_router_private_metadata_before_forwarding():
         json={
             "model": "semantic-router",
             "metadata": {
-                "route_id": "strong",
-                "route": "fast",
-                "target_route": "strong",
+                "route_id": "deep",
+                "route": "lite",
+                "target_route": "deep",
                 "semantic_router_request_id": "metadata-request-2",
                 "tenant": "kept",
             },

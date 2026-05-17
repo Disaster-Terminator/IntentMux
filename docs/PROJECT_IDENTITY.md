@@ -31,7 +31,7 @@ model=auto -> route_id(lite/deep) -> target_model -> OpenAI-compatible upstream
 - Runtime module namespace: `router`
 - Canonical public entry models: `auto`, `lite`, `deep`
 - LiteLLM sidecar entry name: `semantic-router`
-- Legacy route aliases: `fast` -> `lite`, `strong` -> `deep`
+- Historical internal route names have been migrated to `lite` / `deep`.
 - Default container and compose service name: `intentmux`
 - Default container image tag for local builds: `intentmux:local`
 
@@ -42,7 +42,7 @@ deployments; it is a compatibility entry name, not a second-class deployment
 mode.
 
 `/v1/models` should advertise only `auto`, `lite`, and `deep`. It should not
-advertise `semantic-router`, `fast`, `strong`, or deployment-specific upstream
+advertise deployment-specific upstream
 model group names.
 
 ## Repository Metadata

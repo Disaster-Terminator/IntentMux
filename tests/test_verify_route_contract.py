@@ -22,18 +22,18 @@ def test_verify_route_contract_passes_for_valid_contract(tmp_path: Path):
         tmp_path,
         """
 route_model: semantic-router
-fallback_route_id: fast
+fallback_route_id: lite
 routes:
-  fast:
+  lite:
     target_model: lite-upstream
     description: low risk
     utterances: [hello]
-  strong:
+  deep:
     target_model: deep-upstream
     description: high risk
     utterances: [debug]
 hard_rules:
-  - route_id: strong
+  - route_id: deep
     keywords: [PR]
 """,
     )
@@ -42,9 +42,9 @@ hard_rules:
         """
 cases:
   - text: say hi
-    expect: fast
+    expect: lite
   - text: debug this
-    expect: strong
+    expect: deep
 """,
     )
 
@@ -62,7 +62,7 @@ routes:
     target_model: lite-upstream
     description: bad recursion
     utterances: [hello]
-  strong:
+  deep:
     target_model: semantic-router
     description: bad target model
     utterances: [debug]
@@ -93,9 +93,9 @@ def test_verify_route_contract_rejects_eval_expect_target_model(tmp_path: Path):
         tmp_path,
         """
 route_model: semantic-router
-fallback_route_id: fast
+fallback_route_id: lite
 routes:
-  fast:
+  lite:
     target_model: lite-upstream
     description: low risk
     utterances: [hello]
@@ -135,14 +135,14 @@ routes:
         tmp_path,
         """
 route_model: semantic-router
-fallback_route_id: fast
+fallback_route_id: lite
 route_bank_path: semantic_sets/route_bank.yaml
 routes:
-  fast:
+  lite:
     target_model: lite-upstream
     description: low risk
     utterances: [hello]
-  strong:
+  deep:
     target_model: deep-upstream
     description: high risk
     utterances: [debug]
@@ -153,7 +153,7 @@ routes:
         """
 cases:
   - text: hello
-    expect: fast
+    expect: lite
 """,
     )
 
@@ -171,10 +171,10 @@ def test_verify_route_contract_allows_route_bank_route_id_keys(tmp_path: Path):
         """
 version: 1
 routes:
-  fast:
+  lite:
     utterances:
       - text: hello
-  strong:
+  deep:
     utterances:
       - text: debug
 """,
@@ -184,14 +184,14 @@ routes:
         tmp_path,
         """
 route_model: semantic-router
-fallback_route_id: fast
+fallback_route_id: lite
 route_bank_path: semantic_sets/route_bank.yaml
 routes:
-  fast:
+  lite:
     target_model: lite-upstream
     description: low risk
     utterances: [hello]
-  strong:
+  deep:
     target_model: deep-upstream
     description: high risk
     utterances: [debug]
@@ -202,7 +202,7 @@ routes:
         """
 cases:
   - text: hello
-    expect: fast
+    expect: lite
 """,
     )
 

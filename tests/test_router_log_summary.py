@@ -53,7 +53,7 @@ def test_parse_route_records_ignores_access_logs_and_non_route_json():
         [
             'INFO:     127.0.0.1:1 - "GET /health HTTP/1.1" 200 OK',
             '{"event":"startup","status":"ok"}',
-            '{"event":"route_complete","route_id":"strong","target_model":"deep-upstream","stream":true,"duration_ms":1200}',
+            '{"event":"route_complete","route_id":"deep","target_model":"deep-upstream","stream":true,"duration_ms":1200}',
             '{"event":"route_error","target_model":"deep-upstream","stream":true,"error_type":"RemoteProtocolError","upstream_status":503,"duration_ms":1400}',
             "not json",
         ]
@@ -64,7 +64,7 @@ def test_parse_route_records_ignores_access_logs_and_non_route_json():
     assert records == [
         {
             "event": "route_complete",
-            "route_id": "strong",
+            "route_id": "deep",
             "target_model": "deep-upstream",
             "stream": True,
             "duration_ms": 1200,
@@ -120,7 +120,7 @@ def test_summarize_records_counts_routes_errors_and_latency():
     records = [
         {
             "event": "route_complete",
-            "route_id": "strong",
+            "route_id": "deep",
             "target_model": "deep-upstream",
             "reason": "hard_rule:线上",
             "stream": True,
@@ -128,7 +128,7 @@ def test_summarize_records_counts_routes_errors_and_latency():
         },
         {
             "event": "route_complete",
-            "route_id": "fast",
+            "route_id": "lite",
             "target_model": "lite-upstream",
             "reason": "embedding_error",
             "stream": False,
@@ -136,7 +136,7 @@ def test_summarize_records_counts_routes_errors_and_latency():
         },
         {
             "event": "route_error",
-            "route_id": "strong",
+            "route_id": "deep",
             "target_model": "deep-upstream",
             "reason": "embedding",
             "stream": True,
@@ -154,7 +154,7 @@ def test_summarize_records_counts_routes_errors_and_latency():
     assert summary.streams == 2
     assert summary.nonstreams == 1
     assert summary.targets == {"deep-upstream": 2, "lite-upstream": 1}
-    assert summary.routes == {"strong": 2, "fast": 1}
+    assert summary.routes == {"deep": 2, "lite": 1}
     assert summary.reasons == {
         "embedding": 1,
         "embedding_error": 1,
@@ -186,8 +186,8 @@ def test_summarize_records_limits_slow_request_samples_and_preserves_context():
         {
             "event": "route_complete",
             "timestamp": "2026-05-12T00:00:00Z",
-            "request_id": "req-fast",
-            "route_id": "fast",
+            "request_id": "req-lite",
+            "route_id": "lite",
             "target_model": "lite-upstream",
             "reason": "low_confidence",
             "stream": True,
@@ -200,7 +200,7 @@ def test_summarize_records_limits_slow_request_samples_and_preserves_context():
             "event": "route_complete",
             "ts": "2026-05-12T00:00:01Z",
             "request_id": "req-slow",
-            "route_id": "strong",
+            "route_id": "deep",
             "target_model": "deep-upstream",
             "reason": "hard_rule:安全",
             "stream": True,
@@ -215,7 +215,7 @@ def test_summarize_records_limits_slow_request_samples_and_preserves_context():
             "event": "route_complete",
             "timestamp": "2026-05-12T00:00:02Z",
             "request_id": "req-mid",
-            "route_id": "fast",
+            "route_id": "lite",
             "target_model": "lite-upstream",
             "reason": "embedding_error",
             "stream": False,
@@ -252,7 +252,7 @@ def test_summarize_records_limits_slow_request_samples_and_preserves_context():
             "2026-05-12T00:00:01Z",
             "req-slow",
             2500.0,
-            "strong",
+            "deep",
             "deep-upstream",
             "hard_rule:安全",
             400,
@@ -265,7 +265,7 @@ def test_summarize_records_limits_slow_request_samples_and_preserves_context():
             "2026-05-12T00:00:02Z",
             "req-mid",
             1200.0,
-            "fast",
+            "lite",
             "lite-upstream",
             "embedding_error",
             200,
@@ -282,7 +282,7 @@ def test_format_summary_is_stable_for_runbooks():
         [
             {
                 "event": "route_error",
-                "route_id": "strong",
+                "route_id": "deep",
                 "target_model": "deep-upstream",
                 "reason": "embedding_error",
                 "stream": True,
@@ -296,7 +296,7 @@ def test_format_summary_is_stable_for_runbooks():
     assert format_summary(summary) == "\n".join(
         [
             "total=1 completed=0 errors=1 streams=1 nonstreams=0",
-            "routes: strong=1",
+            "routes: deep=1",
             "targets: deep-upstream=1",
             "reasons: embedding_error=1",
             "error_types: RemoteProtocolError=1",
@@ -307,7 +307,7 @@ def test_format_summary_is_stable_for_runbooks():
             "max_duration_ms=1400.00",
             "duration_percentiles_ms: p50=1400.00, p90=1400.00, p95=1400.00, p99=1400.00",
             "slow_requests:",
-            "- duration_ms=1400.00 timestamp=unknown request_id=unknown route=strong target=deep-upstream reason=embedding_error upstream_status=503",
+            "- duration_ms=1400.00 timestamp=unknown request_id=unknown route=deep target=deep-upstream reason=embedding_error upstream_status=503",
         ]
     )
 

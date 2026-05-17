@@ -117,8 +117,8 @@ def test_litellm_status_rejects_non_auth_client_errors():
 def test_router_readiness_reports_route_bank_and_utterance_counts():
     settings = RouterSettings(
         routes={
-            "fast": RouteSpec(description="low risk", utterances=["a", "b"]),
-            "strong": RouteSpec(description="high risk", utterances=["c"]),
+            "lite": RouteSpec(description="low risk", utterances=["a", "b"]),
+            "deep": RouteSpec(description="high risk", utterances=["c"]),
         },
         route_bank_loaded=True,
     )
@@ -127,7 +127,7 @@ def test_router_readiness_reports_route_bank_and_utterance_counts():
 
     assert status == ComponentStatus(
         ok=True,
-        detail="route_bank_loaded=true route_utterances=fast:2,strong:1",
+        detail="route_bank_loaded=true route_utterances=deep:1,lite:2",
     )
 
 
@@ -156,7 +156,7 @@ async def test_embedding_readiness_sends_auth_headers(monkeypatch):
 
     monkeypatch.setattr("router.readiness.httpx.AsyncClient", FakeAsyncClient)
     settings = RouterSettings(
-        routes={"fast": RouteSpec(description="low risk", utterances=["x"])},
+        routes={"lite": RouteSpec(description="low risk", utterances=["x"])},
         embedding_url="http://embedding/v1/embeddings",
         embedding_model="embed-model",
         embedding_api_key="sk-embed",

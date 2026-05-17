@@ -32,16 +32,9 @@ class RouterSettings(BaseModel):
     entry_model_aliases: list[str] = Field(
         default_factory=lambda: ["auto", "semantic-router"]
     )
-    route_id_aliases: dict[str, str] = Field(
-        default_factory=lambda: {
-            "fast": "lite",
-            "strong": "deep",
-            "lite": "fast",
-            "deep": "strong",
-        }
-    )
+    route_id_aliases: dict[str, str] = Field(default_factory=dict)
     fallback_route_id: str = Field(
-        default="fast",
+        default="lite",
         validation_alias=AliasChoices("fallback_route_id", "default_route"),
     )
     agent_signal_enabled: bool = True
@@ -144,8 +137,6 @@ class RouterSettings(BaseModel):
             return self.agent_signal_route_id
         if "deep" in self.routes:
             return "deep"
-        if "strong" in self.routes:
-            return "strong"
         return None
 
 

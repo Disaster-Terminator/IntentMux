@@ -68,11 +68,11 @@ Canonical entry models:
 | `lite` | Explicit lightweight tier | Routes to configured `lite.target_model` |
 | `deep` | Explicit high-capability tier | Routes to configured `deep.target_model` |
 
-Compatibility entries and aliases:
+Entry boundaries:
 
-- `semantic-router`: LiteLLM sidecar entry name. It remains accepted; it is a compatibility entry name, not a second-class deployment mode.
-- `fast`: legacy route alias for `lite`.
-- `strong`: legacy route alias for `deep`.
+- `semantic-router`: LiteLLM sidecar entry name for the LiteLLM-first topology.
+- `auto`: canonical automatic routing entry for direct IntentMux gateway use.
+- `lite` / `deep`: IntentMux product route ids and explicit entries.
 
 `/v1/models` advertises only `auto`, `lite`, and `deep`. It does not advertise `semantic-router` or leak local LiteLLM model-group names. `target_model` values are deployment configuration, not product API names.
 
@@ -204,7 +204,7 @@ client -> IntentMux :4001/v1, model=auto|lite|deep
 - `model=lite` / `model=deep`: force the corresponding route id and skip semantic routing.
 - `/v1/models`: list only `auto`, `lite`, and `deep`.
 
-The LiteLLM sidecar compatibility path remains supported. Clients can keep using LiteLLM `:4000` and change only the model name to the legacy entry `semantic-router`.
+The LiteLLM sidecar path remains supported. Clients can keep using LiteLLM `:4000` and change only the model name to the `semantic-router` entry.
 
 ```text
 client -> LiteLLM :4000, model=semantic-router
@@ -214,7 +214,7 @@ client -> LiteLLM :4000, model=semantic-router
        -> LiteLLM model group
 ```
 
-Configure `semantic-router` in LiteLLM as a model entry that points to the IntentMux sidecar. Requests that use that legacy model name run automatic routing. `semantic-router` is a compatibility alias and is not listed by IntentMux `/v1/models`. Legacy route ids `fast` and `strong` remain aliases for `lite` and `deep`.
+Configure `semantic-router` in LiteLLM as a model entry that points to the IntentMux sidecar. Requests that use that model name run automatic routing. `semantic-router` is a LiteLLM sidecar entry and is not listed by IntentMux `/v1/models` for direct gateway use.
 
 ## Verification
 

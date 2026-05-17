@@ -1,7 +1,7 @@
 # Chinese Route Eval Plan
 
 IntentMux does not try to become a general API gateway or a large router
-platform. The next quality milestone is a Chinese-first fast/strong routing
+platform. The next quality milestone is a Chinese-first lite/deep routing
 eval bank.
 
 ## Principle
@@ -16,13 +16,13 @@ eval bank.
 
 | slice | expected route | source family |
 | --- | --- | --- |
-| fast_general_zh | fast | MASSIVE zh, CLUE/DataCLUE general text |
-| fast_intent_zh | fast | DataCLUE CIC-like intent data |
-| strong_code_zh | strong | SuperCLUE-Code3, HumanEval-X/XL supplement |
-| strong_reasoning_zh | strong | C-Eval, CMMLU, AGIEval/Gaokao-like data |
-| strong_long_context_zh | strong | LongBench Chinese |
-| high_risk_zh | strong | curated public/manual and redacted production review |
-| borderline_zh | reviewed fast or strong | curated Chinese engineering boundary prompts |
+| fast_general_zh | lite | MASSIVE zh, CLUE/DataCLUE general text |
+| fast_intent_zh | lite | DataCLUE CIC-like intent data |
+| strong_code_zh | deep | SuperCLUE-Code3, HumanEval-X/XL supplement |
+| strong_reasoning_zh | deep | C-Eval, CMMLU, AGIEval/Gaokao-like data |
+| strong_long_context_zh | deep | LongBench Chinese |
+| high_risk_zh | deep | curated public/manual and redacted production review |
+| borderline_zh | reviewed lite or deep | curated Chinese engineering boundary prompts |
 
 ## Metrics
 

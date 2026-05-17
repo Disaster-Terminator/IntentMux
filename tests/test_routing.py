@@ -20,22 +20,22 @@ class FakeEmbeddingClient:
 def settings() -> RouterSettings:
     return RouterSettings(
         route_model="smart-router",
-        fallback_route_id="fast",
+        fallback_route_id="lite",
         threshold=0.5,
         margin=0.05,
         routes={
-            "fast": RouteSpec(
+            "lite": RouteSpec(
                 target_model="lite-upstream",
                 description="low risk",
                 utterances=["翻译成中文", "总结这篇文章"],
             ),
-            "strong": RouteSpec(
+            "deep": RouteSpec(
                 target_model="deep-upstream",
                 description="high risk",
                 utterances=["分析这个线上 bug", "代码审查"],
             ),
         },
-        hard_rules=[{"route_id": "strong", "keywords": ["线上事故", "死锁", "密钥"]}],
+        hard_rules=[{"route_id": "deep", "keywords": ["线上事故", "死锁", "密钥"]}],
     )
 
 
@@ -126,7 +126,7 @@ async def test_auto_entry_alias_works_with_legacy_route_model_config():
         {"model": "auto", "messages": [{"role": "user", "content": "把这句话翻译成英文"}]}
     )
 
-    assert decision.route_id == "fast"
+    assert decision.route_id == "lite"
     assert decision.target_model == "lite-upstream"
     assert decision.policy_id == "embedding"
 
@@ -184,10 +184,10 @@ async def test_lite_and_deep_model_names_work_with_legacy_route_ids():
         {"model": "deep", "messages": [{"role": "user", "content": "你好"}]}
     )
 
-    assert lite_decision.route_id == "fast"
+    assert lite_decision.route_id == "lite"
     assert lite_decision.target_model == "lite-upstream"
     assert lite_decision.policy_id == "explicit"
-    assert deep_decision.route_id == "strong"
+    assert deep_decision.route_id == "deep"
     assert deep_decision.target_model == "deep-upstream"
     assert deep_decision.policy_id == "explicit"
 
@@ -206,7 +206,7 @@ async def test_metadata_route_id_accepts_canonical_ids_and_legacy_aliases():
     legacy_decision = await router.decide(
         {
             "model": "auto",
-            "metadata": {"route_id": "fast"},
+            "metadata": {"route_id": "lite"},
             "messages": [{"role": "user", "content": "密钥疑似泄漏"}],
         }
     )
@@ -230,7 +230,7 @@ async def test_high_precision_hard_rule_routes_to_strong_without_embedding():
         }
     )
 
-    assert decision.route_id == "strong"
+    assert decision.route_id == "deep"
     assert decision.target_model == "deep-upstream"
     assert decision.policy_id == "hard_rule"
     assert decision.reason == "hard_rule:线上事故"
@@ -295,7 +295,7 @@ async def test_default_recursive_delete_risk_still_routes_to_deep_without_embedd
 async def test_agent_instruction_boilerplate_uses_cost_first_fallback():
     route_settings = settings().model_copy(deep=True)
     route_settings.hard_rules.append(
-        HardRuleSpec(route_id="strong", keywords=["code review"])
+        HardRuleSpec(route_id="deep", keywords=["code review"])
     )
     router = Router(route_settings, FakeEmbeddingClient({}, fail=True))
 
@@ -315,7 +315,7 @@ async def test_agent_instruction_boilerplate_uses_cost_first_fallback():
         },
     )
 
-    assert decision.route_id == "fast"
+    assert decision.route_id == "lite"
     assert decision.target_model == "lite-upstream"
     assert decision.policy_id == "embedding_error"
     assert decision.reason == "embedding_error"
@@ -325,7 +325,7 @@ async def test_agent_instruction_boilerplate_uses_cost_first_fallback():
 async def test_agent_instruction_boilerplate_does_not_trigger_hard_rule_without_signal():
     route_settings = settings().model_copy(deep=True)
     route_settings.hard_rules.append(
-        HardRuleSpec(route_id="strong", keywords=["code review"])
+        HardRuleSpec(route_id="deep", keywords=["code review"])
     )
     vectors = {
         "翻译成中文": [1.0, 0.0, 0.0],
@@ -343,7 +343,7 @@ async def test_agent_instruction_boilerplate_does_not_trigger_hard_rule_without_
         },
     )
 
-    assert decision.route_id == "fast"
+    assert decision.route_id == "lite"
     assert decision.target_model == "lite-upstream"
     assert decision.policy_id == "low_confidence"
 
@@ -369,7 +369,7 @@ async def test_ambiguous_engineering_terms_use_embedding_not_hard_rule():
         }
     )
 
-    assert decision.route_id == "strong"
+    assert decision.route_id == "deep"
     assert decision.target_model == "deep-upstream"
     assert decision.policy_id == "embedding"
     assert decision.reason == "embedding"
@@ -394,7 +394,7 @@ async def test_ambiguous_engineering_terms_can_route_fast_when_semantics_are_lig
         }
     )
 
-    assert decision.route_id == "fast"
+    assert decision.route_id == "lite"
     assert decision.target_model == "lite-upstream"
     assert decision.policy_id == "embedding"
     assert decision.reason == "embedding"
@@ -418,7 +418,7 @@ async def test_low_confidence_embedding_falls_back_to_default_route():
         }
     )
 
-    assert decision.route_id == "fast"
+    assert decision.route_id == "lite"
     assert decision.target_model == "lite-upstream"
     assert decision.policy_id == "low_confidence"
     assert decision.reason == "low_confidence"
@@ -443,7 +443,7 @@ async def test_agent_tool_schema_does_not_override_cost_first_routing():
         },
     )
 
-    assert decision.route_id == "fast"
+    assert decision.route_id == "lite"
     assert decision.target_model == "lite-upstream"
     assert decision.policy_id == "embedding_error"
     assert decision.reason == "embedding_error"
@@ -468,7 +468,7 @@ async def test_agent_tool_history_does_not_override_cost_first_routing():
         },
     )
 
-    assert decision.route_id == "fast"
+    assert decision.route_id == "lite"
     assert decision.target_model == "lite-upstream"
     assert decision.policy_id == "embedding_error"
     assert decision.reason == "embedding_error"
@@ -493,7 +493,7 @@ async def test_legacy_functions_do_not_override_cost_first_routing():
         },
     )
 
-    assert decision.route_id == "fast"
+    assert decision.route_id == "lite"
     assert decision.target_model == "lite-upstream"
     assert decision.policy_id == "embedding_error"
     assert decision.reason == "embedding_error"
@@ -516,7 +516,7 @@ async def test_long_multiturn_context_does_not_override_cost_first_routing():
         },
     )
 
-    assert decision.route_id == "fast"
+    assert decision.route_id == "lite"
     assert decision.target_model == "lite-upstream"
     assert decision.policy_id == "embedding_error"
     assert decision.reason == "embedding_error"
@@ -551,7 +551,7 @@ async def test_empty_agent_signal_fields_do_not_route_to_strong():
         },
     )
 
-    assert decision.route_id == "fast"
+    assert decision.route_id == "lite"
     assert decision.target_model == "lite-upstream"
     assert decision.policy_id == "low_confidence"
 
@@ -560,11 +560,11 @@ async def test_empty_agent_signal_fields_do_not_route_to_strong():
 async def test_agent_signal_is_disabled_when_route_is_absent():
     route_settings = RouterSettings(
         route_model="smart-router",
-        fallback_route_id="fast",
+        fallback_route_id="lite",
         threshold=0.5,
         margin=0.05,
         routes={
-            "fast": RouteSpec(
+            "lite": RouteSpec(
                 target_model="lite-upstream",
                 description="low risk",
                 utterances=["翻译成中文"],
@@ -587,7 +587,7 @@ async def test_agent_signal_is_disabled_when_route_is_absent():
     )
 
     assert route_settings.effective_agent_signal_route_id is None
-    assert decision.route_id == "fast"
+    assert decision.route_id == "lite"
     assert decision.target_model == "lite-upstream"
     assert decision.policy_id == "embedding_error"
 
@@ -599,7 +599,7 @@ async def test_explicit_route_precedence_over_agent_signal():
     decision = await router.decide(
         {
             "model": "smart-router",
-            "metadata": {"route_id": "fast"},
+            "metadata": {"route_id": "lite"},
             "messages": [{"role": "user", "content": "继续"}],
         },
         format_signals={
@@ -610,7 +610,7 @@ async def test_explicit_route_precedence_over_agent_signal():
         },
     )
 
-    assert decision.route_id == "fast"
+    assert decision.route_id == "lite"
     assert decision.target_model == "lite-upstream"
     assert decision.policy_id == "explicit"
 
@@ -632,7 +632,7 @@ async def test_hard_rule_precedence_over_agent_signal():
         },
     )
 
-    assert decision.route_id == "strong"
+    assert decision.route_id == "deep"
     assert decision.target_model == "deep-upstream"
     assert decision.policy_id == "hard_rule"
     assert decision.reason == "hard_rule:密钥"
@@ -649,7 +649,7 @@ async def test_embedding_failure_falls_back_to_default_route():
         }
     )
 
-    assert decision.route_id == "fast"
+    assert decision.route_id == "lite"
     assert decision.target_model == "lite-upstream"
     assert decision.policy_id == "embedding_error"
     assert decision.reason == "embedding_error"
@@ -810,15 +810,15 @@ async def test_explicit_route_id_precedence_over_legacy_metadata_keys():
         {
             "model": "smart-router",
             "metadata": {
-                "route_id": "strong",
-                "route": "fast",
+                "route_id": "deep",
+                "route": "lite",
                 "target_route": "legacy",
             },
             "messages": [{"role": "user", "content": "anything"}],
         }
     )
 
-    assert decision.route_id == "strong"
+    assert decision.route_id == "deep"
     assert decision.target_model == "deep-upstream"
     assert decision.policy_id == "explicit"
 
@@ -842,6 +842,6 @@ async def test_unknown_explicit_route_id_is_ignored_and_normal_routing_continues
         }
     )
 
-    assert decision.route_id == "strong"
+    assert decision.route_id == "deep"
     assert decision.target_model == "deep-upstream"
     assert decision.policy_id == "embedding"

@@ -8,7 +8,7 @@ def test_route_headers_include_optional_route_and_policy_ids_with_encoding():
         target_model="pro router",
         reason="hard_rule:线上",
         request_id="req 1",
-        route_id="strong 路线",
+        route_id="deep 路线",
         policy_id="hard rule",
     )
 
@@ -16,7 +16,7 @@ def test_route_headers_include_optional_route_and_policy_ids_with_encoding():
         "x-router-request-id": "req%201",
         "x-router-target-model": "pro%20router",
         "x-router-reason": "hard_rule:%E7%BA%BF%E4%B8%8A",
-        "x-router-route-id": "strong%20%E8%B7%AF%E7%BA%BF",
+        "x-router-route-id": "deep%20%E8%B7%AF%E7%BA%BF",
         "x-router-policy-id": "hard%20rule",
     }
 

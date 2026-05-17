@@ -48,7 +48,7 @@ def test_parse_ready_reads_components_contract():
 def test_keep_preserves_slow_request_rows_without_truncating():
     slow_row = (
         "- duration_ms=117919.39 timestamp=2026-05-12T06:32:48.781826+00:00 "
-        "request_id=95647be4-11e1-4d16-9d69-d085c0bb9720 route=fast "
+        "request_id=95647be4-11e1-4d16-9d69-d085c0bb9720 route=lite "
         "target=lite-upstream reason=low_confidence upstream_status=200"
     )
     summary = "\n".join(
@@ -78,7 +78,7 @@ def test_render_md_nests_slow_request_rows():
             "exit_code": 0,
             "highlights": [
                 "slow_requests:",
-                "- duration_ms=117919.39 request_id=req-1 route=fast",
+                "- duration_ms=117919.39 request_id=req-1 route=lite",
             ],
         },
         "route_summary_all_logs": {"exit_code": 0, "highlights": []},
@@ -114,7 +114,7 @@ def test_render_md_nests_slow_request_rows():
 
     md = render_md(report)
 
-    assert "- slow_requests:\n  - duration_ms=117919.39 request_id=req-1 route=fast" in md
+    assert "- slow_requests:\n  - duration_ms=117919.39 request_id=req-1 route=lite" in md
     assert "## traffic_evidence" in md
     assert "- ok: False" in md
     assert "- detail: insufficient_samples: today_records=0 min_records=10" in md
@@ -127,10 +127,10 @@ def test_traffic_evidence_passes_when_min_valid_route_records_is_met(tmp_path: P
     day_log.write_text(
         "\n".join(
             [
-                '{"event":"route_complete","route_id":"fast"}',
+                '{"event":"route_complete","route_id":"lite"}',
                 "not-json",
                 '{"event":"unrelated"}',
-                '{"event":"route_error","route_id":"strong"}',
+                '{"event":"route_error","route_id":"deep"}',
             ]
         ),
         encoding="utf-8",

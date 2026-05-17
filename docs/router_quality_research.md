@@ -7,8 +7,8 @@ without turning it into a large router platform.
 
 IntentMux remains a lightweight LiteLLM sidecar with a two-tier product model:
 
-- `fast`: low-risk requests routed to the economical model group.
-- `strong`: coding, debugging, agent, security, incident, and high-risk requests routed to the stronger model group.
+- `lite`: low-risk requests routed to the economical model group.
+- `deep`: coding, debugging, agent, security, incident, and high-risk requests routed to the stronger model group.
 
 The runtime should stay small: OpenAI-compatible proxying, route selection,
 structured audit logs, and validation gates. Training routers, hosting vector
@@ -22,7 +22,7 @@ shape for IntentMux: define routes, encode route examples, compare incoming
 queries by similarity, and only route when confidence is high enough.
 
 RouteLLM and RoRF are useful mainly as product constraints, not as runtime
-dependencies. They reinforce a strong/weak model-pair framing, threshold
+dependencies. They reinforce a deep/weak model-pair framing, threshold
 calibration, cost-quality tradeoff measurement, and evaluation before rollout.
 Their trained routers and preference pipelines are heavier than IntentMux should
 adopt.
@@ -53,14 +53,14 @@ step.
 
 `config/route_sources.yaml` currently declares:
 
-- MASSIVE zh-CN / zh-TW general assistant utterances for `fast`.
-- SWE-bench issue statements for `strong`.
-- MBPP code-generation prompts for `strong`.
-- HumanEval prompts for `strong`.
+- MASSIVE zh-CN / zh-TW general assistant utterances for `lite`.
+- SWE-bench issue statements for `deep`.
+- MBPP code-generation prompts for `deep`.
+- HumanEval prompts for `deep`.
 
 These sources are chosen because they map naturally to the product's two tiers:
 general assistant traffic should usually stay cheap, while code generation and
-real issue resolution should be strong by default unless later evaluation proves
+real issue resolution should be deep by default unless later evaluation proves
 otherwise.
 
 The next eval milestone is `zh-intentmux-router-eval-v1`, described in
@@ -78,7 +78,7 @@ bulk-translating English benchmarks into the main eval bank.
 5. Promote the new route bank only through the production rollout gate.
 
 The goal is to reduce excessive `low_confidence` routing with sourced examples,
-while preserving conservative fallback to `fast` when IntentMux cannot make a
+while preserving conservative fallback to `lite` when IntentMux cannot make a
 defensible decision.
 
 ## Public Example

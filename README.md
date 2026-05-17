@@ -68,11 +68,11 @@ client -> LiteLLM :4000, model=semantic-router
 | `lite` | 显式轻量 tier | 路由到配置的 `lite.target_model` |
 | `deep` | 显式高能力 tier | 路由到配置的 `deep.target_model` |
 
-兼容入口和别名：
+入口边界：
 
-- `semantic-router`：LiteLLM sidecar 入口名，继续接受；它是兼容入口名，不是低级部署模式。
-- `fast`：旧 `lite` route alias。
-- `strong`：旧 `deep` route alias。
+- `semantic-router`：LiteLLM sidecar 入口名，继续接受；它是 LiteLLM-first 拓扑里的语义路由入口。
+- `auto`：IntentMux direct gateway 的规范自动路由入口。
+- `lite` / `deep`：IntentMux 的产品 route id 和显式入口。
 
 `/v1/models` 只广告规范入口 `auto`、`lite`、`deep`，不广告 `semantic-router`，也不泄漏本地 LiteLLM model group 名称。`target_model` 是部署侧配置值，不是产品接口。
 
@@ -283,7 +283,7 @@ client -> IntentMux :4001/v1, model=auto|lite|deep
 - `model=lite` / `model=deep`：显式指定 route id，跳过语义判断。
 - `/v1/models`：只返回 `auto`、`lite`、`deep`。
 
-LiteLLM sidecar 兼容方式仍然支持：客户端继续请求 LiteLLM `:4000`，把模型名切到旧入口 `semantic-router`。
+LiteLLM sidecar 方式仍然支持：客户端继续请求 LiteLLM `:4000`，把模型名切到入口 `semantic-router`。
 
 ```text
 client -> LiteLLM :4000, model=semantic-router
@@ -293,7 +293,7 @@ client -> LiteLLM :4000, model=semantic-router
        -> LiteLLM model group
 ```
 
-在 LiteLLM 中把 `semantic-router` 配置为指向 IntentMux sidecar 的模型入口后，客户端即可通过这个旧模型名触发自动路由。`semantic-router` 是兼容 alias，不会出现在 IntentMux `/v1/models` 的推荐列表中。旧 route id `fast` / `strong` 分别按 `lite` / `deep` 语义保留兼容。
+在 LiteLLM 中把 `semantic-router` 配置为指向 IntentMux sidecar 的模型入口后，客户端即可通过这个模型名触发自动路由。`semantic-router` 是 LiteLLM sidecar 入口，不会出现在 IntentMux `/v1/models` 的 direct gateway 推荐列表中。
 
 ## 配置模型
 

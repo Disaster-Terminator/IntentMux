@@ -30,7 +30,7 @@ def test_build_route_bank_maps_rows_to_routes_and_keeps_sources():
         RouteSource(
             name="massive_zh_cn_general",
             kind="local_rows",
-            route="fast",
+            route="lite",
             text_field="utt",
             limit=2,
             homepage="https://www.amazon.science/code-and-datasets/massive",
@@ -43,7 +43,7 @@ def test_build_route_bank_maps_rows_to_routes_and_keeps_sources():
         RouteSource(
             name="swebench_issue_resolution",
             kind="local_rows",
-            route="strong",
+            route="deep",
             text_field="problem_statement",
             limit=1,
         ),
@@ -73,7 +73,7 @@ def test_build_route_bank_maps_rows_to_routes_and_keeps_sources():
     assert bank["sources"][0] == {
         "name": "massive_zh_cn_general",
         "kind": "local_rows",
-        "route": "fast",
+        "route": "lite",
         "limit": 2,
         "url": None,
         "dataset": None,
@@ -82,7 +82,7 @@ def test_build_route_bank_maps_rows_to_routes_and_keeps_sources():
         "license": "CC BY 4.0",
         "license_url": "https://github.com/alexa/massive/blob/master/LICENSE",
     }
-    assert bank["routes"]["fast"]["utterances"] == [
+    assert bank["routes"]["lite"]["utterances"] == [
         {
             "text": "翻译 成 中文",
             "source": "massive_zh_cn_general",
@@ -92,7 +92,7 @@ def test_build_route_bank_maps_rows_to_routes_and_keeps_sources():
             "source": "massive_zh_cn_general",
         },
     ]
-    assert bank["routes"]["strong"]["utterances"] == [
+    assert bank["routes"]["deep"]["utterances"] == [
         {
             "text": "Fix crash when parsing config files.",
             "source": "swebench_issue_resolution",
@@ -156,7 +156,7 @@ def test_load_rows_reads_remote_tar_jsonl_from_cache(tmp_path):
         RouteSource(
             name="sample",
             kind="remote_tar_jsonl",
-            route="fast",
+            route="lite",
             text_field="utt",
             limit=10,
             url="https://example.com/sample.tar.gz",

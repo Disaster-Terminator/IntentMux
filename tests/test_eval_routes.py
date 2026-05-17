@@ -11,12 +11,12 @@ from scripts.eval_routes import EvalCase, load_cases, validate_case_route_ids
 
 
 def test_validate_case_route_ids_accepts_known_route_id():
-    validate_case_route_ids([EvalCase(text="hi", expect="fast")], {"fast", "strong"})
+    validate_case_route_ids([EvalCase(text="hi", expect="lite")], {"lite", "deep"})
 
 
 def test_validate_case_route_ids_rejects_target_model_name():
     with pytest.raises(ValueError, match="deep-upstream"):
-        validate_case_route_ids([EvalCase(text="hi", expect="deep-upstream")], {"fast", "strong"})
+        validate_case_route_ids([EvalCase(text="hi", expect="deep-upstream")], {"lite", "deep"})
 
 
 def test_load_cases_ignores_eval_builder_metadata(tmp_path: Path):
@@ -27,9 +27,9 @@ cases:
   - id: fast_001
     slice: fast_general_zh
     text: 帮我总结这段话
-    expect: fast
+    expect: lite
     source: curated
-    rationale: 普通总结请求低风险，适合 fast。
+    rationale: 普通总结请求低风险，适合 lite。
 """,
         encoding="utf-8",
     )
@@ -39,7 +39,7 @@ cases:
             id="fast_001",
             slice="fast_general_zh",
             text="帮我总结这段话",
-            expect="fast",
+            expect="lite",
             source="curated",
         )
     ]
@@ -53,7 +53,7 @@ cases:
   - id: long_001
     slice: strong_long_context_zh
     text: 请基于长文档定位冲突结论
-    expect: strong
+    expect: deep
     source: curated
     input_chars: 12000
     message_count: 3
@@ -67,7 +67,7 @@ cases:
             id="long_001",
             slice="strong_long_context_zh",
             text="请基于长文档定位冲突结论",
-            expect="strong",
+            expect="deep",
             source="curated",
             input_chars=12000,
             message_count=3,

@@ -80,7 +80,7 @@ signals:
 {
   "request_id": "req-...",
   "timestamp": "2026-05-13T00:00:00Z",
-  "route_id": "fast",
+  "route_id": "lite",
   "target_model": "lite-upstream",
   "reason": "low_confidence",
   "score": 0.53,
@@ -130,7 +130,7 @@ uv run python scripts/import_review_samples.py \
   --routes config/routes.yaml
 ```
 
-Every imported sample must use a product `route_id` such as `fast` or `strong`
+Every imported sample must use a product `route_id` such as `lite` or `deep`
 as `expect`; deployment-side target model names such as `lite-upstream` and
 `deep-upstream` must not be used as eval labels.
 

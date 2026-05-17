@@ -22,6 +22,7 @@ build-backend = "setuptools.build_meta"
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.24.0",
+    "ruff>=0.15.13",
 ]
 assets = [
     "datasets>=2.20.0",
@@ -31,6 +32,11 @@ assets = [
 testpaths = ["tests"]
 asyncio_mode = "auto"
 pythonpath = ["."]
+
+[tool.ruff.lint.per-file-ignores]
+"scripts/eval_routes.py" = ["E402"]
+"scripts/select_review_candidates.py" = ["E402"]
+"scripts/verify_route_contract.py" = ["E402"]
 
 [tool.setuptools.packages.find]
 include = ["router*"]

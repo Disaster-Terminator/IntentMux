@@ -124,7 +124,7 @@ def test_resolve_probe_expectations_uses_live_decision_contract(monkeypatch):
             return FakeResponse(
                 status_code=200,
                 payload={
-                    "route_id": "strong",
+                    "route_id": "deep",
                     "target_model": "pro-router",
                 },
             )
@@ -138,7 +138,7 @@ def test_resolve_probe_expectations_uses_live_decision_contract(monkeypatch):
         timeout=3.0,
     )
 
-    assert probes == [Probe("deep_nonstream", "prompt", "strong", "pro-router")]
+    assert probes == [Probe("deep_nonstream", "prompt", "deep", "pro-router")]
 
 
 def _log_line(record: dict) -> str:
