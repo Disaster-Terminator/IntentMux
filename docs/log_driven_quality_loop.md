@@ -4,8 +4,15 @@ IntentMux improves routing quality from production metadata, optional local
 prompt review logs, and redacted review samples. Route audit logs identify
 routing drift, low-confidence decisions, failures, and latency regressions;
 prompt review logs provide local-only semantic evidence when explicitly
-enabled. Only human-reviewed, redacted samples are promoted into eval cases or
-route banks.
+enabled. Only reviewed, redacted samples are promoted into eval cases or route
+banks.
+
+`config/eval_cases.yaml` is a regression/smoke suite, not a benchmark. Treat it
+as a fast guard against obvious regressions and as input for baseline
+comparison, not as proof of general Chinese routing quality. Production quality
+reports should prefer current-day logs or logs produced after the `lite` /
+`deep` migration; full-history reports may contain legacy `fast` / `strong`
+records and should be used only as background context.
 
 ## Boundary
 
@@ -142,8 +149,9 @@ git. Keep only curated public examples such as
 
 Any route bank, threshold, margin, or hard-rule change should include:
 
-- route eval output;
-- route log summary from recent production traffic;
+- route eval JSON for `current-router` plus simple baselines such as
+  `always-lite`, `always-deep`, and `hard-rule-only`;
+- route log summary from current-day or post-migration production traffic;
 - `scripts/route_quality_report.py` JSON/Markdown output;
 - candidate review evidence when the change is production-log driven;
 - rollback plan limited to IntentMux config, assets, or image.
@@ -164,3 +172,6 @@ IntentMux is ready to call itself log-driven when:
 
 This is a pre-release readiness target. It does not assign or imply a published
 version number.
+
+The current lightweight quality-loop implementation plan is tracked in
+`docs/superpowers/plans/2026-05-17-lightweight-route-quality-loop.md`.

@@ -550,18 +550,44 @@ uv run python scripts/import_review_samples.py \
 安全示例见 [data/source_samples/production_review.example.jsonl](data/source_samples/production_review.example.jsonl)。
 真实 review JSONL 默认被 `.gitignore` 排除；只提交公开样例，不提交本地生产复核样本。
 
-生成质量报告的推荐流程：
+生成质量报告的推荐流程。`config/eval_cases.yaml` 是 smoke/regression suite，
+不是中文语义路由 benchmark；报告用于回归和策略对比，不能单独证明泛化质量。
+生产质量判断应优先使用当天或迁移到 `lite` / `deep` 之后的日志，避免旧
+`fast` / `strong` 记录污染当前策略判断。
 
 ```bash
-uv run python scripts/eval_routes.py --mock-embeddings > /tmp/intentmux-eval.txt
+uv run python scripts/eval_routes.py \
+  --mock-embeddings \
+  --baseline current-router \
+  --json-output /tmp/intentmux-eval-current.json
+uv run python scripts/eval_routes.py \
+  --mock-embeddings \
+  --baseline always-lite \
+  --json-output /tmp/intentmux-eval-always-lite.json || true
+uv run python scripts/eval_routes.py \
+  --mock-embeddings \
+  --baseline always-deep \
+  --json-output /tmp/intentmux-eval-always-deep.json || true
+uv run python scripts/eval_routes.py \
+  --mock-embeddings \
+  --baseline hard-rule-only \
+  --json-output /tmp/intentmux-eval-hard-rule-only.json || true
 uv run python scripts/router_log_summary.py /data/logs/routes/*.jsonl --json > /tmp/intentmux-routes.json
 uv run python scripts/route_quality_report.py \
-  --eval-output /tmp/intentmux-eval.txt \
+  --eval-json current=/tmp/intentmux-eval-current.json \
+  --eval-json always-lite=/tmp/intentmux-eval-always-lite.json \
+  --eval-json always-deep=/tmp/intentmux-eval-always-deep.json \
+  --eval-json hard-rule-only=/tmp/intentmux-eval-hard-rule-only.json \
   --route-summary-json /tmp/intentmux-routes.json \
   --route-bank examples/route_bank.sample.yaml \
   --json-output /tmp/intentmux-quality.json \
   --markdown-output /tmp/intentmux-quality.md
 ```
+
+`always-lite`、`always-deep` 和 `hard-rule-only` baseline 可能故意返回非零退出码，
+因为它们会输掉一部分 regression cases；只要 JSON 已生成，就可以进入质量报告对比。
+轻量质量闭环的阶段性实施计划见
+[docs/superpowers/plans/2026-05-17-lightweight-route-quality-loop.md](docs/superpowers/plans/2026-05-17-lightweight-route-quality-loop.md)。
 
 生产变更必须先通过 [docs/production_rollout_gate.md](docs/production_rollout_gate.md)，不要在探索阶段直接重启或重建生产 sidecar。
 任何 route bank、阈值、margin 或 hard rule 变更，都应附带本报告作为审计证据。

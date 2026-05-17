@@ -118,7 +118,7 @@ Current limitation: it intentionally avoids prompt text. That is correct for pub
 
 Reuse as the quality report core. It already combines eval results with route traffic summary and reports product metrics.
 
-Current limitation: it has no baseline comparison and is not wired into daily health outputs.
+Current limitation: baseline comparison exists, but it is not wired into daily health outputs.
 
 ### `scripts/intentmux_daily_health.py`
 
@@ -146,10 +146,10 @@ Current limitation: it does not yet produce a quality report or agent-review han
 - Modify: `docs/log_driven_quality_loop.md`
 - Modify: `README.md`
 
-- [ ] State that `config/eval_cases.yaml` is a regression/smoke suite, not a benchmark.
-- [ ] State that production quality reports must prefer current-day or post-migration logs.
-- [ ] Link the daily quality loop plan from the existing quality docs.
-- [ ] Verify with `git diff -- docs/route_quality_evidence_status.md docs/log_driven_quality_loop.md README.md`.
+- [x] State that `config/eval_cases.yaml` is a regression/smoke suite, not a benchmark.
+- [x] State that production quality reports must prefer current-day or post-migration logs.
+- [x] Link the daily quality loop plan from the existing quality docs.
+- [x] Verify with `git diff -- docs/route_quality_evidence_status.md docs/log_driven_quality_loop.md README.md`.
 
 ### Task 2: Add Baseline Evaluation Modes
 
@@ -374,6 +374,12 @@ uv run python -m pytest -q
 uv run python scripts/eval_routes.py --mock-embeddings
 uv run python scripts/verify_route_contract.py
 ```
+
+Repository validation status:
+
+- [x] `uv run --frozen python -m ruff check .`
+- [x] `uv run --frozen pytest -q`
+- [x] `uv run --frozen python scripts/verify_route_contract.py`
 
 Then, for local production only:
 

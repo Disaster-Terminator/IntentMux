@@ -26,7 +26,7 @@ IntentMux 当前已经有一套可运行的轻量路由机制：
 | deep call rate + 质量指标 | 是 | 部分 | 还未成为固定闭环 |
 | 人审样本持续回灌 | 是 | 部分 | 只有早期本地 artifacts |
 | threshold / margin 系统校准 | 是 | 只有候选发现 | 否 |
-| baseline 对比 | 已识别为必要项 | 否 | 否 |
+| baseline 对比 | 已识别为必要项 | 已有脚本能力 | 还未成为固定闭环 |
 
 ## 当前生产证据
 
@@ -53,6 +53,9 @@ config/eval_cases.yaml
 ```
 
 它目前只包含很少量固定 `lite` / `deep` 样例，足够发现明显回归，但不足以衡量中文泛化质量，也不足以调 threshold / margin。
+因此任何质量报告都应把它称为 regression/smoke 证据，而不是 benchmark 结论。
+生产日志分析也应优先使用当天或迁移到 `lite` / `deep` 之后的日志；全历史日志里可能混有
+旧 `fast` / `strong` route id，只适合作为背景上下文。
 
 ## 开源 eval 状态
 
@@ -112,17 +115,24 @@ scripts/build_zh_route_eval.py
 
 所以本地日志可以驱动近期改进，但不能单独证明通用路由质量。
 
-## 缺失的 baseline
+## baseline 对比状态
 
-项目还没有把当前 router 和简单 baseline 做对比：
+项目现在已经能把当前 router 和简单 baseline 放到同一批 regression cases 上对比：
 
 - always route to `lite`
 - always route to `deep`
 - hard-rule only
-- embedding only
 - hard-rule + embedding + current fallback
 
-这个对比很重要。成熟路由项目通常不会只报告当前策略是否能跑，而是衡量它相对简单策略是否真的改善了成本/质量权衡。没有 baseline 对比时，很难证明当前 router 比一个更简单的策略更好。
+这个对比很重要。成熟路由项目通常不会只报告当前策略是否能跑，而是衡量它相对简单策略是否真的改善了成本/质量权衡。
+当前能力已经可以生成 baseline 报告，但还没有接入每日健康产物，也还没有用足够代表性的
+production review 样本做固定闭环。因此它是“可运行的回归对比工具”，不是“生产质量已经被证明”。
+
+当前轻量质量闭环计划见：
+
+```text
+docs/superpowers/plans/2026-05-17-lightweight-route-quality-loop.md
+```
 
 ## 校准状态
 
