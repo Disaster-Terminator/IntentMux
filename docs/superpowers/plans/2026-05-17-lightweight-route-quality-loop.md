@@ -224,9 +224,9 @@ uv run python scripts/route_quality_report.py \
 
 If multiple eval files are provided:
 
-- keep the current eval section for the first or `current` report;
-- add a `baselines` section with pass rate, expected/actual distribution, and deep call rate per baseline;
-- render the same in markdown.
+- [x] keep the current eval section for the first or `current` report;
+- [x] add a `baselines` section with pass rate, expected/actual distribution, and deep call rate per baseline;
+- [x] render the same in markdown.
 
 This remains a regression comparison, not proof of general quality.
 

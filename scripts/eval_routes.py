@@ -16,7 +16,12 @@ if str(REPO_ROOT) not in sys.path:
 
 from router.config import load_settings
 from router.embedding import OpenAIEmbeddingClient
-from router.routing import Router, latest_user_text, looks_like_agent_instruction_boilerplate
+from router.routing import (
+    Router,
+    RoutingDecision,
+    latest_user_text,
+    looks_like_agent_instruction_boilerplate,
+)
 
 
 BASELINES = {"current-router", "always-lite", "always-deep", "hard-rule-only"}
@@ -183,7 +188,8 @@ async def decide_for_baseline(router: Router, request_json: dict[str, Any], base
     if baseline == "current-router":
         return await router.decide(request_json)
     if baseline == "always-lite":
-        return baseline_decision(router, router.settings.fallback_route_id, "baseline:always-lite")
+        route_id = named_route_or_fallback(router, "lite")
+        return baseline_decision(router, route_id, "baseline:always-lite")
     if baseline == "always-deep":
         deep_route = "deep" if "deep" in router.settings.routes else router.settings.fallback_route_id
         return baseline_decision(router, deep_route, "baseline:always-deep")
@@ -199,8 +205,6 @@ async def decide_for_baseline(router: Router, request_json: dict[str, Any], base
 
 
 def baseline_decision(router: Router, route_id: str, reason: str):
-    from router.routing import RoutingDecision
-
     return RoutingDecision(
         route_id=route_id,
         target_model=router._target_model_for_route(route_id),
@@ -209,6 +213,12 @@ def baseline_decision(router: Router, route_id: str, reason: str):
         policy_id=reason,
         rewrite=True,
     )
+
+
+def named_route_or_fallback(router: Router, route_id: str) -> str:
+    if route_id in router.settings.routes:
+        return route_id
+    return router.settings.fallback_route_id
 
 
 def main() -> None:

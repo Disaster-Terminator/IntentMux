@@ -255,3 +255,89 @@ def test_main_writes_json_and_markdown(tmp_path: Path):
     payload = json.loads(json_path.read_text(encoding="utf-8"))
     assert payload["eval"]["total"] == 1
     assert md_path.read_text(encoding="utf-8").startswith("# IntentMux Route Quality Report")
+
+
+def test_main_writes_baseline_comparison_from_multiple_eval_json_files(tmp_path: Path):
+    current_path = tmp_path / "current.json"
+    always_lite_path = tmp_path / "always-lite.json"
+    json_path = tmp_path / "report.json"
+    md_path = tmp_path / "report.md"
+    current_path.write_text(
+        json.dumps(
+            {
+                "schema": "intentmux-route-eval-v1",
+                "baseline": "current-router",
+                "cases": [
+                    {
+                        "id": "lite1",
+                        "expect": "lite",
+                        "actual_route": "lite",
+                        "reason": "embedding",
+                        "passed": True,
+                    },
+                    {
+                        "id": "deep1",
+                        "expect": "deep",
+                        "actual_route": "deep",
+                        "reason": "embedding",
+                        "passed": True,
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    always_lite_path.write_text(
+        json.dumps(
+            {
+                "schema": "intentmux-route-eval-v1",
+                "baseline": "always-lite",
+                "cases": [
+                    {
+                        "id": "lite1",
+                        "expect": "lite",
+                        "actual_route": "lite",
+                        "reason": "baseline:always-lite",
+                        "passed": True,
+                    },
+                    {
+                        "id": "deep1",
+                        "expect": "deep",
+                        "actual_route": "lite",
+                        "reason": "baseline:always-lite",
+                        "passed": False,
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    subprocess.run(
+        [
+            sys.executable,
+            "scripts/route_quality_report.py",
+            "--eval-json",
+            f"current={current_path}",
+            "--eval-json",
+            f"always-lite={always_lite_path}",
+            "--json-output",
+            str(json_path),
+            "--markdown-output",
+            str(md_path),
+        ],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+
+    payload = json.loads(json_path.read_text(encoding="utf-8"))
+    assert payload["eval"]["pass_rate"] == 1.0
+    assert payload["baselines"]["current"]["pass_rate"] == 1.0
+    assert payload["baselines"]["current"]["deep_call_rate"] == 0.5
+    assert payload["baselines"]["always-lite"]["pass_rate"] == 0.5
+    assert payload["baselines"]["always-lite"]["deep_call_rate"] == 0.0
+    markdown = md_path.read_text(encoding="utf-8")
+    assert "## Baselines" in markdown
+    assert "- current: pass_rate=100.00% deep_call_rate=50.00%" in markdown
+    assert "- always-lite: pass_rate=50.00% deep_call_rate=0.00%" in markdown

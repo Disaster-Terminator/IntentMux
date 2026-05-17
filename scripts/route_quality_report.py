@@ -147,6 +147,63 @@ def build_quality_report_from_eval_json(
     }
 
 
+def baseline_summary_from_eval_json(
+    label: str,
+    eval_json: dict[str, Any],
+    *,
+    margin: float | None = None,
+) -> dict[str, Any]:
+    report = build_quality_report_from_eval_json(
+        eval_json=eval_json,
+        route_summary=None,
+        route_bank_path="",
+        margin=margin,
+    )
+    product_metrics = report.get("product_metrics", {})
+    return {
+        "label": label,
+        "total": report["eval"]["total"],
+        "passed": report["eval"]["passed"],
+        "failed": report["eval"]["failed"],
+        "pass_rate": report["eval"]["pass_rate"],
+        "expected_routes": report["eval"]["expected_routes"],
+        "actual_routes": report["eval"]["actual_routes"],
+        "reasons": report["eval"]["reasons"],
+        "deep_call_rate": product_metrics.get("deep_call_rate", 0.0),
+        "low_confidence_rate": product_metrics.get("low_confidence_rate", 0.0),
+        "hard_rule_hit_rate": product_metrics.get("hard_rule_hit_rate", 0.0),
+    }
+
+
+def parse_eval_json_spec(spec: str, fallback_label: str) -> tuple[str, Path]:
+    if "=" not in spec:
+        return fallback_label, Path(spec)
+    label, path = spec.split("=", 1)
+    label = label.strip()
+    if not label:
+        raise ValueError("eval-json label must not be empty")
+    return label, Path(path)
+
+
+def load_labeled_eval_jsons(specs: list[str]) -> list[tuple[str, dict[str, Any]]]:
+    loaded: list[tuple[str, dict[str, Any]]] = []
+    for index, spec in enumerate(specs):
+        fallback_label = "current" if index == 0 else f"baseline_{index}"
+        label, path = parse_eval_json_spec(spec, fallback_label)
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if "=" not in spec and isinstance(payload.get("baseline"), str):
+            label = payload["baseline"]
+        loaded.append((label, payload))
+    return loaded
+
+
+def primary_eval_json(labeled: list[tuple[str, dict[str, Any]]]) -> tuple[str, dict[str, Any]]:
+    for label, payload in labeled:
+        if label in {"current", "current-router"}:
+            return label, payload
+    return labeled[0]
+
+
 def slice_metrics(cases: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     grouped: dict[str, list[dict[str, Any]]] = {}
     for case in cases:
@@ -395,6 +452,16 @@ def render_markdown(report: dict[str, Any]) -> str:
                 f"pass_rate={values['pass_rate']:.2%} "
                 f"actual={format_counts(values.get('actual_routes', {}))}"
             )
+    baselines = report.get("baselines", {})
+    if baselines:
+        lines.extend(["", "## Baselines"])
+        for label, values in sorted(baselines.items()):
+            lines.append(
+                "- "
+                f"{label}: pass_rate={values['pass_rate']:.2%} "
+                f"deep_call_rate={values['deep_call_rate']:.2%} "
+                f"actual={format_counts(values.get('actual_routes', {}))}"
+            )
     delta = report.get("route_distribution_delta", {})
     if delta:
         lines.extend(["", "## Route Distribution Delta"])
@@ -428,7 +495,14 @@ def format_counts(counts: dict[str, Any]) -> str:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--eval-output", help="Text output from scripts/eval_routes.py")
-    parser.add_argument("--eval-json", help="JSON output from scripts/eval_routes.py --json-output")
+    parser.add_argument(
+        "--eval-json",
+        action="append",
+        help=(
+            "JSON output from scripts/eval_routes.py --json-output. "
+            "May be repeated as label=/path/to/eval.json."
+        ),
+    )
     parser.add_argument("--route-summary-json", help="JSON output from scripts/router_log_summary.py --json")
     parser.add_argument("--route-bank", default="examples/route_bank.sample.yaml")
     parser.add_argument("--margin", type=float, default=None)
@@ -440,12 +514,23 @@ def main() -> None:
     if args.route_summary_json:
         route_summary = json.loads(Path(args.route_summary_json).read_text(encoding="utf-8"))
     if args.eval_json:
+        labeled_eval_jsons = load_labeled_eval_jsons(args.eval_json)
+        _primary_label, eval_json = primary_eval_json(labeled_eval_jsons)
         report = build_quality_report_from_eval_json(
-            eval_json=json.loads(Path(args.eval_json).read_text(encoding="utf-8")),
+            eval_json=eval_json,
             route_summary=route_summary,
             route_bank_path=args.route_bank,
             margin=args.margin,
         )
+        if len(labeled_eval_jsons) > 1:
+            report["baselines"] = {
+                label: baseline_summary_from_eval_json(
+                    label,
+                    payload,
+                    margin=args.margin,
+                )
+                for label, payload in labeled_eval_jsons
+            }
     elif args.eval_output:
         eval_output = Path(args.eval_output).read_text(encoding="utf-8")
         report = build_quality_report(
