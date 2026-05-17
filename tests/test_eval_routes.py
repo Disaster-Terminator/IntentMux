@@ -189,3 +189,121 @@ cases:
 
     case = json.loads(output.read_text(encoding="utf-8"))["cases"][0]
     assert case["actual_route"] == "lite"
+
+
+def test_eval_routes_always_lite_baseline_routes_every_case_to_lite(tmp_path: Path):
+    cases = tmp_path / "cases.yaml"
+    output = tmp_path / "eval.json"
+    cases.write_text(
+        """
+cases:
+  - id: simple_001
+    text: 帮我总结这段话
+    expect: lite
+  - id: hard_001
+    text: 生产事故需要回滚
+    expect: deep
+""",
+        encoding="utf-8",
+    )
+
+    subprocess.run(
+        [
+            sys.executable,
+            "scripts/eval_routes.py",
+            "--cases",
+            str(cases),
+            "--baseline",
+            "always-lite",
+            "--json-output",
+            str(output),
+        ],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["baseline"] == "always-lite"
+    assert [case["actual_route"] for case in payload["cases"]] == ["lite", "lite"]
+    assert [case["baseline"] for case in payload["cases"]] == ["always-lite", "always-lite"]
+
+
+def test_eval_routes_always_deep_baseline_routes_every_case_to_deep(tmp_path: Path):
+    cases = tmp_path / "cases.yaml"
+    output = tmp_path / "eval.json"
+    cases.write_text(
+        """
+cases:
+  - id: simple_001
+    text: 帮我总结这段话
+    expect: lite
+  - id: hard_001
+    text: 生产事故需要回滚
+    expect: deep
+""",
+        encoding="utf-8",
+    )
+
+    subprocess.run(
+        [
+            sys.executable,
+            "scripts/eval_routes.py",
+            "--cases",
+            str(cases),
+            "--baseline",
+            "always-deep",
+            "--json-output",
+            str(output),
+        ],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["baseline"] == "always-deep"
+    assert [case["actual_route"] for case in payload["cases"]] == ["deep", "deep"]
+
+
+def test_eval_routes_hard_rule_only_baseline_uses_hard_rules_then_fallback(tmp_path: Path):
+    cases = tmp_path / "cases.yaml"
+    output = tmp_path / "eval.json"
+    cases.write_text(
+        """
+cases:
+  - id: simple_001
+    text: 帮我总结这段话
+    expect: lite
+  - id: hard_001
+    text: 生产事故需要回滚
+    expect: deep
+""",
+        encoding="utf-8",
+    )
+
+    subprocess.run(
+        [
+            sys.executable,
+            "scripts/eval_routes.py",
+            "--cases",
+            str(cases),
+            "--baseline",
+            "hard-rule-only",
+            "--json-output",
+            str(output),
+        ],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["baseline"] == "hard-rule-only"
+    assert [
+        (case["actual_route"], case["reason"])
+        for case in payload["cases"]
+    ] == [
+        ("lite", "baseline:fallback"),
+        ("deep", "baseline:hard_rule:生产事故"),
+    ]

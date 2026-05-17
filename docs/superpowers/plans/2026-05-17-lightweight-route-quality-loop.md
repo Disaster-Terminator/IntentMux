@@ -187,11 +187,11 @@ uv run python scripts/eval_routes.py \
 
 TDD checklist:
 
-- [ ] Add tests that `always-lite` routes every case to `lite`.
-- [ ] Add tests that `always-deep` routes every case to `deep`.
-- [ ] Add tests that `hard-rule-only` routes hard-rule matches to `deep` and all other cases to fallback `lite`.
-- [ ] Preserve the existing default behavior as `current-router`.
-- [ ] Keep JSON schema backward-compatible by adding `baseline` at top level and per case.
+- [x] Add tests that `always-lite` routes every case to `lite`.
+- [x] Add tests that `always-deep` routes every case to `deep`.
+- [x] Add tests that `hard-rule-only` routes hard-rule matches to `deep` and all other cases to fallback `lite`.
+- [x] Preserve the existing default behavior as `current-router`.
+- [x] Keep JSON schema backward-compatible by adding `baseline` at top level and per case.
 
 Validation:
 

@@ -16,7 +16,10 @@ if str(REPO_ROOT) not in sys.path:
 
 from router.config import load_settings
 from router.embedding import OpenAIEmbeddingClient
-from router.routing import Router
+from router.routing import Router, latest_user_text, looks_like_agent_instruction_boilerplate
+
+
+BASELINES = {"current-router", "always-lite", "always-deep", "hard-rule-only"}
 
 
 @dataclass(frozen=True)
@@ -99,7 +102,10 @@ async def run_eval(
     routes_path: Path,
     mock_embeddings: bool,
     json_output: Path | None = None,
+    baseline: str = "current-router",
 ) -> int:
+    if baseline not in BASELINES:
+        raise ValueError(f"baseline must be one of {sorted(BASELINES)}")
     settings = load_settings(routes_path)
     embedding_client = (
         MockEmbeddingClient()
@@ -119,16 +125,16 @@ async def run_eval(
     validate_case_route_ids(cases, set(settings.routes))
 
     for index, case in enumerate(cases):
-        decision = await router.decide(
-            {
-                "model": settings.route_model,
-                "messages": [{"role": "user", "content": case.text}],
-            }
-        )
+        request_json = {
+            "model": settings.route_model,
+            "messages": [{"role": "user", "content": case.text}],
+        }
+        decision = await decide_for_baseline(router, request_json, baseline)
         actual_route = decision.route_id or decision.target_model
         status = "PASS" if actual_route == case.expect else "FAIL"
         result = {
             "id": case_id(case, index),
+            "baseline": baseline,
             "slice": case.slice,
             "text": case.text,
             "expect": case.expect,
@@ -154,7 +160,11 @@ async def run_eval(
     if json_output is not None:
         json_output.write_text(
             json.dumps(
-                {"schema": "intentmux-route-eval-v1", "cases": results},
+                {
+                    "schema": "intentmux-route-eval-v1",
+                    "baseline": baseline,
+                    "cases": results,
+                },
                 ensure_ascii=False,
                 indent=2,
             )
@@ -169,12 +179,49 @@ async def run_eval(
     return 0
 
 
+async def decide_for_baseline(router: Router, request_json: dict[str, Any], baseline: str):
+    if baseline == "current-router":
+        return await router.decide(request_json)
+    if baseline == "always-lite":
+        return baseline_decision(router, router.settings.fallback_route_id, "baseline:always-lite")
+    if baseline == "always-deep":
+        deep_route = "deep" if "deep" in router.settings.routes else router.settings.fallback_route_id
+        return baseline_decision(router, deep_route, "baseline:always-deep")
+    if baseline == "hard-rule-only":
+        text = latest_user_text(request_json.get("messages", []))
+        hard_rule_text = "" if looks_like_agent_instruction_boilerplate(text) else text
+        hard_rule = router._matching_hard_rule(hard_rule_text)
+        if hard_rule:
+            route_id, keyword = hard_rule
+            return baseline_decision(router, route_id, f"baseline:hard_rule:{keyword}")
+        return baseline_decision(router, router.settings.fallback_route_id, "baseline:fallback")
+    raise ValueError(f"unsupported baseline: {baseline}")
+
+
+def baseline_decision(router: Router, route_id: str, reason: str):
+    from router.routing import RoutingDecision
+
+    return RoutingDecision(
+        route_id=route_id,
+        target_model=router._target_model_for_route(route_id),
+        source_model=router.settings.route_model,
+        reason=reason,
+        policy_id=reason,
+        rewrite=True,
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--cases", default="config/eval_cases.yaml")
     parser.add_argument("--routes", default="config/routes.yaml")
     parser.add_argument("--mock-embeddings", action="store_true")
     parser.add_argument("--json-output")
+    parser.add_argument(
+        "--baseline",
+        default="current-router",
+        choices=sorted(BASELINES),
+    )
     args = parser.parse_args()
     raise SystemExit(
         asyncio.run(
@@ -183,6 +230,7 @@ def main() -> None:
                 routes_path=Path(args.routes),
                 mock_embeddings=args.mock_embeddings,
                 json_output=Path(args.json_output) if args.json_output else None,
+                baseline=args.baseline,
             )
         )
     )
