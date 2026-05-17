@@ -124,7 +124,8 @@ Slow request rows include:
 
 Schedulers should not parse prompt text from route audit logs because those
 logs do not write prompt text. Optional prompt review logs live under the
-separate `logs/prompts` tree and are for local human review, not cron parsing.
+separate `logs/prompts` tree and are for local AI review plus human audit, not
+cron parsing.
 
 ## Read-Only Checks
 

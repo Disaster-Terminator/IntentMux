@@ -1,11 +1,11 @@
 # Log-Driven Quality Loop
 
 IntentMux improves routing quality from production metadata, optional local
-prompt review logs, and redacted review samples. Route audit logs identify
-routing drift, low-confidence decisions, failures, and latency regressions;
-prompt review logs provide local-only semantic evidence when explicitly
-enabled. Only reviewed, redacted samples are promoted into eval cases or route
-banks.
+prompt review logs, AI-assisted review, and redacted review samples. Route
+audit logs identify routing drift, low-confidence decisions, failures, and
+latency regressions; prompt review logs provide local-only semantic evidence
+when explicitly enabled. Only reviewed, redacted samples are promoted into eval
+cases or route banks.
 
 `config/eval_cases.yaml` is a regression/smoke suite, not a benchmark. Treat it
 as a fast guard against obvious regressions and as input for baseline
@@ -43,7 +43,8 @@ audit logs
   -> daily health / route summary / route-error budget
   -> review candidate selection
   -> optional local prompt review lookup by request_id
-  -> human review
+  -> AI review packet
+  -> human audit for escalations, uncertainty, and policy changes
   -> redacted production_review JSONL
   -> eval bank import
   -> route bank / threshold / margin change
@@ -55,7 +56,7 @@ audit logs
 ## Review Candidate Selection
 
 Use `scripts/select_review_candidates.py` to select metadata-only records that
-deserve human review:
+deserve AI review and possible human audit:
 
 ```bash
 uv run python scripts/select_review_candidates.py /data/logs/routes/*.jsonl \
@@ -118,9 +119,11 @@ changes, but do not promote request structure alone into a stronger-tier route.
 
 ## Promoting Samples
 
-Candidate records do not become eval cases automatically. A human must review
-the request in their own operational context, remove private content, rewrite
-the example into a safe representative prompt, and set `redacted: true`.
+Candidate records do not become eval cases automatically. AI may summarize and
+classify candidates first, but a human must review any item that would change
+routing policy, expose private prompt material, or introduce a subjective
+label. Accepted examples must be private-content-free representative prompts
+with `redacted: true`.
 
 Example source file:
 
@@ -165,7 +168,8 @@ IntentMux is ready to call itself log-driven when:
 
 - daily health and strict E2E run reliably against production;
 - review candidates are generated from mounted audit logs;
-- at least one human-redacted production review batch has entered eval;
+- AI review packets and summaries are generated from mounted audit logs;
+- at least one accepted, redacted production review batch has entered eval;
 - route bank changes require a quality report;
 - production rollout uses the documented gate and observes fresh logs after
   deployment.
@@ -173,5 +177,5 @@ IntentMux is ready to call itself log-driven when:
 This is a pre-release readiness target. It does not assign or imply a published
 version number.
 
-The current lightweight quality-loop implementation plan is tracked in
-`docs/superpowers/plans/2026-05-17-lightweight-route-quality-loop.md`.
+The current lightweight quality-loop work order is controlled by
+`docs/PROJECT_CONTROL.md`. Archived dated plans are historical context only.

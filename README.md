@@ -38,6 +38,10 @@ IntentMux 是一个轻量 OpenAI 兼容路由网关，把请求按复杂度路�
 
 IntentMux 不是模型提供商，也不需要 LiteLLM 才能启动。它负责 OpenAI-compatible 网关协议、入口模型语义、路由决策和审计日志；上游可以是 LiteLLM，也可以是任意 OpenAI-compatible 服务。生产环境如果已经有 LiteLLM，推荐继续让 LiteLLM 负责 provider routing、provider fallback、provider credentials、virtual keys、budgets 和 model pools。
 
+当前产品控制面见 [docs/PROJECT_CONTROL.md](docs/PROJECT_CONTROL.md)。它定义了
+IntentMux 的可学习路由愿景、数据集边界、当前实现差距和活跃工作顺序；旧计划文档只在
+该控制面允许时作为背景材料使用。
+
 ```text
 model=auto -> route_id(lite/deep) -> target_model -> OpenAI-compatible upstream
 ```
@@ -467,7 +471,7 @@ uv run python scripts/intentmux_daily_health.py \
 daily health 还会输出 `log_consistency`，用于审计今天的 route audit log 和可选
 prompt review log 是否能按 `request_id` 对齐。它会统计重复 `request_id`、缺失
 `request_id`、`route_without_prompt` 和 `prompt_without_route`。这些字段用于判断日志证据
-是否足够支撑人工复核；prompt review log 是本地私有补充证据，因此该检查默认只写入报告，
+是否足够支撑 AI 复核和人工审计；prompt review log 是本地私有补充证据，因此该检查默认只写入报告，
 不改变 readiness 或错误预算结论。正在处理中的请求可能已经写入 prompt review、但尚未写入
 route audit；这类新近记录会计入 `prompt_recent_in_grace`，不会立即算作
 `prompt_without_route`。
@@ -478,7 +482,7 @@ route audit；这类新近记录会计入 `prompt_recent_in_grace`，不会立�
 日志驱动质量闭环见 [docs/log_driven_quality_loop.md](docs/log_driven_quality_loop.md)；
 当前路由质量证据状态见 [docs/route_quality_evidence_status.md](docs/route_quality_evidence_status.md)。
 route audit log 只负责发现低置信、异常状态码、慢请求和分布漂移；prompt review log 是显式开启的本地私有补充证据。
-需要人审的候选可以从审计日志里生成：
+需要 AI 复核或人工审计的候选可以从审计日志里生成：
 
 ```bash
 uv run python scripts/select_review_candidates.py /data/logs/routes/*.jsonl \
@@ -493,7 +497,8 @@ OpenAI-compatible 请求结构信号等元数据。启用 `--prompt-path` 时，
 标出是否存在匹配的 prompt review 证据、是否被截断和字符数，不输出 prompt 原文，也不从
 prompt 文本推断调用框架身份。
 `hard_rule:*` 命中会优先进入候选报告，用来复核 `token`、`安全`、`权限` 等宽词是否过度升级。
-人工复核后，只有脱敏且设置 `redacted: true` 的样本才能进入 eval 或 route bank。
+AI 可以先做候选归纳和不确定性上浮；只有经接受、脱敏且设置 `redacted: true`
+的样本才能进入 eval 或 route bank。
 
 配置 + 日志诊断摘要：
 
@@ -527,8 +532,7 @@ curl http://127.0.0.1:4001/v1/semantic-router/decision \
 ## 语义资产
 
 运行时保持轻依赖。更大的 route bank 从 `config/route_sources.yaml` 声明的来源离线生成，不把 Hugging Face 等构建依赖带进运行时。
-来源选择和语料政策见 [docs/router_quality_research.md](docs/router_quality_research.md)：默认不使用自生成语料，只使用成熟公开数据源和脱敏生产 review 样本。
-中文路由质量基线见 [docs/zh_route_eval_plan.md](docs/zh_route_eval_plan.md)。
+来源选择、语料政策和可学习路由边界见 [docs/PROJECT_CONTROL.md](docs/PROJECT_CONTROL.md)：默认不使用自生成语料，只使用能自然映射到 `lite` / `deep` 的成熟公开数据源和脱敏生产 review 样本。
 当前哪些能力已经落地、哪些仍只是计划，见 [docs/route_quality_evidence_status.md](docs/route_quality_evidence_status.md)。
 
 ```bash
@@ -586,8 +590,8 @@ uv run python scripts/route_quality_report.py \
 
 `always-lite`、`always-deep` 和 `hard-rule-only` baseline 可能故意返回非零退出码，
 因为它们会输掉一部分 regression cases；只要 JSON 已生成，就可以进入质量报告对比。
-轻量质量闭环的阶段性实施计划见
-[docs/superpowers/plans/2026-05-17-lightweight-route-quality-loop.md](docs/superpowers/plans/2026-05-17-lightweight-route-quality-loop.md)。
+轻量质量闭环的当前工作顺序以 [docs/PROJECT_CONTROL.md](docs/PROJECT_CONTROL.md)
+为准；归档计划只作为历史背景，不作为执行入口。
 
 生产变更必须先通过 [docs/production_rollout_gate.md](docs/production_rollout_gate.md)，不要在探索阶段直接重启或重建生产 sidecar。
 任何 route bank、阈值、margin 或 hard rule 变更，都应附带本报告作为审计证据。

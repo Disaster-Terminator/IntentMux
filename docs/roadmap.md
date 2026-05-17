@@ -7,6 +7,10 @@ Make IntentMux a lightweight OpenAI-compatible routing gateway with canonical
 OpenAI-compatible upstream, and it must also support LiteLLM-first sidecar
 deployment as a first-class production topology.
 
+The current control surface for product direction and scope is
+`docs/PROJECT_CONTROL.md`. If this roadmap appears to conflict with that file,
+prefer the control document and update this roadmap in a separate cleanup.
+
 Current operating target:
 
 - every routed request emits one structured `route_complete` or `route_error`
@@ -87,10 +91,15 @@ Compose service with its own health check and explicit upstream URLs.
 
 The route bank should be built from mature datasets plus redacted production
 review samples, not from hand-written keyword expansion or self-generated
-semantic corpora. The first production-grade milestone is:
+semantic corpora. Mature datasets are useful only when they naturally map to
+the product's `lite` / `deep` tiers; otherwise they remain methodology or
+local-only evidence rather than route truth.
+
+The first production-grade milestone is:
 
 - source manifest with auditable dataset names and filters
 - reproducible small-sample route bank generation
 - generated utterance records that retain source names
-- eval cases expanded from the generated bank plus local ambiguous examples
+- regression cases expanded only from naturally mapped public data or accepted
+  redacted review findings
 - no runtime dependency on Hugging Face tooling

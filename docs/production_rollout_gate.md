@@ -99,8 +99,8 @@ The gate passes only when:
 - daily health uses the same day boundary as `ROUTER_AUDIT_LOG_TIMEZONE`
   unless `--date` is intentionally used;
 - any route-bank change has source attribution and no raw production prompt.
-- production-log-driven changes use only human-reviewed, redacted review
-  samples.
+- production-log-driven changes use only accepted, redacted review samples;
+  AI can pre-review, but policy-changing samples require human audit.
 
 ## Rollout
 

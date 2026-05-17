@@ -2,6 +2,14 @@
 
 这份文档记录 IntentMux 当前路由质量证据的真实状态，避免以后把计划、愿景或脚手架误认为已经完成的生产验证。
 
+当前产品控制面见：
+
+```text
+docs/PROJECT_CONTROL.md
+```
+
+如果旧计划和本文或控制面冲突，优先相信控制面和当前事实证据。
+
 ## 摘要
 
 IntentMux 当前已经有一套可运行的轻量路由机制：
@@ -24,7 +32,7 @@ IntentMux 当前已经有一套可运行的轻量路由机制：
 | 按 slice 看质量 | 是 | 部分 | 否 |
 | before/after quality report | 是 | 部分 | 还未成为固定闭环 |
 | deep call rate + 质量指标 | 是 | 部分 | 还未成为固定闭环 |
-| 人审样本持续回灌 | 是 | 部分 | 只有早期本地 artifacts |
+| AI 辅助 review 样本持续回灌 | 是 | 部分 | 只有早期本地 artifacts |
 | threshold / margin 系统校准 | 是 | 只有候选发现 | 否 |
 | baseline 对比 | 已识别为必要项 | 已有脚本能力 | 还未成为固定闭环 |
 
@@ -111,7 +119,7 @@ scripts/build_zh_route_eval.py
 - 很多请求来自 OpenCode、Retinue、Hermes 等本地 agent 工作流。
 - 分布不能代表所有用户。
 - raw prompt review logs 是本地私有证据，不能提交到公开仓库。
-- route audit logs 能发现候选，但样本进入 eval 前仍然需要人工复核和脱敏。
+- route audit logs 能发现候选，但样本进入 eval 前仍然需要 AI 复核、必要人工审计和脱敏。
 
 所以本地日志可以驱动近期改进，但不能单独证明通用路由质量。
 
@@ -128,10 +136,10 @@ scripts/build_zh_route_eval.py
 当前能力已经可以生成 baseline 报告，但还没有接入每日健康产物，也还没有用足够代表性的
 production review 样本做固定闭环。因此它是“可运行的回归对比工具”，不是“生产质量已经被证明”。
 
-当前轻量质量闭环计划见：
+当前轻量质量闭环工作顺序见：
 
 ```text
-docs/superpowers/plans/2026-05-17-lightweight-route-quality-loop.md
+docs/PROJECT_CONTROL.md
 ```
 
 ## 校准状态
@@ -147,12 +155,16 @@ margin: 0.04
 
 ## 下一步
 
-下一阶段不应该先改路由算法，而应该先建立可信的测量闭环：
+下一阶段不应该先改路由算法，而应该先建立可信的测量闭环。这里的“学习”不是
+大规模手工标注，也不是把 AI 生成标签当最终真值；它是 AI 优先审查候选、脚本校验
+隐私/结构/baseline、人类只处理需要决策的升级点：
 
-1. 按 slice 构建或导入一批明确标注的 eval cases。
-2. 至少纳入一批人工复核、脱敏后的生产 review 样本。
-3. 在同一批 cases 上运行当前 router 和简单 baselines。
-4. 生成包含 slice metrics 和 `deep_call_rate` 的 route-quality report。
-5. 再决定是否调整 route bank、hard rules、threshold 或 margin。
+1. 优先从当前生产日志生成候选和 AI review packet。
+2. 让 AI 产出结构化判断和不确定性摘要。
+3. 人类只审查会改变策略、涉及隐私、或 AI 不确定的情况。
+4. 只把已接受、已脱敏、可解释的样本转为 regression cases。
+5. 在同一批 cases 上运行当前 router 和简单 baselines。
+6. 生成包含 slice metrics 和 `deep_call_rate` 的 route-quality report。
+7. 再决定是否调整 route bank、hard rules、threshold 或 margin。
 
 这样可以保持 IntentMux 的轻量定位，同时借鉴成熟路由项目重视 benchmark、baseline 和成本/质量权衡的工程纪律。
