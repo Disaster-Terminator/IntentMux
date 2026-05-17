@@ -351,18 +351,21 @@ def test_path_from_arg_or_env_uses_env_before_default(monkeypatch):
 def test_build_e2e_cmd_sources_env_file_only_when_provided():
     cmd = build_e2e_cmd(
         litellm_base_url="http://127.0.0.1:4000",
+        router_base_url="http://127.0.0.1:4001",
         log_container="intentmux",
         litellm_env=Path("/runtime/litellm.env"),
     )
 
     assert ". /runtime/litellm.env" in cmd
     assert "--litellm-base-url http://127.0.0.1:4000" in cmd
+    assert "--router-base-url http://127.0.0.1:4001" in cmd
     assert "--log-container intentmux" in cmd
 
 
 def test_build_e2e_cmd_does_not_hardcode_local_litellm_env():
     cmd = build_e2e_cmd(
         litellm_base_url="http://127.0.0.1:4000",
+        router_base_url="http://127.0.0.1:4001",
         log_container="intentmux",
         litellm_env=None,
     )

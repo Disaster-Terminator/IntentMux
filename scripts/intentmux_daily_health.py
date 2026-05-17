@@ -299,6 +299,7 @@ def path_from_arg_or_env(value: str | None, env_name: str, default: Path) -> Pat
 def build_e2e_cmd(
     *,
     litellm_base_url: str,
+    router_base_url: str,
     log_container: str,
     litellm_env: Path | None,
 ) -> str:
@@ -308,6 +309,7 @@ def build_e2e_cmd(
     parts.append(
         "uv run python scripts/e2e_litellm_entry.py "
         f"--litellm-base-url {shlex.quote(litellm_base_url)} "
+        f"--router-base-url {shlex.quote(router_base_url)} "
         f"--log-container {shlex.quote(log_container)} "
         "--log-tail 300 --require-request-id-log-match"
     )
@@ -573,6 +575,7 @@ def main() -> int:
     if args.run_e2e:
         e2e_cmd = build_e2e_cmd(
             litellm_base_url=args.litellm_base_url,
+            router_base_url=args.router_base_url,
             log_container=args.log_container,
             litellm_env=litellm_env,
         )

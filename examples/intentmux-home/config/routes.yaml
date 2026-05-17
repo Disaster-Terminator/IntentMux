@@ -47,10 +47,8 @@ hard_rules:
       - 鉴权绕过
       - 权限绕过
       - 越权
-      - security reviewer
-      - security review
-      - coding agent
-      - code review
+      - recursive delete
+      - rm -rf
       - permission bypass
 
 routes:

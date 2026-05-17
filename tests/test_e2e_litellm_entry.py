@@ -8,6 +8,7 @@ from scripts.e2e_litellm_entry import (
     format_route_failure_detail,
     parse_route_logs,
     print_progress,
+    resolve_probe_expectations,
     run_e2e,
     validate_nonstream_probe_response,
     validate_route_logs,
@@ -105,6 +106,39 @@ def test_find_matching_route_log_matches_recent_route_shape_once():
     )
 
     assert match == (1, logs[1])
+
+
+def test_resolve_probe_expectations_uses_live_decision_contract(monkeypatch):
+    class DecisionClient:
+        def __init__(self, timeout):
+            self.requests = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return None
+
+        def post(self, url, json, headers):
+            self.requests.append((url, json, headers))
+            return FakeResponse(
+                status_code=200,
+                payload={
+                    "route_id": "strong",
+                    "target_model": "pro-router",
+                },
+            )
+
+    monkeypatch.setattr("scripts.e2e_litellm_entry.httpx.Client", DecisionClient)
+
+    probes = resolve_probe_expectations(
+        [Probe("deep_nonstream", "prompt", "deep", "your-deep-model")],
+        router_base_url="http://intentmux.local",
+        intentmux_api_key="intent-key",
+        timeout=3.0,
+    )
+
+    assert probes == [Probe("deep_nonstream", "prompt", "strong", "pro-router")]
 
 
 def _log_line(record: dict) -> str:

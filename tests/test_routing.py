@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from router.config import HardRuleSpec, RouterSettings, RouteSpec
+from router.config import HardRuleSpec, RouterSettings, RouteSpec, load_settings
 from router.routing import Router, latest_user_text
 
 
@@ -235,6 +235,60 @@ async def test_high_precision_hard_rule_routes_to_strong_without_embedding():
     assert decision.policy_id == "hard_rule"
     assert decision.reason == "hard_rule:线上事故"
     assert decision.rewrite is True
+
+
+@pytest.mark.asyncio
+async def test_default_security_reviewer_role_text_does_not_force_strong_route():
+    route_settings = load_settings("config/routes.yaml")
+    router = Router(route_settings, FakeEmbeddingClient({}, fail=True))
+
+    decision = await router.decide(
+        {
+            "model": "auto",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": (
+                        "You are a security reviewer for an AI coding agent. "
+                        "A terminal command was flagged by pattern matching as "
+                        "potentially dangerous. Command: curl http://127.0.0.1:4000/v1/models "
+                        "Assess the ACTUAL risk of this command. Respond with exactly one word."
+                    ),
+                }
+            ],
+        }
+    )
+
+    assert decision.route_id == "lite"
+    assert decision.target_model == route_settings.routes["lite"].target_model
+    assert decision.policy_id == "embedding_error"
+
+
+@pytest.mark.asyncio
+async def test_default_recursive_delete_risk_still_routes_to_deep_without_embedding():
+    route_settings = load_settings("config/routes.yaml")
+    router = Router(route_settings, FakeEmbeddingClient({}, fail=True))
+
+    decision = await router.decide(
+        {
+            "model": "auto",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": (
+                        "A terminal command was flagged by pattern matching. "
+                        "Command: rm -rf \"$HOME/projects/demo/node_modules\". "
+                        "Flagged reason: recursive delete. Assess the actual risk."
+                    ),
+                }
+            ],
+        }
+    )
+
+    assert decision.route_id == "deep"
+    assert decision.target_model == route_settings.routes["deep"].target_model
+    assert decision.policy_id == "hard_rule"
+    assert decision.reason == "hard_rule:recursive delete"
 
 
 @pytest.mark.asyncio

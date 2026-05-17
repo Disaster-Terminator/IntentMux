@@ -7,6 +7,7 @@ import os
 import subprocess
 import uuid
 from collections.abc import Callable
+from collections.abc import Sequence
 from typing import Any
 
 import httpx
@@ -92,6 +93,46 @@ def find_matching_route_log(
         ):
             return index, record
     return None
+
+
+def resolve_probe_expectations(
+    probes: Sequence[Probe],
+    *,
+    router_base_url: str,
+    intentmux_api_key: str | None,
+    timeout: float,
+) -> list[Probe]:
+    resolved: list[Probe] = []
+    headers = {"Content-Type": "application/json"}
+    if intentmux_api_key:
+        headers["Authorization"] = f"Bearer {intentmux_api_key}"
+    base_url = router_base_url.rstrip("/")
+    with httpx.Client(timeout=timeout) as client:
+        for probe in probes:
+            response = client.post(
+                f"{base_url}/v1/semantic-router/decision",
+                json={
+                    "model": "auto",
+                    "messages": [{"role": "user", "content": probe.prompt}],
+                },
+                headers=headers,
+            )
+            if response.status_code != 200:
+                raise RuntimeError(
+                    "failed to resolve e2e probe expectation "
+                    f"{probe.name}: status={response.status_code}"
+                )
+            payload = response.json()
+            resolved.append(
+                Probe(
+                    name=probe.name,
+                    prompt=probe.prompt,
+                    expected_route=str(payload["route_id"]),
+                    expected_target_model=str(payload["target_model"]),
+                    stream=probe.stream,
+                )
+            )
+    return resolved
 
 
 def summarize_results(results: list[CheckResult]) -> None:
@@ -356,12 +397,13 @@ def run_e2e(
     log_tail: int,
     skip_log_check: bool,
     require_request_id_log_match: bool,
+    probes: Sequence[Probe] = DEFAULT_PROBES,
     progress: Callable[[str], None] | None = None,
 ) -> list[CheckResult]:
     base_url = litellm_base_url.rstrip("/")
     probes_with_ids = [
         (probe, f"semantic-e2e-{probe.name}-{uuid.uuid4().hex[:12]}")
-        for probe in DEFAULT_PROBES
+        for probe in probes
     ]
     results: list[CheckResult] = []
     successful_probes_with_ids: list[tuple[Probe, str]] = []
@@ -414,6 +456,19 @@ def main() -> None:
     parser.add_argument("--timeout", type=float, default=150.0)
     parser.add_argument("--log-container", default="intentmux")
     parser.add_argument("--log-tail", type=int, default=300)
+    parser.add_argument(
+        "--router-base-url",
+        default=os.getenv("INTENTMUX_ROUTER_BASE_URL"),
+        help=(
+            "Optional IntentMux base URL. When set, E2E first resolves expected "
+            "route_id and target_model from /v1/semantic-router/decision."
+        ),
+    )
+    parser.add_argument(
+        "--intentmux-api-key",
+        default=os.getenv("ROUTER_INBOUND_API_KEY") or os.getenv("INTENTMUX_API_KEY"),
+        help="Optional IntentMux inbound API key for expectation resolution.",
+    )
     parser.add_argument("--skip-log-check", action="store_true")
     parser.add_argument("--require-request-id-log-match", action="store_true")
     parser.add_argument("--quiet-progress", action="store_true")
@@ -421,6 +476,14 @@ def main() -> None:
 
     if not args.api_key:
         raise SystemExit("LITELLM_MASTER_KEY or --api-key is required")
+    probes = DEFAULT_PROBES
+    if args.router_base_url:
+        probes = resolve_probe_expectations(
+            DEFAULT_PROBES,
+            router_base_url=args.router_base_url,
+            intentmux_api_key=args.intentmux_api_key,
+            timeout=args.timeout,
+        )
     summarize_results(
         run_e2e(
             litellm_base_url=args.litellm_base_url,
@@ -430,6 +493,7 @@ def main() -> None:
             log_tail=args.log_tail,
             skip_log_check=args.skip_log_check,
             require_request_id_log_match=args.require_request_id_log_match,
+            probes=probes,
             progress=None if args.quiet_progress else print_progress,
         )
     )
