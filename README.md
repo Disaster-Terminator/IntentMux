@@ -475,7 +475,8 @@ route audit；这类新近记录会计入 `prompt_recent_in_grace`，不会立�
 审计 `request_id` 来源只使用 `x-request-id`、`x-correlation-id`、`traceparent` 或
 `metadata.semantic_router_request_id`。OpenAI `user` 字段可能包含真实用户标识，IntentMux 不会把它写入 audit log 的 `request_id`。
 
-日志驱动质量闭环见 [docs/log_driven_quality_loop.md](docs/log_driven_quality_loop.md)。
+日志驱动质量闭环见 [docs/log_driven_quality_loop.md](docs/log_driven_quality_loop.md)；
+当前路由质量证据状态见 [docs/route_quality_evidence_status.md](docs/route_quality_evidence_status.md)。
 route audit log 只负责发现低置信、异常状态码、慢请求和分布漂移；prompt review log 是显式开启的本地私有补充证据。
 需要人审的候选可以从审计日志里生成：
 
@@ -528,6 +529,7 @@ curl http://127.0.0.1:4001/v1/semantic-router/decision \
 运行时保持轻依赖。更大的 route bank 从 `config/route_sources.yaml` 声明的来源离线生成，不把 Hugging Face 等构建依赖带进运行时。
 来源选择和语料政策见 [docs/router_quality_research.md](docs/router_quality_research.md)：默认不使用自生成语料，只使用成熟公开数据源和脱敏生产 review 样本。
 中文路由质量基线见 [docs/zh_route_eval_plan.md](docs/zh_route_eval_plan.md)。
+当前哪些能力已经落地、哪些仍只是计划，见 [docs/route_quality_evidence_status.md](docs/route_quality_evidence_status.md)。
 
 ```bash
 uv sync --group assets
