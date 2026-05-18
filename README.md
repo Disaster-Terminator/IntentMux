@@ -147,8 +147,24 @@ uv run python -m router.app
 - `ROUTER_PROMPT_LOG_DIR`
 - `ROUTER_READINESS_TIMEOUT`
 
-IntentMux 支持本地进程和容器两种运行方式。容器不是唯一部署形态；挂载目录也不是开发
-必需项，而是生产持久化配置、语义资产和 audit JSONL 的推荐方式。
+IntentMux 支持本地进程和容器两种运行方式。先区分三类目录：
+
+| 路径 | 作用 | 是否应直接改 |
+| --- | --- | --- |
+| `config/routes.yaml` | 仓库内置开发/示例配置；未设置 `ROUTER_CONFIG` 时读取 | 可以用于本地开发，不是生产状态 |
+| `examples/intentmux-home/` | 可复制的运行时目录模板 | 不作为生产目录直接挂载 |
+| `$INTENTMUX_HOME` / 容器内 `/data` | 用户自己的运行时目录，保存真实配置、语义资产和日志 | 生产应改这里 |
+
+配置读取规则：
+
+```text
+本地进程: ROUTER_CONFIG 未设置 -> config/routes.yaml
+本地进程: ROUTER_CONFIG 已设置 -> 指向的 routes.yaml
+compose 示例: ROUTER_CONFIG=/data/config/routes.yaml
+```
+
+容器不是唯一部署形态；挂载目录也不是开发必需项，而是生产持久化配置、语义资产和
+audit JSONL 的推荐方式。
 
 不挂载也可以启动容器：镜像默认读取内置的 `/app/config/routes.yaml`，适合快速试用。
 但这时用户配置不在宿主机上，audit JSONL 若写入容器可写层，只能保证同一个容器重启后
@@ -324,6 +340,10 @@ routes:
     utterances:
       - 这个线上 bug 为什么偶发
 ```
+
+`target_model` 是 IntentMux 转发给上游 OpenAI-compatible gateway 的真实模型名。
+在 LiteLLM-first 部署里，它通常就是 LiteLLM 的模型组名。`lite` / `deep`
+到 `target_model` 的映射属于路由策略，统一写在运行时 `routes.yaml`，不再拆到环境变量里。
 
 运行时校验会阻止递归配置：入口模型本身不能作为 route id 或 target model，`fallback_route_id` 必须存在。现有 LiteLLM sidecar 部署可以继续接受 `semantic-router` 作为 `auto` 的兼容入口。
 

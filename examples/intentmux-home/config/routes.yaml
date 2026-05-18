@@ -53,6 +53,8 @@ hard_rules:
 
 routes:
   lite:
+    # Upstream OpenAI-compatible model name for the lite tier.
+    # In LiteLLM-first deployments this is usually a LiteLLM model group name.
     target_model: your-lite-model
     description: 低风险、普通问答、解释、翻译、格式转换、轻量总结
     utterances:
@@ -62,6 +64,8 @@ routes:
       - 总结这篇文章
 
   deep:
+    # Upstream OpenAI-compatible model name for the deep tier.
+    # In LiteLLM-first deployments this is usually a LiteLLM model group name.
     target_model: your-deep-model
     description: 代码、debug、架构、agent、多步推理、高风险判断
     utterances:

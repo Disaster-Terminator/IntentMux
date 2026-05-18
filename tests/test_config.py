@@ -59,6 +59,37 @@ hard_rules:
     assert settings.hard_rules[0].keywords == ["PR", "线上"]
 
 
+def test_target_models_are_owned_by_routes_yaml_not_environment(
+    monkeypatch, tmp_path: Path
+):
+    routes_path = tmp_path / "routes.yaml"
+    routes_path.write_text(
+        """
+route_model: auto
+fallback_route_id: lite
+routes:
+  lite:
+    target_model: yaml-lite-model
+    description: low risk
+    utterances:
+      - hi
+  deep:
+    target_model: yaml-deep-model
+    description: high risk
+    utterances:
+      - fix production incident
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("ROUTER_LITE_TARGET_MODEL", "ignored-lite-model")
+    monkeypatch.setenv("ROUTER_DEEP_TARGET_MODEL", "ignored-deep-model")
+
+    settings = load_settings(routes_path)
+
+    assert settings.routes["lite"].target_model == "yaml-lite-model"
+    assert settings.routes["deep"].target_model == "yaml-deep-model"
+
+
 def test_litellm_api_key_can_come_from_environment(monkeypatch, tmp_path: Path):
     routes_path = tmp_path / "routes.yaml"
     routes_path.write_text(
