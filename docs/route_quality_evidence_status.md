@@ -44,24 +44,28 @@ IntentMux 当前已经有一套可运行的轻量路由机制：
 /path/to/intentmux-runtime/semantic_sets/route_bank.yaml
 ```
 
-这份 runtime route bank 已经包含成熟公开来源：
+仓库 example 和本机 runtime route bank 都已经包含成熟公开来源：
 
 - `lite`：MASSIVE zh-CN / zh-TW general utterances。
 - `deep`：SWE-bench、MBPP、HumanEval 的代码类 prompts。
 
 所以要严格区分两件事：
 
-- **开源数据已经用于生产 embedding route bank。**
-- **开源 eval 还没有真正成为生产质量判断 gate。**
+- **开源数据已经用于可运行 example route bank 和本机 runtime route bank。**
+- **example eval bank 已经能验证这些公开样本进入路由索引。**
+- **这还不是生产质量判断 gate，也不能证明中文泛化质量。**
 
-仓库默认 eval 仍然是 smoke 级别：
+仓库跟踪的公开 eval example 是：
 
 ```text
-config/eval_cases.yaml
+examples/eval_bank.sample.yaml
 ```
 
-它目前只包含很少量固定 `lite` / `deep` 样例，足够发现明显回归，但不足以衡量中文泛化质量，也不足以调 threshold / margin。
-因此任何质量报告都应把它称为 regression/smoke 证据，而不是 benchmark 结论。
+正式生成的 `data/semantic_sets/eval_bank.yaml` 是本地/生产资产，默认不进 git。它可由
+`scripts/build_eval_bank.py --per-route-limit 100` 从 smoke cases 和正式 route bank 生成。
+example 和正式 eval bank 都比旧的 `config/eval_cases.yaml` 更适合作为路由数据进入索引的
+回归证据，但仍不足以衡量中文泛化质量，也不足以单独调 threshold / margin。因此任何质量报告都应把它称为
+regression baseline，而不是 benchmark 结论。
 生产日志分析也应优先使用当天或迁移到 `lite` / `deep` 之后的日志；全历史日志里可能混有
 旧 `fast` / `strong` route id，只适合作为背景上下文。
 
@@ -93,7 +97,8 @@ scripts/build_zh_route_eval.py
 
 可以校验 curated samples，并保留 slice metadata。但它还没有真正下载或转换 C-Eval、CMMLU、LongBench、DataCLUE、SuperCLUE-Code3 等公开中文 benchmark，形成可运行的 eval bank。
 
-因此当前事实是：**开源来源已经被声明，部分开源数据已经用于 route bank；但开源 eval 还没有真正进入生产质量闭环。**
+因此当前事实是：**开源来源已经被声明，部分开源数据已经用于 route bank example、
+runtime route bank 和 regression eval；但中文 benchmark 级 eval 还没有真正进入生产质量闭环。**
 
 ## 指标能力
 

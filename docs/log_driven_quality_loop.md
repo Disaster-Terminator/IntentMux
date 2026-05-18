@@ -7,12 +7,15 @@ and latency regressions; prompt review logs provide local-only semantic evidence
 when explicitly enabled. Only reviewed, redacted samples are promoted into eval
 cases or route banks.
 
-`config/eval_cases.yaml` is a regression/smoke suite, not a benchmark. Treat it
-as a fast guard against obvious regressions and as input for baseline
-comparison, not as proof of general Chinese routing quality. Production quality
-reports should prefer current-day logs or logs produced after the `lite` /
-`deep` migration; full-history reports may contain legacy `fast` / `strong`
-records and should be used only as background context.
+`examples/eval_bank.sample.yaml` is the tracked public example for regression
+and baseline comparison. Generated `data/semantic_sets/eval_bank.yaml` is a
+local or production asset and remains git-ignored by default. Both can verify
+that route-bank samples enter the router, but neither is proof of general
+Chinese routing quality. `config/eval_cases.yaml` remains a smaller smoke suite
+for fast contract checks. Production quality reports should prefer current-day
+logs or logs produced after the `lite` / `deep` migration; full-history reports
+may contain legacy `fast` / `strong` records and should be used only as
+background context.
 
 ## Boundary
 
@@ -20,6 +23,13 @@ The route audit log is metadata only. It may contain `request_id`, `route_id`,
 `target_model`, `reason`, scores, upstream status, and timing fields. It must
 not contain raw prompts, completions, request bodies, token usage, bearer
 credentials, provider keys, or LiteLLM secrets.
+
+For accepted embedding decisions, the route audit log and decision endpoint may
+also contain `match_source`, `match_index`, and `match_text_sha256`. These fields
+identify the loaded route-bank sample that won the semantic match without
+logging the matched sample text. Hard rules, explicit route overrides,
+low-confidence fallback, and passthrough decisions do not claim a semantic
+sample match.
 
 Prompt review logging is a separate local-only surface. It is disabled by
 default with `ROUTER_PROMPT_LOG_MODE=off`. When enabled, it writes to
@@ -182,6 +192,8 @@ Any route bank, threshold, margin, or hard-rule change should include:
 
 - route eval JSON for `current-router` plus simple baselines such as
   `always-lite`, `always-deep`, and `hard-rule-only`;
+- the eval cases path, normally generated `data/semantic_sets/eval_bank.yaml`
+  in production or `examples/eval_bank.sample.yaml` in a clean clone;
 - route log summary from current-day or post-migration production traffic;
 - `scripts/route_quality_report.py` JSON/Markdown output;
 - candidate review evidence when the change is production-log driven;

@@ -466,8 +466,17 @@ def test_run_quality_artifacts_writes_generic_outputs_without_raw_prompt_mode(tm
     assert artifacts["evals"]["current-router"]["exit_code"] == 0
     assert artifacts["route_quality_report"]["exit_code"] == 0
     assert Path(artifacts["ai_review_packet"]["json"]).exists()
-    assert any("scripts/eval_routes.py" in cmd and "--baseline current-router" in cmd for cmd in commands)
-    assert any("scripts/route_quality_report.py" in cmd for cmd in commands)
+    assert any(
+        "scripts/eval_routes.py" in cmd
+        and "--cases examples/eval_bank.sample.yaml" in cmd
+        and "--baseline current-router" in cmd
+        for cmd in commands
+    )
+    assert any(
+        "scripts/route_quality_report.py" in cmd
+        and "--route-bank examples/route_bank.sample.yaml" in cmd
+        for cmd in commands
+    )
     assert any("scripts/select_review_candidates.py" in cmd and "--prompt-path" in cmd for cmd in commands)
     assert any("scripts/prepare_ai_review_packet.py" in cmd for cmd in commands)
     assert not any("--include-prompt-text raw_local" in cmd for cmd in commands)

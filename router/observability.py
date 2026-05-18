@@ -97,6 +97,7 @@ class PromptReviewLogger:
             "truncated": len(latest_user_text) > self.max_chars,
             "ts": datetime.now(UTC).isoformat(),
         }
+        add_match_provenance(record, decision)
         path = self.log_dir / f"{audit_log_day(timezone_name=self.timezone_name)}.jsonl"
         with path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(record, ensure_ascii=False, sort_keys=True))
@@ -410,12 +411,22 @@ def route_record(
     }
     if upstream_status is not None:
         record["upstream_status"] = upstream_status
+    add_match_provenance(record, decision)
     if format_signals:
         record["format_signals"] = format_signals
     if timings_ms:
         for name, duration_ms in timings_ms.items():
             record[name] = round(duration_ms, 2)
     return record
+
+
+def add_match_provenance(record: dict[str, Any], decision: RoutingDecision) -> None:
+    if decision.match_source is not None:
+        record["match_source"] = decision.match_source
+    if decision.match_index is not None:
+        record["match_index"] = decision.match_index
+    if decision.match_text_sha256 is not None:
+        record["match_text_sha256"] = decision.match_text_sha256
 
 
 def emit_route_record(

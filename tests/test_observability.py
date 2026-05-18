@@ -128,6 +128,51 @@ def test_route_record_always_includes_status_alias():
     assert "upstream_status" not in record
 
 
+def test_route_record_includes_match_provenance_only_when_available():
+    without_match = route_record(
+        event="route_complete",
+        request_id="req-1",
+        request_id_source="generated",
+        decision=RoutingDecision(
+            target_model="local-lite-model",
+            reason="low_confidence",
+            rewrite=True,
+            route_id="lite",
+            policy_id="low_confidence",
+        ),
+        stream=False,
+        started_ms=0.0,
+        ok=True,
+        outcome="success",
+        upstream_status=200,
+    )
+    with_match = route_record(
+        event="route_complete",
+        request_id="req-2",
+        request_id_source="generated",
+        decision=RoutingDecision(
+            target_model="local-deep-model",
+            reason="embedding",
+            rewrite=True,
+            route_id="deep",
+            policy_id="embedding",
+            match_source="swebench_issue_resolution",
+            match_index=3,
+            match_text_sha256="abc123",
+        ),
+        stream=False,
+        started_ms=0.0,
+        ok=True,
+        outcome="success",
+        upstream_status=200,
+    )
+
+    assert "match_source" not in without_match
+    assert with_match["match_source"] == "swebench_issue_resolution"
+    assert with_match["match_index"] == 3
+    assert with_match["match_text_sha256"] == "abc123"
+
+
 def test_error_class_for_stable_upstream_statuses_and_timeouts():
     assert error_class_for(RuntimeError("unauthorized"), 401) == "upstream_auth_error"
     assert error_class_for(RuntimeError("rate limited"), 429) == "upstream_rate_limited"

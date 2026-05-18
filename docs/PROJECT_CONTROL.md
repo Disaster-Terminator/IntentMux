@@ -65,6 +65,10 @@ Implemented:
 - health reports, route budgets, review-candidate selection;
 - smoke evals and baseline comparison: `current-router`, `always-lite`,
   `always-deep`, `hard-rule-only`;
+- tracked public example assets:
+  `examples/route_bank.sample.yaml` and `examples/eval_bank.sample.yaml`;
+- embedding decisions expose route-bank match provenance through
+  `match_source`, `match_index`, and `match_text_sha256`;
 - quality report generation from eval JSON and route summaries.
 - generic AI review packet generation and AI review summary validation;
 - daily health quality artifacts under `<log-dir>/quality/<day>/`: route

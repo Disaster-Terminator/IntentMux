@@ -146,6 +146,9 @@ def create_app(
             "rewrite": decision.rewrite,
             "score": decision.score,
             "second_score": decision.second_score,
+            "match_source": decision.match_source,
+            "match_index": decision.match_index,
+            "match_text_sha256": decision.match_text_sha256,
         }
 
     @app.post("/v1/chat/completions")

@@ -55,12 +55,15 @@ Run from the repository before touching production:
 ```bash
 uv run python -m pytest -q
 uv run python scripts/verify_route_contract.py
-uv run python scripts/eval_routes.py --mock-embeddings > /tmp/intentmux-eval.txt
+uv run python scripts/eval_routes.py \
+  --cases data/semantic_sets/eval_bank.yaml \
+  --mock-embeddings \
+  > /tmp/intentmux-eval.txt
 uv run python scripts/router_log_summary.py /path/to/intentmux-home/logs/routes/*.jsonl --json > /tmp/intentmux-routes.json
 uv run python scripts/route_quality_report.py \
   --eval-output /tmp/intentmux-eval.txt \
   --route-summary-json /tmp/intentmux-routes.json \
-  --route-bank examples/route_bank.sample.yaml \
+  --route-bank data/semantic_sets/route_bank.yaml \
   --json-output /tmp/intentmux-quality.json \
   --markdown-output /tmp/intentmux-quality.md
 ```

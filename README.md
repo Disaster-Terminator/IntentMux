@@ -252,7 +252,10 @@ IntentMux 暂未实现热重载，生产变更按“配置重启、代码重建�
 仓库里的 `examples/intentmux-home/` 是可复制的运行时目录模板。`/data` 不应放 LiteLLM 的 `.env`、provider token 或数据库。只有在明确启用 `ROUTER_PROMPT_LOG_MODE=raw_local` 时，`/data/logs/prompts` 才会保存 prompt review log；这个目录只适合本地私有审查，不应提交、上传或贴到 issue。
 
 运行时目录是用户部署资产，不是本仓库的源码内容。本仓库默认通过 `.gitignore` 排除
-`*-runtime/` 和 `data/semantic_sets/*.yaml`，避免把用户语义资产、审计日志或生产配置误提交。
+`*-runtime/`、本地 source samples 和 `data/semantic_sets/*.yaml`，避免把用户语义资产、
+审计日志或生产配置误提交。仓库只跟踪可运行 example：
+[examples/route_bank.sample.yaml](examples/route_bank.sample.yaml) 和
+[examples/eval_bank.sample.yaml](examples/eval_bank.sample.yaml)。
 生产部署应把运行时目录单独备份和迁移。
 
 其中 `config/routes.yaml` 定义产品级 `route_id` 到 LiteLLM `target_model` 的映射，
@@ -260,8 +263,9 @@ IntentMux 暂未实现热重载，生产变更按“配置重启、代码重建�
 `lite`、`deep`，不能使用 `your-lite-model`、`your-deep-model`
 这类部署侧 target model 名称作为 key。
 
-仓库提供一个可跟踪的精简示例：[examples/route_bank.sample.yaml](examples/route_bank.sample.yaml)。
-它只用于展示 source/license 元数据和 route bank 形状；真实部署应离线生成或维护自己的
+仓库提供可跟踪的精简 route bank example：[examples/route_bank.sample.yaml](examples/route_bank.sample.yaml)。
+它用于展示 source/license 元数据、route bank 形状，以及 `utterance.source` 如何支撑
+`match_source` 审计；真实部署应离线生成或维护自己的
 `/data/semantic_sets/route_bank.yaml`。
 `scripts/build_route_bank.py` 生成的 route bank 会写入 `generated` 元数据，包括生成工具、
 git commit、生成时间、source manifest hash 和每个 source 的原始行数，便于后续追溯资产来源。
@@ -331,7 +335,7 @@ routes:
 
 ```bash
 uv run python -m pytest -q
-uv run python scripts/eval_routes.py --mock-embeddings
+uv run python scripts/eval_routes.py --cases examples/eval_bank.sample.yaml --mock-embeddings
 uv run python scripts/verify_route_contract.py
 ```
 
@@ -537,12 +541,46 @@ curl http://127.0.0.1:4001/v1/semantic-router/decision \
 ```
 
 返回内容包含 `route_id`、`target_model`、`policy_id`、`reason`、`rewrite` 和分数。
+当请求通过 embedding 命中 route bank 路由时，还会返回 `match_source`、
+`match_index` 和 `match_text_sha256`，用于审计“命中了哪类上游样本”。这些字段只记录
+加载后的 route utterance 来源、索引和文本 hash，不返回匹配样本文本；hard rule、
+显式 route、低置信 fallback 或 passthrough 会返回 `null`。
+route bank YAML 里的 `source` 字段决定了这些审计字段能追到哪个上游来源。
+
+审计一条 `deep` 请求时，先看 `/v1/semantic-router/decision` 返回：
+
+```json
+{
+  "route_id": "deep",
+  "policy_id": "embedding",
+  "reason": "embedding",
+  "match_source": "swebench_issue_resolution",
+  "match_index": 12,
+  "match_text_sha256": "..."
+}
+```
+
+含义是：这条请求不是因为 hard rule 升级，而是 embedding 路由命中了已加载 route
+utterances 中第 12 条、来源为 `swebench_issue_resolution` 的样本；`match_text_sha256`
+可用于在本地 route bank 中定位具体文本，同时避免在审计日志里直接写出匹配样本文本。
 
 ## 语义资产
 
 运行时保持轻依赖。更大的 route bank 从 `config/route_sources.yaml` 声明的来源离线生成，不把 Hugging Face 等构建依赖带进运行时。
 来源选择、语料政策和可学习路由边界见 [docs/PROJECT_CONTROL.md](docs/PROJECT_CONTROL.md)：默认不使用自生成语料，只使用能自然映射到 `lite` / `deep` 的成熟公开数据源和脱敏生产 review 样本。
 当前哪些能力已经落地、哪些仍只是计划，见 [docs/route_quality_evidence_status.md](docs/route_quality_evidence_status.md)。
+
+仓库默认只跟踪 example 基线：
+
+- `examples/route_bank.sample.yaml`：可运行的公开 route-bank 示例，`lite`
+  展示 MASSIVE zh-CN general utterances，`deep` 展示 SWE-bench / HumanEval 类代码任务。
+- `examples/eval_bank.sample.yaml`：可运行的 `lite` / `deep` regression 示例，用于
+  clean clone、CI 和文档演示。
+- `config/eval_cases.yaml`：小型 smoke/regression suite，不再作为默认质量基线。
+
+正式生成的 `data/semantic_sets/route_bank.yaml` 和 `data/semantic_sets/eval_bank.yaml`
+是本地/生产资产，默认被 git 忽略。`intentmux_daily_health.py` 会优先使用这些正式资产；
+如果不存在，则退回到 `examples/*.sample.yaml`，保证新用户 clone 后仍能跑通工具链。
 
 ```bash
 uv sync --group assets
@@ -563,25 +601,32 @@ uv run python scripts/import_review_samples.py \
 安全示例见 [data/source_samples/production_review.example.jsonl](data/source_samples/production_review.example.jsonl)。
 真实 review JSONL 默认被 `.gitignore` 排除；只提交公开样例，不提交本地生产复核样本。
 
-生成质量报告的推荐流程。`config/eval_cases.yaml` 是 smoke/regression suite，
-不是中文语义路由 benchmark；报告用于回归和策略对比，不能单独证明泛化质量。
+生成质量报告的推荐流程。生产环境优先使用本地生成或挂载的
+`data/semantic_sets/eval_bank.yaml`，用于确认公开 route bank 已进入路由索引，并和简单
+baseline 做回归对比；clean clone 可使用 `examples/eval_bank.sample.yaml` 跑通流程。
+这些仍不是完整中文语义路由 benchmark，不能单独证明泛化质量。`config/eval_cases.yaml`
+只保留为更小的 smoke/regression suite。
 生产质量判断应优先使用当天或迁移到 `lite` / `deep` 之后的日志，避免旧
 `fast` / `strong` 记录污染当前策略判断。
 
 ```bash
 uv run python scripts/eval_routes.py \
+  --cases data/semantic_sets/eval_bank.yaml \
   --mock-embeddings \
   --baseline current-router \
   --json-output /tmp/intentmux-eval-current.json
 uv run python scripts/eval_routes.py \
+  --cases data/semantic_sets/eval_bank.yaml \
   --mock-embeddings \
   --baseline always-lite \
   --json-output /tmp/intentmux-eval-always-lite.json || true
 uv run python scripts/eval_routes.py \
+  --cases data/semantic_sets/eval_bank.yaml \
   --mock-embeddings \
   --baseline always-deep \
   --json-output /tmp/intentmux-eval-always-deep.json || true
 uv run python scripts/eval_routes.py \
+  --cases data/semantic_sets/eval_bank.yaml \
   --mock-embeddings \
   --baseline hard-rule-only \
   --json-output /tmp/intentmux-eval-hard-rule-only.json || true
@@ -592,7 +637,7 @@ uv run python scripts/route_quality_report.py \
   --eval-json always-deep=/tmp/intentmux-eval-always-deep.json \
   --eval-json hard-rule-only=/tmp/intentmux-eval-hard-rule-only.json \
   --route-summary-json /tmp/intentmux-routes.json \
-  --route-bank examples/route_bank.sample.yaml \
+  --route-bank data/semantic_sets/route_bank.yaml \
   --json-output /tmp/intentmux-quality.json \
   --markdown-output /tmp/intentmux-quality.md
 ```

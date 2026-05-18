@@ -364,6 +364,9 @@ def test_decision_endpoint_hard_rule_returns_contract_without_forwarding():
         "rewrite": True,
         "score": None,
         "second_score": None,
+        "match_source": None,
+        "match_index": None,
+        "match_text_sha256": None,
     }
     assert proxy.forward_called is False
     assert proxy.stream_called is False
@@ -626,6 +629,9 @@ def test_decision_endpoint_passthrough_keeps_model_without_inventing_route_id_an
         "rewrite": False,
         "score": None,
         "second_score": None,
+        "match_source": None,
+        "match_index": None,
+        "match_text_sha256": None,
     }
     assert set(response.json()) == {
         "source_model",
@@ -636,6 +642,9 @@ def test_decision_endpoint_passthrough_keeps_model_without_inventing_route_id_an
         "rewrite",
         "score",
         "second_score",
+        "match_source",
+        "match_index",
+        "match_text_sha256",
     }
     assert "prompt" not in response.text
     assert proxy.forward_called is False
@@ -762,6 +771,9 @@ def test_decision_endpoint_missing_model_and_messages_preserves_router_semantics
         "rewrite": False,
         "score": None,
         "second_score": None,
+        "match_source": None,
+        "match_index": None,
+        "match_text_sha256": None,
     }
     assert proxy.forward_called is False
     assert proxy.stream_called is False

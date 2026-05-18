@@ -8,6 +8,22 @@ from pydantic import ValidationError
 from router.config import RouteSpec, RouterSettings, load_settings
 
 
+def test_tracked_default_config_loads_example_route_bank(monkeypatch):
+    monkeypatch.chdir(Path(__file__).resolve().parents[1])
+
+    settings = load_settings("config/routes.yaml")
+
+    assert settings.route_bank_path == "examples/route_bank.sample.yaml"
+    assert settings.route_bank_loaded is True
+    assert "翻译成中文" in settings.routes["lite"].utterances
+    assert "Analyze why this bug only happens in production." in settings.routes["deep"].utterances
+    assert settings.routes["lite"].utterance_sources["翻译成中文"] == "massive_zh_cn_general"
+    assert (
+        settings.routes["deep"].utterance_sources["Analyze why this bug only happens in production."]
+        == "swebench_issue_resolution"
+    )
+
+
 def test_load_settings_supports_route_ids_mapped_to_target_models(tmp_path: Path):
     routes_path = tmp_path / "routes.yaml"
     routes_path.write_text(

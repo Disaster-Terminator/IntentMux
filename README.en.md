@@ -220,7 +220,7 @@ Configure `semantic-router` in LiteLLM as a model entry that points to the Inten
 
 ```bash
 uv run python -m pytest -q
-uv run python scripts/eval_routes.py --mock-embeddings
+uv run python scripts/eval_routes.py --cases examples/eval_bank.sample.yaml --mock-embeddings
 uv run python scripts/verify_route_contract.py
 ```
 
@@ -313,7 +313,7 @@ curl http://127.0.0.1:4001/v1/semantic-router/decision \
   -d '{"model":"auto","messages":[{"role":"user","content":"Why is this production bug intermittent?"}]}'
 ```
 
-This returns the selected `route_id`, resolved `target_model`, `policy_id`, reason, rewrite flag, and scores without forwarding to LiteLLM.
+This returns the selected `route_id`, resolved `target_model`, `policy_id`, reason, rewrite flag, and scores without forwarding to LiteLLM. Embedding decisions also include `match_source`, `match_index`, and `match_text_sha256` so operators can audit which route-bank source won without logging the matched sample text.
 
 ## Semantic Assets
 
@@ -323,13 +323,20 @@ are not runtime dependencies.
 
 The repository includes a small tracked example at
 [examples/route_bank.sample.yaml](examples/route_bank.sample.yaml). It is for
-showing source/license metadata and route-bank shape. Real deployments should
-generate or maintain their own `/data/semantic_sets/route_bank.yaml`.
+showing source/license metadata, route-bank shape, and `utterance.source`
+provenance. The tracked eval example is
+[examples/eval_bank.sample.yaml](examples/eval_bank.sample.yaml). Real
+deployments should generate or maintain their own
+`/data/semantic_sets/route_bank.yaml` and `data/semantic_sets/eval_bank.yaml`,
+which are local assets and ignored by git.
 
 Recommended quality-report flow:
 
 ```bash
-uv run python scripts/eval_routes.py --mock-embeddings > /tmp/intentmux-eval.txt
+uv run python scripts/eval_routes.py \
+  --cases examples/eval_bank.sample.yaml \
+  --mock-embeddings \
+  > /tmp/intentmux-eval.txt
 uv run python scripts/router_log_summary.py /data/logs/routes/*.jsonl --json > /tmp/intentmux-routes.json
 uv run python scripts/route_quality_report.py \
   --eval-output /tmp/intentmux-eval.txt \

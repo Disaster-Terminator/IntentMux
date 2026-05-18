@@ -111,6 +111,45 @@ async def test_auto_entry_model_uses_normal_routing():
 
 
 @pytest.mark.asyncio
+async def test_embedding_decision_reports_matched_route_bank_provenance():
+    route_settings = RouterSettings(
+        route_model="auto",
+        fallback_route_id="lite",
+        threshold=0.5,
+        margin=0.05,
+        routes={
+            "lite": RouteSpec(
+                target_model="local-lite-model",
+                description="low risk",
+                utterances=["翻译成中文"],
+                utterance_sources={"翻译成中文": "massive_zh_cn_general"},
+            ),
+            "deep": RouteSpec(
+                target_model="local-deep-model",
+                description="high risk",
+                utterances=["分析这个线上 bug"],
+                utterance_sources={"分析这个线上 bug": "swebench_issue_resolution"},
+            ),
+        },
+    )
+    vectors = {
+        "翻译成中文": [1.0, 0.0, 0.0],
+        "分析这个线上 bug": [0.0, 1.0, 0.0],
+        "线上 bug 怎么修": [0.0, 1.0, 0.0],
+    }
+    router = Router(route_settings, FakeEmbeddingClient(vectors))
+
+    decision = await router.decide(
+        {"model": "auto", "messages": [{"role": "user", "content": "线上 bug 怎么修"}]}
+    )
+
+    assert decision.route_id == "deep"
+    assert decision.match_source == "swebench_issue_resolution"
+    assert decision.match_index == 0
+    assert decision.match_text_sha256
+
+
+@pytest.mark.asyncio
 async def test_auto_entry_alias_works_with_legacy_route_model_config():
     route_settings = settings()
     vectors = {

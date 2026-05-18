@@ -3,6 +3,24 @@ from __future__ import annotations
 from scripts.build_eval_bank import build_eval_bank, load_manual_cases
 
 
+def test_tracked_example_eval_bank_uses_product_routes_and_public_sources():
+    import yaml
+    from pathlib import Path
+
+    payload = yaml.safe_load(Path("examples/eval_bank.sample.yaml").read_text(encoding="utf-8"))
+    cases = payload["cases"]
+    expects = {case["expect"] for case in cases}
+    sources = {case.get("source") for case in cases}
+
+    assert expects == {"lite", "deep"}
+    assert "cheap-router" not in str(payload)
+    assert "pro-router" not in str(payload)
+    assert "free-probe-router" not in str(payload)
+    assert "massive_zh_cn_general" in sources
+    assert "swebench_issue_resolution" in sources
+    assert len(cases) >= 4
+
+
 def test_build_eval_bank_keeps_manual_cases_and_adds_route_bank_cases():
     manual_cases = [
         {"text": "手工 cheap", "expect": "lite"},

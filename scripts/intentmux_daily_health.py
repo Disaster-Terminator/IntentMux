@@ -26,6 +26,10 @@ DEFAULT_ROUTER_BASE_URL = os.getenv("INTENTMUX_ROUTER_BASE_URL", "http://127.0.0
 DEFAULT_LITELLM_BASE_URL = os.getenv("INTENTMUX_LITELLM_BASE_URL", "http://127.0.0.1:4000")
 DEFAULT_TIMEZONE = os.getenv("INTENTMUX_TIMEZONE", DEFAULT_AUDIT_LOG_TIMEZONE)
 QUALITY_BASELINES = ("current-router", "always-lite", "always-deep", "hard-rule-only")
+DEFAULT_EVAL_BANK = Path("data/semantic_sets/eval_bank.yaml")
+EXAMPLE_EVAL_BANK = Path("examples/eval_bank.sample.yaml")
+DEFAULT_ROUTE_BANK = Path("data/semantic_sets/route_bank.yaml")
+EXAMPLE_ROUTE_BANK = Path("examples/route_bank.sample.yaml")
 
 
 def run(cmd: str, *, cwd: Path, timeout: int = 120) -> dict[str, Any]:
@@ -370,11 +374,13 @@ def run_quality_artifacts(
         }
 
     evals: dict[str, dict[str, Any]] = {}
+    eval_cases_path = DEFAULT_EVAL_BANK if (repo / DEFAULT_EVAL_BANK).exists() else EXAMPLE_EVAL_BANK
+    route_bank_path = DEFAULT_ROUTE_BANK if (repo / DEFAULT_ROUTE_BANK).exists() else EXAMPLE_ROUTE_BANK
     for baseline in QUALITY_BASELINES:
         eval_path = Path(paths["eval_json"][baseline])
         eval_cmd = (
             "uv run python scripts/eval_routes.py "
-            "--cases config/eval_cases.yaml "
+            f"--cases {shlex.quote(str(eval_cases_path))} "
             "--routes config/routes.yaml "
             "--mock-embeddings "
             f"--baseline {baseline} "
@@ -396,7 +402,7 @@ def run_quality_artifacts(
             "uv run python scripts/route_quality_report.py "
             f"{eval_specs} "
             f"--route-summary-json {shlex.quote(str(route_summary_path))} "
-            "--route-bank examples/route_bank.sample.yaml "
+            f"--route-bank {shlex.quote(str(route_bank_path))} "
             f"--json-output {shlex.quote(paths['route_quality_json'])} "
             f"--markdown-output {shlex.quote(paths['route_quality_md'])}"
         )

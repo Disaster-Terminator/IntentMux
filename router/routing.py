@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
 from typing import Any
 
 import numpy as np
@@ -29,13 +30,16 @@ class RoutingDecision:
     source_model: str | None = None
     score: float | None = None
     second_score: float | None = None
+    match_source: str | None = None
+    match_index: int | None = None
+    match_text_sha256: str | None = None
 
 
 class Router:
     def __init__(self, settings: RouterSettings, embedding_client: EmbeddingClient):
         self.settings = settings
         self.embedding_client = embedding_client
-        self._route_vectors: dict[str, list[list[float]]] | None = None
+        self._route_vectors: dict[str, list[RouteVector]] | None = None
 
     async def decide(
         self,
@@ -92,11 +96,22 @@ class Router:
         try:
             await self._ensure_route_vectors()
             query_vector = (await self.embedding_client.embed([text]))[0]
-            route_scores = {
-                route: max(cosine_similarity(query_vector, vector) for vector in vectors)
-                for route, vectors in self._route_vectors.items()
-                if vectors
-            }
+            route_matches = {}
+            for route, vectors in self._route_vectors.items():
+                if not vectors:
+                    continue
+                route_matches[route] = max(
+                    (
+                        RouteMatch(
+                            score=cosine_similarity(query_vector, item.vector),
+                            source=item.source,
+                            index=item.index,
+                            text_sha256=item.text_sha256,
+                        )
+                        for item in vectors
+                    ),
+                    key=lambda item: item.score,
+                )
         except Exception:
             return RoutingDecision(
                 route_id=self.settings.fallback_route_id,
@@ -107,7 +122,7 @@ class Router:
                 rewrite=True,
             )
 
-        if not route_scores:
+        if not route_matches:
             return RoutingDecision(
                 route_id=self.settings.fallback_route_id,
                 target_model=self._target_model_for_route(self.settings.fallback_route_id),
@@ -119,9 +134,10 @@ class Router:
                 second_score=0.0,
             )
 
-        ranked = sorted(route_scores.items(), key=lambda item: item[1], reverse=True)
-        best_route, best_score = ranked[0]
-        second_score = ranked[1][1] if len(ranked) > 1 else 0.0
+        ranked = sorted(route_matches.items(), key=lambda item: item[1].score, reverse=True)
+        best_route, best_match = ranked[0]
+        best_score = best_match.score
+        second_score = ranked[1][1].score if len(ranked) > 1 else 0.0
         if (
             best_score < self.settings.threshold
             or best_score - second_score < self.settings.margin
@@ -146,6 +162,9 @@ class Router:
             rewrite=True,
             score=round(best_score, 6),
             second_score=round(second_score, 6),
+            match_source=best_match.source,
+            match_index=best_match.index,
+            match_text_sha256=best_match.text_sha256,
         )
 
     def _is_entry_model(self, source_model: Any) -> bool:
@@ -211,8 +230,37 @@ class Router:
 
         vectors = await self.embedding_client.embed(texts) if texts else []
         self._route_vectors = {
-            route: vectors[start:end] for route, start, end in offsets
+            route: [
+                RouteVector(
+                    vector=vector,
+                    source=self.settings.routes[route].utterance_sources.get(text),
+                    index=index,
+                    text_sha256=sha256_text(text),
+                )
+                for index, (text, vector) in enumerate(zip(texts[start:end], vectors[start:end]))
+            ]
+            for route, start, end in offsets
         }
+
+
+@dataclass(frozen=True)
+class RouteVector:
+    vector: list[float]
+    source: str | None
+    index: int
+    text_sha256: str
+
+
+@dataclass(frozen=True)
+class RouteMatch:
+    score: float
+    source: str | None
+    index: int
+    text_sha256: str
+
+
+def sha256_text(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def latest_user_text(messages: Any) -> str:

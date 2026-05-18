@@ -13,6 +13,7 @@ class RouteSpec(BaseModel):
     target_model: str | None = None
     description: str
     utterances: list[str]
+    utterance_sources: dict[str, str] = Field(default_factory=dict)
 
 
 class HardRuleSpec(BaseModel):
@@ -271,6 +272,7 @@ def merge_route_bank(raw: dict, base_dir: Path, *, require_route_bank: bool = Fa
             continue
         route_config = raw_routes[route_name]
         existing = list(route_config.get("utterances", []))
+        existing_sources = dict(route_config.get("utterance_sources", {}))
         seen = set(existing)
         for item in route_bank.get("utterances", []):
             text = item.get("text") if isinstance(item, dict) else item
@@ -280,7 +282,10 @@ def merge_route_bank(raw: dict, base_dir: Path, *, require_route_bank: bool = Fa
             if text not in seen:
                 existing.append(text)
                 seen.add(text)
+            if isinstance(item, dict) and isinstance(item.get("source"), str):
+                existing_sources[str(text)] = item["source"]
         route_config["utterances"] = existing
+        route_config["utterance_sources"] = existing_sources
     if require_route_bank and matched_utterances == 0:
         raise ValueError("required route bank did not provide utterances")
     raw["route_bank_loaded"] = matched_utterances > 0

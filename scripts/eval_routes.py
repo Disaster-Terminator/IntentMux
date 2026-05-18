@@ -40,10 +40,31 @@ class EvalCase:
 
 
 class MockEmbeddingClient:
+    def __init__(self, known_vectors: dict[str, list[float]] | None = None):
+        self.known_vectors = known_vectors or {}
+
+    @classmethod
+    def from_settings(cls, settings: Any) -> "MockEmbeddingClient":
+        route_vectors = {
+            "lite": [1.0, 0.0, 0.0],
+            "deep": [0.0, 1.0, 0.0],
+        }
+        known_vectors: dict[str, list[float]] = {}
+        for route_id, route in settings.routes.items():
+            vector = route_vectors.get(route_id)
+            if vector is None:
+                continue
+            for utterance in route.utterances:
+                known_vectors[utterance] = vector
+        return cls(known_vectors)
+
     async def embed(self, texts: list[str]) -> list[list[float]]:
         return [self._vector(text) for text in texts]
 
     def _vector(self, text: str) -> list[float]:
+        known = self.known_vectors.get(text)
+        if known is not None:
+            return known
         if any(
             marker in text
             for marker in ("免费模型", "探活", "端点", "benchmark", "非关键样例", "测试模型")
@@ -113,7 +134,7 @@ async def run_eval(
         raise ValueError(f"baseline must be one of {sorted(BASELINES)}")
     settings = load_settings(routes_path)
     embedding_client = (
-        MockEmbeddingClient()
+        MockEmbeddingClient.from_settings(settings)
         if mock_embeddings
         else OpenAIEmbeddingClient(
             settings.embedding_url,
@@ -223,7 +244,7 @@ def named_route_or_fallback(router: Router, route_id: str) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--cases", default="config/eval_cases.yaml")
+    parser.add_argument("--cases", default="examples/eval_bank.sample.yaml")
     parser.add_argument("--routes", default="config/routes.yaml")
     parser.add_argument("--mock-embeddings", action="store_true")
     parser.add_argument("--json-output")
