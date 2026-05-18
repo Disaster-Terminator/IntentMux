@@ -25,6 +25,9 @@ Guidelines:
   survive context compaction or future sessions.
 - Keep transient execution checklists in the active Codex plan when that is
   clearer; Beads is the persistent control plane, not a scratchpad.
+- Interpret the generated Beads "all task tracking" rule as durable project
+  task tracking. It does not prohibit Superpowers methodology checklists or
+  Codex plans for the current turn.
 - Use Superpowers for methodology such as brainstorming, debugging, TDD,
   planning, and verification. Beads records durable work state; it does not
   replace those workflows.
