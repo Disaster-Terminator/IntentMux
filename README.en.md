@@ -196,6 +196,13 @@ docker compose -f examples/docker-compose.yml build intentmux
 docker compose -f examples/docker-compose.yml up -d intentmux
 ```
 
+For a gated manual sidecar rollout, use
+`scripts/rollout_compose_intentmux.sh --yes`. It runs tests, route-contract
+verification, pre-rebuild `/ready`, legacy sidecar preflight, service-only
+rebuild/recreate, post-rebuild `/ready`, container health, canonical preflight,
+and a cost-first decision smoke. Keep site-specific compose paths in
+environment variables or untracked wrappers.
+
 IntentMux does not hot-reload yet; production updates follow the rule: restart for config, rebuild for code.
 
 `examples/intentmux-home/` is a copyable runtime template. Keep LiteLLM `.env`, provider tokens, and databases outside the IntentMux home. If `ROUTER_PROMPT_LOG_MODE=raw_local` is enabled, `/data/logs/prompts` stores prompt review logs for private local review only; do not commit, upload, or attach that directory to public issues.

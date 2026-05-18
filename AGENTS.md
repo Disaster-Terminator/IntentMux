@@ -1,5 +1,3 @@
-@/path/to/gateway/AGENTS.md
-
 # IntentMux project workflow
 
 This repository uses Beads as the local development control plane. It is for

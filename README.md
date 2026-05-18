@@ -272,8 +272,9 @@ INTENTMUX_COMPOSE_FILE=examples/docker-compose.yml \
   scripts/rollout_compose_intentmux.sh --yes
 ```
 
-这个脚本会按顺序执行测试、route contract 校验、preflight、只重建/重启
-`intentmux` service、`/ready`、preflight 复验和 cost-first 决策冒烟。
+这个脚本会按顺序执行测试、route contract 校验、重建前 `/ready`、legacy sidecar
+preflight、只重建/重启 `intentmux` service、重建后 `/ready` 和容器 health、
+canonical preflight 复验，以及 cost-first 决策冒烟。
 它是通用 Compose helper，不是本仓库内置的生产拓扑；真实重启必须显式传
 `--yes`，`--dry-run` 可用于先审计将要执行的命令。
 

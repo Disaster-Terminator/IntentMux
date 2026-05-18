@@ -62,6 +62,25 @@ def test_deploy_script_dry_run_is_parameterized(tmp_path: Path):
     assert "agent_signal" in result.stdout
 
 
+def test_deploy_script_checks_existing_sidecar_before_rebuild(tmp_path: Path):
+    compose_file = tmp_path / "docker-compose.yml"
+    compose_file.write_text("services: {}\n", encoding="utf-8")
+
+    result = run_script(
+        "--dry-run",
+        "--allow-dirty",
+        env={
+            "INTENTMUX_COMPOSE_FILE": str(compose_file),
+            "INTENTMUX_BASE_URL": "http://127.0.0.1:4999",
+        },
+    )
+
+    assert result.returncode == 0, result.stderr
+    ready_index = result.stdout.index("wait for http://127.0.0.1:4999/ready")
+    build_index = result.stdout.index("docker compose")
+    assert ready_index < build_index
+
+
 def test_deploy_script_does_not_sync_runtime_config_by_default(tmp_path: Path):
     compose_file = tmp_path / "docker-compose.yml"
     runtime_config = tmp_path / "runtime" / "config" / "routes.yaml"

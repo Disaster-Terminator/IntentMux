@@ -192,6 +192,7 @@ else
   log "skipping pytest by request"
 fi
 run uv run python scripts/verify_route_contract.py
+wait_for_ready
 run "${legacy_preflight_cmd[@]}"
 
 if ((sync_runtime_config)); then
@@ -209,7 +210,7 @@ wait_for_container_healthy
 run "${canonical_preflight_cmd[@]}"
 
 cost_first_payload='{"model":"auto","messages":[{"role":"user","content":"summarize this tool schema"}],"tools":[{"type":"function","function":{"name":"read_file","description":"read a file","parameters":{"type":"object","properties":{}}}}],"tool_choice":"auto"}'
-cost_first_cmd=(uv run python -c 'import json, sys, urllib.request; url=sys.argv[1]+"/v1/semantic-router/decision"; payload=sys.argv[2].encode(); req=urllib.request.Request(url,data=payload,headers={"Content-Type":"application/json"}); data=json.loads(urllib.request.urlopen(req,timeout=30).read()); print(json.dumps(data,ensure_ascii=False)); assert data.get("policy_id")!="agent_signal"; assert data.get("route_id") in {"lite","lite"}' "$base_url" "$cost_first_payload")
+cost_first_cmd=(uv run python -c 'import json, sys, urllib.request; url=sys.argv[1]+"/v1/semantic-router/decision"; payload=sys.argv[2].encode(); req=urllib.request.Request(url,data=payload,headers={"Content-Type":"application/json"}); data=json.loads(urllib.request.urlopen(req,timeout=30).read()); print(json.dumps(data,ensure_ascii=False)); assert data.get("policy_id")!="agent_signal"; assert data.get("route_id")=="lite"' "$base_url" "$cost_first_payload")
 run "${cost_first_cmd[@]}"
 
 if ((dry_run)); then

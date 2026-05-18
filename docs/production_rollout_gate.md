@@ -13,7 +13,9 @@ Config or asset changes:
 - environment variables such as `ROUTER_LITELLM_BASE_URL`,
   `ROUTER_LITELLM_API_KEY`, `ROUTER_INBOUND_API_KEY`,
   `ROUTER_EMBEDDING_API_KEY`, `ROUTER_EMBEDDING_HEADERS_JSON`, or
-  `ROUTER_REQUIRE_ROUTE_BANK`, or `ROUTER_AUDIT_LOG_TIMEZONE`
+  `ROUTER_REQUIRE_ROUTE_BANK`, `ROUTER_AUDIT_LOG_TIMEZONE`,
+  `ROUTER_ROUTE_EMBEDDING_CACHE_ENABLED`, or
+  `ROUTER_ROUTE_EMBEDDING_CACHE_PATH`
 
 These require an IntentMux sidecar restart because routes and vectors are loaded
 at startup. They do not require an image rebuild.
@@ -140,7 +142,8 @@ Use a local, untracked wrapper or shell environment for machine-specific paths.
 The helper is intentionally not a commit hook or automatic release mechanism.
 It refuses a dirty worktree by default, requires `--yes` before any real service
 restart, rebuilds and recreates only the configured IntentMux service, and
-re-runs `/ready`, preflight, and a cost-first decision smoke after rollout.
+checks the existing `/ready` endpoint before rebuilding. After rollout it
+re-runs `/ready`, container health, preflight, and a cost-first decision smoke.
 RayStorm's local production wrapper is a host-specific operations asset and
 should remain outside this public repository.
 
