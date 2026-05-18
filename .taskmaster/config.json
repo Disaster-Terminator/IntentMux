@@ -34,7 +34,9 @@
     "anonymousTelemetry": false
   },
   "claudeCode": {},
-  "codexCli": {},
+  "codexCli": {
+    "codexPath": "codex"
+  },
   "grokCli": {
     "timeout": 120000,
     "workingDirectory": null,

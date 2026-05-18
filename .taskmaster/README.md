@@ -42,11 +42,24 @@ pnpm run taskmaster -- research "..."
 ## 当前已知问题
 
 本机直接运行 `codex exec -m gpt-5.5` 可以成功，但 Task Master 0.43.1
-的 `codex-cli` adapter 在 `parse-prd` 中曾返回：
+的 `codex-cli` adapter 默认会优先使用依赖树里嵌入的
+`@openai/codex@0.60.1`，而不是 PATH 里的新版 Codex CLI。因此
+`parse-prd` 中曾返回：
 
 ```text
 The 'gpt-5.5' model requires a newer version of Codex.
 ```
+
+本仓库在 `.taskmaster/config.json` 中设置了：
+
+```json
+"codexCli": {
+  "codexPath": "codex"
+}
+```
+
+这会强制 provider 调用 PATH 中的 `codex`，避免走嵌入的旧版本。不要改成
+`/home/...` 这类本机绝对路径。
 
 因此在确认 adapter 问题前，Task Master 可以先用于：
 
