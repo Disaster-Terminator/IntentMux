@@ -24,15 +24,32 @@ There is no persistent embedding cache, vector database, SQLite store, FAISS
 index, Chroma, Qdrant, Milvus, or Postgres vector table. A process restart
 re-embeds the route bank.
 
-Current local route bank is `bootstrap-v1`, not a quality baseline:
+Current generated local route bank is a bootstrap asset, not a quality
+baseline. The tracked manifest now uses Simplified Chinese plus English by
+default; Traditional Chinese is intentionally excluded from the default
+baseline unless a user opts into it locally.
+
+The pipeline has two separate scales:
+
+- full ingest: authoritative upstream rows are normalized into ignored local
+  records when `ingest_all: true`;
+- online selection: `limit` caps how many records from each source enter
+  route/eval/calibration outputs.
+
+This keeps provenance-rich local assets broad without forcing every upstream
+row into the runtime embedding index.
 
 | route | source | count |
 | --- | --- | ---: |
-| `lite` | MASSIVE zh-CN general | 80 |
-| `lite` | MASSIVE zh-TW general | 40 |
+| `lite` | MASSIVE zh-CN train split, all scenarios | 80 online route examples |
+| `lite` | MASSIVE en-US train split, all scenarios | 40 online route examples |
+| `deep` | curated Simplified-Chinese debug/security/long-context seed | small |
 | `deep` | SWE-bench issue resolution | 80 |
 | `deep` | MBPP code generation | 40 |
 | `deep` | HumanEval code generation | 40 |
+
+MASSIVE dev/test splits are ingested separately as eval/calibration candidates
+instead of being mixed into the online route bank.
 
 This proves that the asset path works. It does not prove Chinese semantic
 routing quality.
@@ -88,7 +105,7 @@ signals. Product routes remain `lite` and `deep`.
 
 | artifact | input | output | git policy | required fields |
 | --- | --- | --- | --- | --- |
-| source manifest | tracked config | source declarations | tracked | `name`, `kind`, `license`, `language`, `intended_use`, `limit` |
+| source manifest | tracked config | source declarations | tracked | `name`, `kind`, `license`, `language`, `intended_use`, `ingest_all`, `limit` |
 | raw cache | public datasets | `data/downloads/*` | ignored | source name, source version, download hash |
 | normalized records | raw cache | `data/semantic_sets/normalized/*.jsonl` | ignored | `id`, `text`, `source`, `license`, `language`, `slice`, `proposed_use` |
 | route bank | normalized route records | `data/semantic_sets/route_bank.yaml` | ignored | `route_id`, `text`, `source`, `slice`, `language` |
@@ -108,8 +125,9 @@ and redistribution decision promotes a small public example.
 
 ## Source Admission Matrix
 
-Do not load every available dataset into the online route bank. Ingest upstream
-data into local artifacts, then split by use.
+Do not load every available dataset into the online route bank. Ingest
+authoritative upstream data broadly into local normalized artifacts, then split
+and cap by use.
 
 | source family | default use | route bank | eval/calibration | notes |
 | --- | --- | --- | --- | --- |
@@ -134,7 +152,12 @@ Route-bank-derived eval cases are smoke evidence only. They prove that samples
 are loaded and reachable; they do not prove general routing quality.
 
 Quality eval and calibration cases should be held out from route-bank examples
-unless the report explicitly labels the run as route-bank recall smoke.
+unless the report explicitly labels the run as route-bank recall smoke. In the
+source manifest this is expressed by `proposed_use`: only `route` records enter
+the online route bank, `eval` records enter eval assets, and `calibration`
+records enter calibration assets. Row-level `proposed_use` in curated YAML wins
+over the source default so one audited file can contain separate route, eval,
+and calibration candidates without mixing their generated outputs.
 
 Production samples may enter generated assets only after:
 
@@ -206,7 +229,9 @@ uv run python scripts/build_semantic_assets.py
 
 It reads `config/route_sources.yaml`, loads each allowed source, writes
 normalized records, and then writes route/eval/calibration assets according to
-each source's `intended_use`.
+each record's `proposed_use` and each source's selection `limit`. For
+authoritative sources with `ingest_all: true`, normalized records are full local
+ingest; generated route/eval/calibration YAMLs remain capped runtime artifacts.
 
 Default outputs:
 

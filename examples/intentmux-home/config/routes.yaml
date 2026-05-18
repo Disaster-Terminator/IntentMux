@@ -1,3 +1,7 @@
+# Runtime template. Copy examples/intentmux-home to your own INTENTMUX_HOME,
+# then edit this file there. The lite.target_model and deep.target_model values
+# below are the main deployment mapping from IntentMux route ids to your
+# upstream OpenAI-compatible model names or LiteLLM model groups.
 route_model: auto
 fallback_route_id: lite
 agent_signal_enabled: true

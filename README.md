@@ -121,6 +121,13 @@ OpenAI-compatible 请求如果带有 `tools` / legacy `functions`、工具调用
 uv run python -m router.app
 ```
 
+首次接入先确认这四件事：
+
+1. 选择运行形态：直连 IntentMux `:4001`，或在 LiteLLM 里新增 `semantic-router` sidecar 入口。
+2. 准备运行时配置：复制 `examples/intentmux-home/` 到自己的持久化目录，生产用 `ROUTER_CONFIG=/data/config/routes.yaml` 指向它。
+3. 修改模型映射：只在运行时 `routes.yaml` 里改 `routes.lite.target_model` 和 `routes.deep.target_model`，不要把本机 LiteLLM 路径或 token 写进仓库。
+4. 验证启动状态：跑 `/ready`、`scripts/preflight.py`，再用 `/v1/semantic-router/decision` 看一条请求的 `route_id`、`target_model` 和 `match_source`。
+
 默认端点：
 
 | 服务 | 地址 |
@@ -591,10 +598,18 @@ utterances 中第 12 条、来源为 `swebench_issue_resolution` 的样本；`ma
 产品控制面见 [docs/PROJECT_CONTROL.md](docs/PROJECT_CONTROL.md)；数据管线、上游语料、embedding cache
 和向量库取舍见 [docs/router_data_pipeline_research.md](docs/router_data_pipeline_research.md)。
 
+`config/route_sources.yaml` 的默认策略是“权威数据集尽量全量规范化，运行时索引分层限量”：
+`ingest_all: true` 的来源会进入本地 ignored normalized records，`limit` 只控制该来源最终进入
+route/eval/calibration 产物的数量。MASSIVE 这类带官方 split 的数据集按 split 接入：
+train 作为 route 候选，dev/test 作为 eval/calibration 候选。少量 `curated_yaml`
+只作为公开、脱敏的简体中文复杂意图 seed/overlay，不是长期替代权威数据集的手工流程。
+
 仓库默认只跟踪 example 基线：
 
 - `examples/route_bank.sample.yaml`：可运行的公开 route-bank 示例，`lite`
   展示 MASSIVE zh-CN general utterances，`deep` 展示 SWE-bench / HumanEval 类代码任务。
+- `data/source_samples/default_zh_cn_deep.example.yaml`：少量公开、脱敏、通用的简体中文
+  `deep` seed，只用于补足默认中文复杂意图覆盖；正式语义资产仍应离线生成并留在运行时目录。
 - `examples/eval_bank.sample.yaml`：可运行的 `lite` / `deep` regression 示例，用于
   clean clone、CI 和文档演示。
 - `config/eval_cases.yaml`：小型 smoke/regression suite，不再作为默认质量基线。

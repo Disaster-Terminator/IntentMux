@@ -3,7 +3,7 @@
 # This file declares source datasets and mapping strategy. Generated banks live
 # under data/semantic_sets/ and should keep source names for auditability.
 sources:
-  - name: massive_zh_cn_general
+  - name: massive_zh_cn_train
     kind: remote_tar_jsonl
     url: https://amazon-massive-nlu-dataset.s3.amazonaws.com/amazon-massive-dataset-1.0.tar.gz
     homepage: https://www.amazon.science/code-and-datasets/massive
@@ -15,43 +15,52 @@ sources:
     language: zh-CN
     slice: lite_general_zh
     intended_use: route
+    ingest_all: true
     limit: 80
     mappings:
       - field: partition
         include:
           - train
-      - field: scenario
-        include:
-          - general
-          - qa
-          - email
-          - lists
 
-  - name: massive_zh_tw_general
+  - name: massive_zh_cn_dev_eval
     kind: remote_tar_jsonl
     url: https://amazon-massive-nlu-dataset.s3.amazonaws.com/amazon-massive-dataset-1.0.tar.gz
     homepage: https://www.amazon.science/code-and-datasets/massive
     license: CC BY 4.0
     license_url: https://github.com/alexa/massive/blob/master/LICENSE
-    member: 1.0/data/zh-TW.jsonl
+    member: 1.0/data/zh-CN.jsonl
     route: lite
     text_field: utt
-    language: zh-TW
+    language: zh-CN
     slice: lite_general_zh
-    intended_use: route
-    limit: 40
+    intended_use: eval
+    ingest_all: true
+    limit: 200
     mappings:
       - field: partition
         include:
-          - train
-      - field: scenario
-        include:
-          - general
-          - qa
-          - email
-          - lists
+          - dev
 
-  - name: massive_en_us_general
+  - name: massive_zh_cn_test_calibration
+    kind: remote_tar_jsonl
+    url: https://amazon-massive-nlu-dataset.s3.amazonaws.com/amazon-massive-dataset-1.0.tar.gz
+    homepage: https://www.amazon.science/code-and-datasets/massive
+    license: CC BY 4.0
+    license_url: https://github.com/alexa/massive/blob/master/LICENSE
+    member: 1.0/data/zh-CN.jsonl
+    route: lite
+    text_field: utt
+    language: zh-CN
+    slice: lite_general_zh
+    intended_use: calibration
+    ingest_all: true
+    limit: 200
+    mappings:
+      - field: partition
+        include:
+          - test
+
+  - name: massive_en_us_train
     kind: remote_tar_jsonl
     url: https://amazon-massive-nlu-dataset.s3.amazonaws.com/amazon-massive-dataset-1.0.tar.gz
     homepage: https://www.amazon.science/code-and-datasets/massive
@@ -63,17 +72,63 @@ sources:
     language: en
     slice: lite_general_en
     intended_use: route
+    ingest_all: true
     limit: 40
     mappings:
       - field: partition
         include:
           - train
-      - field: scenario
+
+  - name: massive_en_us_dev_eval
+    kind: remote_tar_jsonl
+    url: https://amazon-massive-nlu-dataset.s3.amazonaws.com/amazon-massive-dataset-1.0.tar.gz
+    homepage: https://www.amazon.science/code-and-datasets/massive
+    license: CC BY 4.0
+    license_url: https://github.com/alexa/massive/blob/master/LICENSE
+    member: 1.0/data/en-US.jsonl
+    route: lite
+    text_field: utt
+    language: en
+    slice: lite_general_en
+    intended_use: eval
+    ingest_all: true
+    limit: 100
+    mappings:
+      - field: partition
         include:
-          - general
-          - qa
-          - email
-          - lists
+          - dev
+
+  - name: massive_en_us_test_calibration
+    kind: remote_tar_jsonl
+    url: https://amazon-massive-nlu-dataset.s3.amazonaws.com/amazon-massive-dataset-1.0.tar.gz
+    homepage: https://www.amazon.science/code-and-datasets/massive
+    license: CC BY 4.0
+    license_url: https://github.com/alexa/massive/blob/master/LICENSE
+    member: 1.0/data/en-US.jsonl
+    route: lite
+    text_field: utt
+    language: en
+    slice: lite_general_en
+    intended_use: calibration
+    ingest_all: true
+    limit: 100
+    mappings:
+      - field: partition
+        include:
+          - test
+
+  - name: curated_zh_cn_deep
+    kind: curated_yaml
+    path: data/source_samples/default_zh_cn_deep.example.yaml
+    homepage: https://github.com/Disaster-Terminator/IntentMux
+    license: Apache-2.0
+    license_url: https://www.apache.org/licenses/LICENSE-2.0
+    route: deep
+    text_field: text
+    language: zh-CN
+    slice: deep_debug_zh
+    intended_use: route
+    limit: 100
 
   - name: swebench_issue_resolution
     kind: huggingface
@@ -87,6 +142,7 @@ sources:
     language: en
     slice: deep_debug_issue
     intended_use: route
+    ingest_all: true
     limit: 80
 
   - name: mbpp_codegen
@@ -101,6 +157,7 @@ sources:
     language: en
     slice: deep_code_generation
     intended_use: route
+    ingest_all: true
     limit: 40
 
   - name: humaneval_codegen
@@ -115,4 +172,5 @@ sources:
     language: en
     slice: deep_code_generation
     intended_use: route
+    ingest_all: true
     limit: 40

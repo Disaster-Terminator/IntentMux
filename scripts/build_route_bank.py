@@ -29,6 +29,7 @@ class RouteSource:
     route: str
     text_field: str
     limit: int
+    ingest_all: bool = False
     language: str | None = None
     slice: str | None = None
     intended_use: str = "route"
@@ -58,8 +59,12 @@ def build_route_bank(
 ) -> dict[str, Any]:
     routes: dict[str, dict[str, list[dict[str, str]]]] = {}
     for source in sources:
+        if source.intended_use != "route":
+            continue
         selected: list[dict[str, str]] = []
         for row in source_rows.get(source.name, []):
+            if row.get("proposed_use", source.intended_use) != "route":
+                continue
             if not row_matches(row, source.mappings):
                 continue
             text = normalize_text(str(row.get(source.text_field, "")))
@@ -119,6 +124,7 @@ def source_metadata(source: RouteSource) -> dict[str, str | int | None]:
         "kind": source.kind,
         "route": source.route,
         "limit": source.limit,
+        "ingest_all": source.ingest_all,
         "url": source.url,
         "dataset": source.dataset,
         "split": source.split,
@@ -147,6 +153,7 @@ def load_sources(path: Path) -> list[RouteSource]:
             route=item["route"],
             text_field=item["text_field"],
             limit=int(item.get("limit", 100)),
+            ingest_all=bool(item.get("ingest_all", False)),
             language=item.get("language"),
             slice=item.get("slice"),
             intended_use=item.get("intended_use", "route"),
@@ -183,6 +190,16 @@ def load_rows(source: RouteSource, base_dir: Path) -> list[dict[str, Any]]:
                 if line.strip():
                     rows.append(json.loads(line))
         return rows
+
+    if source.kind == "curated_yaml":
+        if source.path is None:
+            raise ValueError(f"{source.name} curated_yaml source requires path")
+        path = base_dir / source.path
+        raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        samples = raw.get("samples", [])
+        if not isinstance(samples, list):
+            raise ValueError(f"{source.name} curated_yaml samples must be a list")
+        return [dict(sample) for sample in samples]
 
     if source.kind == "remote_tar_jsonl":
         if source.url is None or source.member is None:

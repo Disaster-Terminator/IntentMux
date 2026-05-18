@@ -1,0 +1,74 @@
+# Public, redacted Simplified-Chinese seed prompts for the default deep route.
+# These are generic examples, not production logs. They bootstrap Chinese-first
+# routing until larger audited corpora and local reviewed learning assets exist.
+samples:
+  - text: 请定位这个生产事故的根因，并给出可回滚的修复方案和验证步骤
+    route_id: deep
+    language: zh-CN
+    slice: deep_debug_zh
+    proposed_use: route
+    license: Apache-2.0
+    redacted: true
+
+  - text: 这个异步任务偶发重复扣款，请分析可能的竞态条件、幂等缺口和修复方案
+    route_id: deep
+    language: zh-CN
+    slice: deep_debug_zh
+    proposed_use: route
+    license: Apache-2.0
+    redacted: true
+
+  - text: 审查这个鉴权改动是否可能引入越权、权限绕过或敏感信息泄露
+    route_id: deep
+    language: zh-CN
+    slice: deep_security_zh
+    proposed_use: route
+    license: Apache-2.0
+    redacted: true
+
+  - text: 请评估这个接口是否会暴露 access token、refresh token 或 API key
+    route_id: deep
+    language: zh-CN
+    slice: deep_security_zh
+    proposed_use: route
+    license: Apache-2.0
+    redacted: true
+
+  - text: 基于下面多轮上下文梳理冲突结论，找出关键遗漏并给出迁移计划
+    route_id: deep
+    language: zh-CN
+    slice: deep_long_context_zh
+    proposed_use: route
+    license: Apache-2.0
+    input_chars: 16000
+    message_count: 8
+    context_policy: long_context
+    redacted: true
+
+  - text: 请从这份较长的变更记录中识别破坏兼容性的风险，并按严重程度排序
+    route_id: deep
+    language: zh-CN
+    slice: deep_long_context_zh
+    proposed_use: route
+    license: Apache-2.0
+    input_chars: 14000
+    message_count: 6
+    context_policy: long_context
+    redacted: true
+
+  - text: 这个生产故障是否可能由连接池耗尽、死锁或缓存击穿导致
+    route_id: deep
+    language: zh-CN
+    slice: deep_debug_zh
+    proposed_use: eval
+    license: Apache-2.0
+    redacted: true
+
+  - text: 判断这个安全补丁是否足以阻止越权访问，并说明剩余风险
+    route_id: deep
+    language: zh-CN
+    slice: deep_security_zh
+    proposed_use: calibration
+    license: Apache-2.0
+    weight: 1.5
+    redacted: true

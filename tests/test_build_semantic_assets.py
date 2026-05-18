@@ -7,7 +7,7 @@ from pathlib import Path
 
 import yaml
 
-from scripts.build_route_bank import RouteSource, SourceMapping
+from scripts.build_route_bank import RouteSource, SourceMapping, load_rows
 from scripts.build_semantic_assets import (
     build_calibration_bank,
     build_eval_bank_from_records,
@@ -80,6 +80,179 @@ def test_build_normalized_records_preserves_audit_fields_and_splits_uses():
     assert records[2]["message_count"] == 3
 
 
+def test_build_normalized_records_accepts_row_level_curated_metadata():
+    sources = [
+        RouteSource(
+            name="curated_zh_cn_deep",
+            kind="local_rows",
+            route="deep",
+            text_field="text",
+            limit=3,
+            language="zh-CN",
+            slice="deep_debug_zh",
+            intended_use="route",
+            license="Apache-2.0",
+        )
+    ]
+    rows = {
+        "curated_zh_cn_deep": [
+            {
+                "text": "请定位这个生产事故的根因，并给出可回滚的修复方案",
+                "route_id": "deep",
+                "language": "zh-CN",
+                "slice": "deep_debug_zh",
+                "proposed_use": "route",
+                "license": "Apache-2.0",
+            },
+            {
+                "text": "审查这个鉴权改动是否可能引入越权",
+                "route_id": "deep",
+                "language": "zh-CN",
+                "slice": "deep_security_zh",
+                "proposed_use": "eval",
+                "license": "Apache-2.0",
+            },
+        ],
+    }
+
+    records = build_normalized_records(sources, rows)
+
+    assert records[0]["slice"] == "deep_debug_zh"
+    assert records[1]["slice"] == "deep_security_zh"
+    assert records[1]["proposed_use"] == "eval"
+
+
+def test_ingest_all_keeps_full_normalized_records_but_caps_route_bank():
+    sources = [
+        RouteSource(
+            name="massive_zh_cn_general",
+            kind="local_rows",
+            route="lite",
+            text_field="utt",
+            limit=2,
+            ingest_all=True,
+            language="zh-CN",
+            slice="lite_general_zh",
+            intended_use="route",
+            license="CC BY 4.0",
+        )
+    ]
+    rows = {
+        "massive_zh_cn_general": [
+            {"utt": "帮我总结这段话"},
+            {"utt": "翻译成英文"},
+            {"utt": "给我列一个购物清单"},
+        ]
+    }
+
+    records = build_normalized_records(sources, rows)
+    route_bank = build_route_bank_from_records(records, sources)
+
+    assert [record["text"] for record in records] == [
+        "帮我总结这段话",
+        "翻译成英文",
+        "给我列一个购物清单",
+    ]
+    assert [
+        utterance["text"]
+        for utterance in route_bank["routes"]["lite"]["utterances"]
+    ] == [
+        "帮我总结这段话",
+        "翻译成英文",
+    ]
+
+
+def test_load_rows_reads_curated_yaml_samples(tmp_path: Path):
+    samples = tmp_path / "samples.yaml"
+    samples.write_text(
+        """
+samples:
+  - text: 请审查这个权限绕过风险
+    route_id: deep
+    language: zh-CN
+    slice: deep_security_zh
+    proposed_use: route
+    license: Apache-2.0
+""",
+        encoding="utf-8",
+    )
+    source = RouteSource(
+        name="curated_zh_cn_deep",
+        kind="curated_yaml",
+        path=str(samples),
+        route="deep",
+        text_field="text",
+        limit=10,
+    )
+
+    assert load_rows(source, Path(".")) == [
+        {
+            "text": "请审查这个权限绕过风险",
+            "route_id": "deep",
+            "language": "zh-CN",
+            "slice": "deep_security_zh",
+            "proposed_use": "route",
+            "license": "Apache-2.0",
+        }
+    ]
+
+
+def test_curated_yaml_pipeline_splits_mixed_proposed_uses():
+    source = RouteSource(
+        name="curated_zh_cn_deep",
+        kind="curated_yaml",
+        path="data/source_samples/default_zh_cn_deep.example.yaml",
+        route="deep",
+        text_field="text",
+        limit=100,
+        language="zh-CN",
+        slice="deep_debug_zh",
+        intended_use="route",
+        license="Apache-2.0",
+    )
+    rows = {source.name: load_rows(source, Path("."))}
+
+    records = build_normalized_records([source], rows)
+    route_bank = build_route_bank_from_records(records, [source])
+    eval_bank = build_eval_bank_from_records(records, [source])
+    calibration_bank = build_calibration_bank(records, [source])
+
+    route_ids = {
+        utterance["id"]
+        for route in route_bank["routes"].values()
+        for utterance in route["utterances"]
+    }
+    eval_ids = {case["id"] for case in eval_bank["cases"]}
+    calibration_ids = {case["id"] for case in calibration_bank["cases"]}
+
+    assert route_ids
+    assert eval_ids
+    assert calibration_ids
+    assert route_ids.isdisjoint(eval_ids)
+    assert route_ids.isdisjoint(calibration_ids)
+    assert eval_ids.isdisjoint(calibration_ids)
+    assert {"deep_debug_zh", "deep_security_zh", "deep_long_context_zh"}.issubset(
+        {record["slice"] for record in records}
+    )
+
+
+def test_curated_default_seed_declares_required_audit_fields():
+    source = RouteSource(
+        name="curated_zh_cn_deep",
+        kind="curated_yaml",
+        path="data/source_samples/default_zh_cn_deep.example.yaml",
+        route="deep",
+        text_field="text",
+        limit=100,
+    )
+    rows = load_rows(source, Path("."))
+    required = {"text", "route_id", "language", "slice", "proposed_use", "license"}
+
+    assert rows
+    assert all(required.issubset(row) for row in rows)
+    assert {row["language"] for row in rows} == {"zh-CN"}
+
+
 def test_asset_builders_keep_route_eval_and_calibration_separate():
     records = [
         {
@@ -119,6 +292,12 @@ def test_asset_builders_keep_route_eval_and_calibration_separate():
     eval_bank = build_eval_bank_from_records(records)
     calibration_bank = build_calibration_bank(records)
 
+    assert {case["id"] for case in eval_bank["cases"]}.isdisjoint(
+        {utterance["id"] for utterance in route_bank["routes"]["lite"]["utterances"]}
+    )
+    assert {case["id"] for case in calibration_bank["cases"]}.isdisjoint(
+        {utterance["id"] for utterance in route_bank["routes"]["lite"]["utterances"]}
+    )
     assert route_bank["routes"]["lite"]["utterances"] == [
         {
             "text": "帮我总结这段话",
@@ -240,13 +419,29 @@ def test_route_sources_manifest_declares_bilingual_v2_metadata():
     slices = {source.slice for source in sources}
     uses = {source.intended_use for source in sources}
     names = {source.name for source in sources}
+    curated = next(source for source in sources if source.name == "curated_zh_cn_deep")
+    curated_rows = load_rows(curated, Path("."))
+    curated_slices = {row["slice"] for row in curated_rows}
+    curated_uses = {row["proposed_use"] for row in curated_rows}
 
-    assert {"zh-CN", "zh-TW", "en"}.issubset(languages)
-    assert "massive_en_us_general" in names
+    assert {"zh-CN", "en"}.issubset(languages)
+    assert "zh-TW" not in languages
+    assert "massive_zh_tw_general" not in names
+    assert "curated_zh_cn_deep" in names
+    assert "massive_zh_cn_train" in names
+    assert "massive_en_us_train" in names
+    assert "massive_zh_cn_dev_eval" in names
+    assert "massive_en_us_test_calibration" in names
+    assert all(source.ingest_all for source in sources if source.kind in {"remote_tar_jsonl", "huggingface"})
     assert {
         "lite_general_zh",
         "lite_general_en",
+        "deep_debug_zh",
         "deep_debug_issue",
         "deep_code_generation",
     }.issubset(slices)
-    assert uses == {"route"}
+    assert {"deep_debug_zh", "deep_security_zh", "deep_long_context_zh"}.issubset(
+        curated_slices
+    )
+    assert {"route", "eval", "calibration"}.issubset(curated_uses)
+    assert uses == {"route", "eval", "calibration"}

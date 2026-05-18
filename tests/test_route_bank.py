@@ -75,6 +75,7 @@ def test_build_route_bank_maps_rows_to_routes_and_keeps_sources():
         "kind": "local_rows",
         "route": "lite",
         "limit": 2,
+        "ingest_all": False,
         "url": None,
         "dataset": None,
         "split": None,
@@ -100,12 +101,49 @@ def test_build_route_bank_maps_rows_to_routes_and_keeps_sources():
     ]
 
 
+def test_legacy_route_bank_builder_skips_non_route_records():
+    sources = [
+        RouteSource(
+            name="mixed_curated",
+            kind="local_rows",
+            route="deep",
+            text_field="text",
+            limit=10,
+        ),
+        RouteSource(
+            name="eval_only",
+            kind="local_rows",
+            route="deep",
+            text_field="text",
+            limit=10,
+            intended_use="eval",
+        ),
+    ]
+    rows = {
+        "mixed_curated": [
+            {"text": "进入在线 route bank", "proposed_use": "route"},
+            {"text": "只能进入 eval bank", "proposed_use": "eval"},
+            {"text": "只能进入 calibration bank", "proposed_use": "calibration"},
+        ],
+        "eval_only": [
+            {"text": "source 级 eval 也不能进 route bank"},
+        ],
+    }
+
+    bank = build_route_bank(sources, rows)
+
+    assert bank["routes"]["deep"]["utterances"] == [
+        {"text": "进入在线 route bank", "source": "mixed_curated"}
+    ]
+
+
 def test_route_sources_manifest_loads_mature_sources():
     sources = load_sources(Path("config/route_sources.yaml"))
 
     names = {source.name for source in sources}
 
-    assert "massive_zh_cn_general" in names
+    assert "massive_zh_cn_train" in names
+    assert "massive_zh_cn_dev_eval" in names
     assert "swebench_issue_resolution" in names
     assert "mbpp_codegen" in names
     assert "humaneval_codegen" in names

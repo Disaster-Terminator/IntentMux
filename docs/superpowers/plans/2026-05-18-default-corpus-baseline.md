@@ -4,7 +4,7 @@
 
 **Goal:** Replace the current bootstrap corpus with a simpler, auditable default baseline: Simplified Chinese first, English retained for ecosystem coverage, Retinue/log-derived prompts kept out of the public default unless reviewed and generalized.
 
-**Architecture:** Keep `routes.yaml` as the only route-policy entry. Keep generated assets local and ignored. Change the source manifest and builders so default assets separate `route`, `eval`, and `calibration`, exclude zh-TW by default, and include Chinese `deep` examples only when they are license-safe or curated/redacted.
+**Architecture:** Keep `routes.yaml` as the only route-policy entry. Keep generated assets local and ignored. Change the source manifest and builders so default assets separate `route`, `eval`, and `calibration`, exclude zh-TW by default, ingest authoritative upstream datasets broadly into normalized local artifacts, and cap only the generated online assets. Chinese `deep` examples are license-safe curated/redacted seed overlays until stronger public datasets are admitted.
 
 **Tech Stack:** Python 3.11+, uv, YAML/JSONL semantic assets, pytest, existing `scripts/build_semantic_assets.py`.
 
@@ -12,11 +12,17 @@
 
 ## Evidence
 
-- Current local assets are still bootstrap-only:
+- Previous local assets were bootstrap-only:
   - `data/semantic_sets/route_bank.yaml`: `lite=120`, `deep=160`.
-  - `lite` sources are `massive_zh_cn_general` and `massive_zh_tw_general`.
-  - `deep` sources are all English: SWE-bench, MBPP, HumanEval.
+  - `lite` sources were `massive_zh_cn_general` and `massive_zh_tw_general`.
+  - `deep` sources were all English: SWE-bench, MBPP, HumanEval.
   - `data/semantic_sets/eval_bank.yaml`: `lite=103`, `deep=104`, with zh-TW in `lite` and English-only `deep`.
+- Current generated ignored assets after this plan:
+  - normalized records: 36,008.
+  - by language: `zh-CN=16,529`, `en=19,479`.
+  - by use: `route=25,992`, `eval=4,067`, `calibration=5,949`.
+  - online route bank remains capped: `lite=120`, `deep=166`.
+  - eval/calibration outputs are capped at `301` cases each.
 - User traffic is biased:
   - Local logs include many Retinue/OpenCode prompts, often English.
   - These are useful dogfood evidence, but must not dominate the public default baseline.
@@ -32,8 +38,8 @@
 1. Default public route/eval baseline is `zh-CN` plus limited English, not zh-TW.
 2. `massive_zh_tw_general` is removed from default `config/route_sources.yaml`; zh-TW can return later as an optional source.
 3. English remains in default sources, but English Retinue/OpenCode production prompts are not automatically promoted.
-4. Chinese `deep` route examples should start as small curated/redacted samples, not direct bulk conversion from C-Eval/CMMLU/CS-Eval.
-5. Full upstream datasets are not "online route bank". They are raw/normalized local artifacts; route bank stays smaller than eval/calibration.
+4. Chinese `deep` route examples should start as small curated/redacted seed overlays, not direct bulk conversion from C-Eval/CMMLU/CS-Eval.
+5. Full upstream datasets are not "online route bank". They are raw/normalized local artifacts; route/eval/calibration outputs stay capped by source `limit`.
 6. Embedding cache comes after the corpus baseline. Initial cache backend is JSONL + manifest, not SQLite.
 
 ## Task 1: Manifest Cleanup
@@ -42,10 +48,10 @@
 - Modify: `config/route_sources.yaml`
 - Modify: `tests/test_build_semantic_assets.py`
 
-- [ ] Remove `massive_zh_tw_general` from the default source manifest.
-- [ ] Keep `massive_zh_cn_general` and `massive_en_us_general`.
-- [ ] Add a manifest test asserting default sources do not include `zh-TW`.
-- [ ] Keep route/eval generation behavior unchanged for remaining sources.
+- [x] Remove `massive_zh_tw_general` from the default source manifest.
+- [x] Replace narrow MASSIVE scenario subsets with split-aware full-source entries: train for route candidates, dev/test for eval/calibration candidates.
+- [x] Add a manifest test asserting default sources do not include `zh-TW`.
+- [x] Keep online route/eval/calibration outputs capped by per-source `limit`.
 
 Verification:
 
@@ -60,10 +66,10 @@ uv run python -m pytest tests/test_build_semantic_assets.py tests/test_route_ban
 - Modify: `scripts/build_semantic_assets.py`
 - Modify: `tests/test_build_semantic_assets.py`
 
-- [ ] Add a small tracked public sample file with redacted, generic Simplified Chinese `deep` prompts.
-- [ ] Support `curated_yaml` sources in `build_semantic_assets.py`.
-- [ ] Add `deep_debug_zh`, `deep_security_zh`, and `deep_long_context_zh` slices as route/eval candidates.
-- [ ] Ensure samples carry `language: zh-CN`, `slice`, `source`, `license`, and `proposed_use`.
+- [x] Add a small tracked public sample file with redacted, generic Simplified Chinese `deep` prompts.
+- [x] Support `curated_yaml` sources in `build_semantic_assets.py` through the shared loader and row-level metadata.
+- [x] Add `deep_debug_zh`, `deep_security_zh`, and `deep_long_context_zh` slices as route/eval/calibration candidates.
+- [x] Ensure samples carry `language: zh-CN`, `slice`, `license`, and `proposed_use`; source name is preserved from the manifest for audit.
 
 Verification:
 
@@ -78,9 +84,9 @@ uv run python -m pytest tests/test_build_semantic_assets.py -q
 - Modify: `tests/test_build_semantic_assets.py`
 - Modify: `docs/router_data_pipeline_research.md`
 
-- [ ] Ensure route-bank records do not enter eval/calibration output unless explicitly marked as smoke.
-- [ ] Add a test proving `proposed_use: route` records are excluded from eval/calibration.
-- [ ] Document that public route-bank recall smoke is not quality evidence.
+- [x] Ensure route-bank records do not enter eval/calibration output unless explicitly marked as smoke.
+- [x] Add tests proving `proposed_use: route` records are excluded from eval/calibration and mixed curated YAML outputs do not cross-contaminate.
+- [x] Document that public route-bank recall smoke is not quality evidence.
 
 Verification:
 
@@ -95,9 +101,9 @@ uv run python -m pytest tests/test_build_semantic_assets.py tests/test_eval_rout
 - Modify: `examples/intentmux-home/config/routes.yaml`
 - Modify: `README.md`
 
-- [ ] Add top comments to both `routes.yaml` files: built-in development default vs runtime template.
-- [ ] Make `examples/intentmux-home/config/routes.yaml` the clearest place to edit `lite.target_model` and `deep.target_model`.
-- [ ] Add a compact "first run" checklist before advanced docs in README.
+- [x] Add top comments to both `routes.yaml` files: built-in development default vs runtime template.
+- [x] Make `examples/intentmux-home/config/routes.yaml` the clearest place to edit `lite.target_model` and `deep.target_model`.
+- [x] Add a compact "first run" checklist before advanced docs in README.
 
 Verification:
 
@@ -115,10 +121,10 @@ git diff --check
   - `data/semantic_sets/eval_bank.yaml`
   - `data/semantic_sets/calibration_bank.yaml`
 
-- [ ] Run the builder locally.
-- [ ] Inspect counts by `route`, `language`, `slice`, and `source`.
-- [ ] Do not commit generated assets.
-- [ ] Use the report to decide whether this baseline is good enough to deploy locally.
+- [x] Run the builder locally.
+- [x] Inspect counts by `route`, `language`, `slice`, and `source`.
+- [x] Do not commit generated assets.
+- [x] Use the report to decide whether this baseline is good enough to deploy locally: it is a stronger default asset baseline, but not yet a threshold-quality release gate.
 
 Verification:
 
@@ -133,9 +139,9 @@ uv run python -m pytest tests/test_build_semantic_assets.py tests/test_route_qua
 **Files:**
 - Modify: `docs/router_data_pipeline_research.md`
 
-- [ ] Keep cache out of this corpus-baseline change.
-- [ ] Record next cache design: JSONL + manifest; cache route-bank utterance embeddings only.
-- [ ] Explicitly defer SQLite until multi-process shared cache, large-scale query needs, or transaction requirements appear.
+- [x] Keep cache out of this corpus-baseline change.
+- [x] Record next cache design: JSONL + manifest; cache route-bank utterance embeddings only.
+- [x] Explicitly defer SQLite until multi-process shared cache, large-scale query needs, or transaction requirements appear.
 
 ## Stop Conditions
 

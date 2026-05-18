@@ -39,6 +39,11 @@ def build_normalized_records(
         for row in source_rows.get(source.name, []):
             if not row_matches(row, source.mappings):
                 continue
+            proposed_use = str(row.get("proposed_use", source.intended_use))
+            if proposed_use not in SUPPORTED_USES:
+                raise ValueError(
+                    f"{source.name}: proposed_use must be one of {sorted(SUPPORTED_USES)}"
+                )
             text = normalize_text(str(row.get(source.text_field, "")))
             if not text:
                 continue
@@ -46,18 +51,18 @@ def build_normalized_records(
                 "id": normalized_record_id(source.name, text),
                 "text": text,
                 "source": source.name,
-                "route_id": source.route,
-                "language": source.language or "unknown",
-                "slice": source.slice or "unsliced",
-                "proposed_use": source.intended_use,
-                "license": source.license or "unknown",
+                "route_id": str(row.get("route_id", source.route)),
+                "language": str(row.get("language", source.language or "unknown")),
+                "slice": str(row.get("slice", source.slice or "unsliced")),
+                "proposed_use": proposed_use,
+                "license": str(row.get("license", source.license or "unknown")),
             }
             for key in ("input_chars", "message_count", "context_policy", "weight"):
                 if key in row:
                     record[key] = row[key]
             records.append(record)
             selected += 1
-            if selected >= source.limit:
+            if not source.ingest_all and selected >= source.limit:
                 break
     return records
 
@@ -67,10 +72,37 @@ def normalized_record_id(source_name: str, text: str) -> str:
     return f"{source_name}:{digest}"
 
 
-def build_route_bank_from_records(records: list[dict[str, Any]]) -> dict[str, Any]:
+def source_limits(sources: list[RouteSource] | None) -> dict[str, int] | None:
+    if sources is None:
+        return None
+    return {source.name: source.limit for source in sources}
+
+
+def within_source_limit(
+    record: dict[str, Any],
+    limits: dict[str, int] | None,
+    counts: dict[str, int],
+) -> bool:
+    if limits is None:
+        return True
+    source_name = str(record["source"])
+    if counts.get(source_name, 0) >= limits.get(source_name, 0):
+        return False
+    counts[source_name] = counts.get(source_name, 0) + 1
+    return True
+
+
+def build_route_bank_from_records(
+    records: list[dict[str, Any]],
+    sources: list[RouteSource] | None = None,
+) -> dict[str, Any]:
     routes: dict[str, dict[str, list[dict[str, str]]]] = {}
+    limits = source_limits(sources)
+    counts: dict[str, int] = {}
     for record in records:
         if record["proposed_use"] != "route":
+            continue
+        if not within_source_limit(record, limits, counts):
             continue
         route = routes.setdefault(record["route_id"], {"utterances": []})
         route["utterances"].append(
@@ -89,21 +121,34 @@ def build_route_bank_from_records(records: list[dict[str, Any]]) -> dict[str, An
     }
 
 
-def build_eval_bank_from_records(records: list[dict[str, Any]]) -> dict[str, Any]:
+def build_eval_bank_from_records(
+    records: list[dict[str, Any]],
+    sources: list[RouteSource] | None = None,
+) -> dict[str, Any]:
+    limits = source_limits(sources)
+    counts: dict[str, int] = {}
     return {
         "schema": "intentmux-route-eval-v2",
         "cases": [
             eval_case_from_record(record)
             for record in records
             if record["proposed_use"] == "eval"
+            and within_source_limit(record, limits, counts)
         ],
     }
 
 
-def build_calibration_bank(records: list[dict[str, Any]]) -> dict[str, Any]:
+def build_calibration_bank(
+    records: list[dict[str, Any]],
+    sources: list[RouteSource] | None = None,
+) -> dict[str, Any]:
+    limits = source_limits(sources)
+    counts: dict[str, int] = {}
     cases: list[dict[str, Any]] = []
     for record in records:
         if record["proposed_use"] != "calibration":
+            continue
+        if not within_source_limit(record, limits, counts):
             continue
         case = eval_case_from_record(record)
         if "weight" in record:
@@ -167,9 +212,9 @@ def main() -> None:
     records = build_normalized_records(sources, rows)
 
     write_jsonl(REPO_ROOT / args.normalized_output, records)
-    write_yaml(REPO_ROOT / args.route_bank_output, build_route_bank_from_records(records))
-    write_yaml(REPO_ROOT / args.eval_bank_output, build_eval_bank_from_records(records))
-    write_yaml(REPO_ROOT / args.calibration_bank_output, build_calibration_bank(records))
+    write_yaml(REPO_ROOT / args.route_bank_output, build_route_bank_from_records(records, sources))
+    write_yaml(REPO_ROOT / args.eval_bank_output, build_eval_bank_from_records(records, sources))
+    write_yaml(REPO_ROOT / args.calibration_bank_output, build_calibration_bank(records, sources))
 
     print(
         "wrote "
