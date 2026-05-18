@@ -34,6 +34,7 @@ asyncio_mode = "auto"
 pythonpath = ["."]
 
 [tool.ruff.lint.per-file-ignores]
+"scripts/build_semantic_assets.py" = ["E402"]
 "scripts/eval_routes.py" = ["E402"]
 "scripts/select_review_candidates.py" = ["E402"]
 "scripts/verify_route_contract.py" = ["E402"]

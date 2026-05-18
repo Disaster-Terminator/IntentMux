@@ -15,6 +15,9 @@ data/source_samples/*.jsonl
 !data/source_samples/production_review.example.jsonl
 data/semantic_sets/*.yaml
 data/semantic_sets/*.jsonl
+data/semantic_sets/**/*.yaml
+data/semantic_sets/**/*.jsonl
+data/cache/
 logs/
 !examples/intentmux-home/logs/
 !examples/intentmux-home/logs/routes/

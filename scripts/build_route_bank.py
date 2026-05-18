@@ -29,6 +29,9 @@ class RouteSource:
     route: str
     text_field: str
     limit: int
+    language: str | None = None
+    slice: str | None = None
+    intended_use: str = "route"
     path: str | None = None
     url: str | None = None
     member: str | None = None
@@ -144,6 +147,9 @@ def load_sources(path: Path) -> list[RouteSource]:
             route=item["route"],
             text_field=item["text_field"],
             limit=int(item.get("limit", 100)),
+            language=item.get("language"),
+            slice=item.get("slice"),
+            intended_use=item.get("intended_use", "route"),
             path=item.get("path"),
             url=item.get("url"),
             member=item.get("member"),

@@ -12,6 +12,9 @@ sources:
     member: 1.0/data/zh-CN.jsonl
     route: lite
     text_field: utt
+    language: zh-CN
+    slice: lite_general_zh
+    intended_use: route
     limit: 80
     mappings:
       - field: partition
@@ -33,6 +36,33 @@ sources:
     member: 1.0/data/zh-TW.jsonl
     route: lite
     text_field: utt
+    language: zh-TW
+    slice: lite_general_zh
+    intended_use: route
+    limit: 40
+    mappings:
+      - field: partition
+        include:
+          - train
+      - field: scenario
+        include:
+          - general
+          - qa
+          - email
+          - lists
+
+  - name: massive_en_us_general
+    kind: remote_tar_jsonl
+    url: https://amazon-massive-nlu-dataset.s3.amazonaws.com/amazon-massive-dataset-1.0.tar.gz
+    homepage: https://www.amazon.science/code-and-datasets/massive
+    license: CC BY 4.0
+    license_url: https://github.com/alexa/massive/blob/master/LICENSE
+    member: 1.0/data/en-US.jsonl
+    route: lite
+    text_field: utt
+    language: en
+    slice: lite_general_en
+    intended_use: route
     limit: 40
     mappings:
       - field: partition
@@ -54,6 +84,9 @@ sources:
     split: test
     route: deep
     text_field: problem_statement
+    language: en
+    slice: deep_debug_issue
+    intended_use: route
     limit: 80
 
   - name: mbpp_codegen
@@ -65,6 +98,9 @@ sources:
     split: test
     route: deep
     text_field: text
+    language: en
+    slice: deep_code_generation
+    intended_use: route
     limit: 40
 
   - name: humaneval_codegen
@@ -76,4 +112,7 @@ sources:
     split: test
     route: deep
     text_field: prompt
+    language: en
+    slice: deep_code_generation
+    intended_use: route
     limit: 40

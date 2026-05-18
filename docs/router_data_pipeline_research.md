@@ -195,6 +195,30 @@ Rollout-ready changes must include:
 - quality report recommendation;
 - rollback note.
 
+## Current Command
+
+The first v2 builder is:
+
+```bash
+uv sync --group assets
+uv run python scripts/build_semantic_assets.py
+```
+
+It reads `config/route_sources.yaml`, loads each allowed source, writes
+normalized records, and then writes route/eval/calibration assets according to
+each source's `intended_use`.
+
+Default outputs:
+
+```text
+data/semantic_sets/normalized/semantic_records.jsonl
+data/semantic_sets/route_bank.yaml
+data/semantic_sets/eval_bank.yaml
+data/semantic_sets/calibration_bank.yaml
+```
+
+These files are local artifacts and stay ignored by git.
+
 ## Open Decisions
 
 These decisions must be resolved by evidence or implementation constraints:

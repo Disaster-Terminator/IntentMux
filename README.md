@@ -579,15 +579,21 @@ utterances 中第 12 条、来源为 `swebench_issue_resolution` 的样本；`ma
   clean clone、CI 和文档演示。
 - `config/eval_cases.yaml`：小型 smoke/regression suite，不再作为默认质量基线。
 
-正式生成的 `data/semantic_sets/route_bank.yaml` 和 `data/semantic_sets/eval_bank.yaml`
-是本地/生产资产，默认被 git 忽略。`intentmux_daily_health.py` 会优先使用这些正式资产；
-如果不存在，则退回到 `examples/*.sample.yaml`，保证新用户 clone 后仍能跑通工具链。
+正式生成的 `data/semantic_sets/route_bank.yaml`、`data/semantic_sets/eval_bank.yaml`、
+`data/semantic_sets/calibration_bank.yaml` 和
+`data/semantic_sets/normalized/*.jsonl` 是本地/生产资产，默认被 git 忽略。
+`intentmux_daily_health.py` 会优先使用正式 route/eval 资产；如果不存在，则退回到
+`examples/*.sample.yaml`，保证新用户 clone 后仍能跑通工具链。
 
 ```bash
 uv sync --group assets
-uv run python scripts/build_route_bank.py
-uv run python scripts/build_eval_bank.py --per-route-limit 100
+uv run python scripts/build_semantic_assets.py
 ```
+
+`scripts/build_semantic_assets.py` 会从 `config/route_sources.yaml` 生成 normalized
+records，并按 `intended_use` 分流到 route bank、eval bank 和 calibration bank。
+旧的 `scripts/build_route_bank.py` / `scripts/build_eval_bank.py` 仍可用于 bootstrap
+和兼容流程，但新的质量基线应优先走 `dataset-pipeline-v2`。
 
 生成文件默认不进 git。生产 review 样本必须先脱敏，再导入 eval：
 
