@@ -29,9 +29,11 @@ def run_script(*args: str, env: dict[str, str] | None = None) -> subprocess.Comp
 
 def test_compose_example_defaults_to_ignored_repo_runtime_home():
     compose = yaml.safe_load(COMPOSE_EXAMPLE.read_text(encoding="utf-8"))
-    volumes = compose["services"]["intentmux"]["volumes"]
+    service = compose["services"]["intentmux"]
+    volumes = service["volumes"]
 
     assert "${INTENTMUX_HOME:-../.intentmux-home}:/data" in volumes
+    assert service["environment"]["INTENTMUX_HOME"] == "/data"
 
 
 def test_deploy_script_dry_run_is_parameterized(tmp_path: Path):
@@ -56,10 +58,44 @@ def test_deploy_script_dry_run_is_parameterized(tmp_path: Path):
     assert "wait for http://127.0.0.1:4999/ready" in result.stdout
     assert "wait for container intentmux to become healthy" in result.stdout
     assert "scripts/preflight.py --router-base-url http://127.0.0.1:4999" in result.stdout
-    assert "uv run python -c" in result.stdout
-    assert "summarize\\ this\\ tool\\ schema" in result.stdout
-    assert "policy_id" in result.stdout
-    assert "agent_signal" in result.stdout
+    assert "cost-first decision smoke" in result.stdout
+    assert "summarize\\ this\\ tool\\ schema" not in result.stdout
+    assert "policy_id" not in result.stdout
+    assert "agent_signal" not in result.stdout
+
+
+def test_deploy_script_dry_run_prints_rollout_log_path(tmp_path: Path):
+    compose_file = tmp_path / "docker-compose.yml"
+    log_dir = tmp_path / "rollouts"
+    compose_file.write_text("services: {}\n", encoding="utf-8")
+
+    result = run_script(
+        "--dry-run",
+        "--allow-dirty",
+        env={
+            "INTENTMUX_COMPOSE_FILE": str(compose_file),
+            "INTENTMUX_ROLLOUT_LOG_DIR": str(log_dir),
+        },
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "rollout log:" in result.stdout
+    assert str(log_dir) in result.stdout
+
+
+def test_deploy_script_verbose_dry_run_announces_verbose_output(tmp_path: Path):
+    compose_file = tmp_path / "docker-compose.yml"
+    compose_file.write_text("services: {}\n", encoding="utf-8")
+
+    result = run_script(
+        "--dry-run",
+        "--allow-dirty",
+        "--verbose",
+        env={"INTENTMUX_COMPOSE_FILE": str(compose_file)},
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "verbose command output enabled" in result.stdout
 
 
 def test_deploy_script_checks_existing_sidecar_before_rebuild(tmp_path: Path):

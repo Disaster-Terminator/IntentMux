@@ -9,6 +9,7 @@ Manually roll out an IntentMux sidecar managed by Docker Compose.
 
 Options:
   --dry-run              Print planned commands without running them.
+  --verbose              Stream full command output to the terminal.
   --yes                  Confirm that this command may restart the IntentMux service.
   --allow-dirty          Allow rollout from a dirty git worktree.
   --skip-tests           Skip pytest. Route contract and preflight still run.
@@ -25,6 +26,7 @@ Environment:
   INTENTMUX_API_KEY            Optional inbound API key for preflight.
   ROUTER_INBOUND_API_KEY       Fallback inbound API key when INTENTMUX_API_KEY is unset.
   INTENTMUX_READY_TIMEOUT      Wait timeout in seconds. Default: 60
+  INTENTMUX_ROLLOUT_LOG_DIR    Command log directory. Default: .intentmux-home/logs/rollouts
 EOF
 }
 
@@ -41,11 +43,17 @@ allow_dirty=0
 skip_tests=0
 sync_runtime_config=0
 ready_timeout="${INTENTMUX_READY_TIMEOUT:-60}"
+verbose=0
+rollout_log_dir="${INTENTMUX_ROLLOUT_LOG_DIR:-${repo_dir}/.intentmux-home/logs/rollouts}"
+rollout_log="${rollout_log_dir}/intentmux-rollout-$(date +%Y%m%d-%H%M%S).log"
 
 while (($#)); do
   case "$1" in
     --dry-run)
       dry_run=1
+      ;;
+    --verbose)
+      verbose=1
       ;;
     --yes)
       confirmed=1
@@ -95,7 +103,49 @@ run() {
     quote_args "$@"
     return 0
   fi
-  "$@"
+  log "run: $(quote_args "$@")"
+  if ((verbose)); then
+    "$@" 2>&1 | tee -a "$rollout_log"
+    return "${PIPESTATUS[0]}"
+  fi
+  {
+    printf '+ '
+    quote_args "$@"
+    "$@"
+  } >>"$rollout_log" 2>&1 || {
+    local status=$?
+    echo "command failed with exit ${status}: $(quote_args "$@")" >&2
+    echo "last 80 log lines from ${rollout_log}:" >&2
+    tail -80 "$rollout_log" >&2 || true
+    return "$status"
+  }
+}
+
+run_labeled() {
+  local label="$1"
+  shift
+  if ((dry_run)); then
+    printf '+ %s\n' "$label"
+    return 0
+  fi
+  log "run: $label"
+  if ((verbose)); then
+    {
+      printf '+ %s\n' "$label"
+      "$@"
+    } 2>&1 | tee -a "$rollout_log"
+    return "${PIPESTATUS[0]}"
+  fi
+  {
+    printf '+ %s\n' "$label"
+    "$@"
+  } >>"$rollout_log" 2>&1 || {
+    local status=$?
+    echo "command failed with exit ${status}: ${label}" >&2
+    echo "last 80 log lines from ${rollout_log}:" >&2
+    tail -80 "$rollout_log" >&2 || true
+    return "$status"
+  }
 }
 
 wait_for_ready() {
@@ -153,6 +203,8 @@ if ((dry_run == 0 && confirmed == 0)); then
   exit 1
 fi
 
+mkdir -p "$rollout_log_dir"
+
 preflight_cmd=(uv run python scripts/preflight.py --router-base-url "$base_url")
 if [[ -n "$api_key" ]]; then
   preflight_cmd+=(--intentmux-api-key "$api_key")
@@ -164,6 +216,10 @@ log "repo: $repo_dir"
 log "compose file: $compose_file"
 log "service: $service"
 log "base url: $base_url"
+log "rollout log: $rollout_log"
+if ((verbose)); then
+  log "verbose command output enabled"
+fi
 
 cd "$repo_dir"
 require_file "$compose_file" "INTENTMUX_COMPOSE_FILE"
@@ -211,7 +267,7 @@ run "${canonical_preflight_cmd[@]}"
 
 cost_first_payload='{"model":"auto","messages":[{"role":"user","content":"summarize this tool schema"}],"tools":[{"type":"function","function":{"name":"read_file","description":"read a file","parameters":{"type":"object","properties":{}}}}],"tool_choice":"auto"}'
 cost_first_cmd=(uv run python -c 'import json, sys, urllib.request; url=sys.argv[1]+"/v1/semantic-router/decision"; payload=sys.argv[2].encode(); req=urllib.request.Request(url,data=payload,headers={"Content-Type":"application/json"}); data=json.loads(urllib.request.urlopen(req,timeout=30).read()); print(json.dumps(data,ensure_ascii=False)); assert data.get("policy_id")!="agent_signal"; assert data.get("route_id")=="lite"' "$base_url" "$cost_first_payload")
-run "${cost_first_cmd[@]}"
+run_labeled "cost-first decision smoke" "${cost_first_cmd[@]}"
 
 if ((dry_run)); then
   log "dry run completed for commit $current_commit"

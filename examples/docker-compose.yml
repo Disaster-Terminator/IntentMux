@@ -10,6 +10,7 @@ services:
     volumes:
       - "${INTENTMUX_HOME:-../.intentmux-home}:/data"
     environment:
+      INTENTMUX_HOME: "/data"
       ROUTER_HOST: "0.0.0.0"
       ROUTER_PORT: "4001"
       ROUTER_CONFIG: "/data/config/routes.yaml"
