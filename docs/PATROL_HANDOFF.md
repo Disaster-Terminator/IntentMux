@@ -27,6 +27,12 @@ Repository scripts are the reusable product surface. Scheduler wrappers, job
 IDs, notification targets, and machine-specific absolute paths are deployment
 state and should stay outside this repository.
 
+The repository includes a generic wrapper template at
+`examples/schedulers/intentmux-daily-health.sh`. Copy it into the scheduler or
+ops-agent workspace and customize environment variables there. For example,
+Hermes cron wrapper paths, Hermes job IDs, escalation fingerprints, and message
+delivery targets are local operations state, not IntentMux source files.
+
 ## Runtime Inputs
 
 Choose these values in your deployment:
@@ -64,6 +70,14 @@ The LiteLLM env file is optional. Use it only when E2E needs to source
 `LITELLM_MASTER_KEY` or equivalent credentials.
 
 ## Main Patrol Command
+
+For a scheduler-owned wrapper, start from:
+
+```bash
+cp examples/schedulers/intentmux-daily-health.sh /path/owned/by/your/scheduler/
+```
+
+Then configure environment variables in that scheduler's own config.
 
 ```bash
 uv --directory "$INTENTMUX_REPO" run python scripts/intentmux_daily_health.py \
