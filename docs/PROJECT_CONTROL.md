@@ -89,8 +89,10 @@ item is closed.
 
 1. Keep this control surface, evidence status, log-driven loop, and plan
    registry consistent.
-2. Add a learning import gate for accepted redacted cases.
-3. Tune route bank, hard rules, threshold, or margin only after reports show a
+2. Use `docs/router_data_pipeline_research.md` as the current research baseline
+   for dataset-pipeline and embedding-cache design.
+3. Add a learning import gate for accepted redacted cases.
+4. Tune route bank, hard rules, threshold, or margin only after reports show a
    repeated actionable pattern.
 
 ## Stop Conditions
@@ -112,3 +114,5 @@ Stop and discuss before work that would:
   https://sky.cs.berkeley.edu/project/routellm/
 - RouterBench:
   https://arxiv.org/abs/2403.12031
+- Current data-pipeline research:
+  `docs/router_data_pipeline_research.md`
