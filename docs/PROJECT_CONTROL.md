@@ -5,9 +5,13 @@ roadmaps, or research notes.
 
 ## Vision
 
-IntentMux is a lightweight OpenAI-compatible `lite` / `deep` router. It should
-improve as it is used, but "learnable" means evidence-driven operations, not a
-large labeling or training project.
+IntentMux is a lightweight OpenAI-compatible `lite` / `deep` router. It is
+Chinese-first, not Chinese-only: Chinese production quality is the product
+differentiator, while English routing data and mature English router practices
+must keep the default router from falling behind the broader ecosystem.
+
+IntentMux should improve as it is used, but "learnable" means evidence-driven
+operations, not a large labeling or training project.
 
 ```text
 runtime logs
@@ -44,17 +48,41 @@ Keep out of scope:
 - treating AI-generated labels as truth without validation.
 - runtime self-modification of thresholds, hard rules, or route banks.
 
+## Default Routing Standard
+
+The default router should be cost-first and promote only when there is evidence
+that `deep` is needed.
+
+Use this decision standard:
+
+```text
+explicit route
+  -> high-precision hard escalation
+  -> embedded route-bank similarity
+  -> threshold and margin
+  -> fallback to lite when confidence is low
+```
+
+Quality changes must be judged by both routing quality and `deep` call rate.
+Every route-bank, hard-rule, threshold, or margin change should compare against
+`always-lite`, `always-deep`, and rule-only baselines.
+
 ## Data Policy
 
 Use mature public data only when it naturally maps to `lite` / `deep`.
 
-- MASSIVE Chinese general utterances can support `lite` route-bank examples.
-- SWE-bench / MBPP / HumanEval-like coding tasks can support `deep` examples.
-- C-Eval, CMMLU, LongBench, DataCLUE, SuperCLUE-Code3, and similar benchmarks
-  are methodology or local-only evidence unless a route label is natural and
-  reviewable.
+- Chinese general and short-task data can support `lite` route-bank examples.
+- English and Chinese coding, debugging, security, and long-context data can
+  support `deep` route-bank examples when the mapping is natural.
+- C-Eval, CMMLU, LongBench, DataCLUE, SuperCLUE-Code3, RouterBench,
+  LLMRouterBench, and similar benchmarks are methodology, eval, or calibration
+  evidence unless a route label is natural and reviewable.
 - Redacted production review samples can become regression cases after AI
   review, human audit when needed, and schema/privacy validation.
+
+Do not solve the data gap by bulk-translating English benchmark data and
+presenting it as Chinese quality evidence. Do use English routing datasets and
+methods to validate the scoring mechanism and baseline comparisons.
 
 ## Current State
 
@@ -77,7 +105,11 @@ Implemented:
 
 Not closed:
 
+- the route bank is still `bootstrap-v1`, not a serious bilingual quality
+  baseline;
 - accepted findings are not routinely imported into redacted regression cases;
+- route/eval/calibration assets are not cleanly separated;
+- embedding vectors are not persisted across restarts;
 - threshold and margin are not calibrated from enough representative evidence;
 - full-history logs still include legacy `fast` / `strong`, so current policy
   analysis must prefer current-day or post-migration logs.
@@ -89,8 +121,9 @@ item is closed.
 
 1. Keep this control surface, evidence status, log-driven loop, and plan
    registry consistent.
-2. Use `docs/router_data_pipeline_research.md` as the current research baseline
-   for dataset-pipeline and embedding-cache design.
+2. Use `docs/router_data_pipeline_research.md` as the `dataset-pipeline-v2`
+   execution baseline: bilingual source ingestion, normalized records,
+   route/eval/calibration split, embedding cache, and quality gates.
 3. Add a learning import gate for accepted redacted cases.
 4. Tune route bank, hard rules, threshold, or margin only after reports show a
    repeated actionable pattern.
@@ -114,5 +147,5 @@ Stop and discuss before work that would:
   https://sky.cs.berkeley.edu/project/routellm/
 - RouterBench:
   https://arxiv.org/abs/2403.12031
-- Current data-pipeline research:
+- Dataset-pipeline v2 execution baseline:
   `docs/router_data_pipeline_research.md`

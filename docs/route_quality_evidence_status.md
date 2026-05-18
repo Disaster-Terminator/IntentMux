@@ -54,7 +54,7 @@ IntentMux 的协议、日志、候选筛选和质量报告框架已经可用；�
 ## 下一步判断
 
 下一步不应先改路由算法，也不应直接把所有上游数据塞进运行时。应按
-`docs/router_data_pipeline_research.md` 设计 `dataset-pipeline-v2`：
+`docs/router_data_pipeline_research.md` 的 `dataset-pipeline-v2` 执行基线推进：
 
 - 扩大成熟上游数据；
 - 区分 route bank、eval bank、calibration bank；

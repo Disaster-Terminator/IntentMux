@@ -2,7 +2,7 @@
 
 This historical note has been superseded.
 
-Use the current research baseline instead:
+Use the current dataset-pipeline execution baseline instead:
 
 ```text
 docs/router_data_pipeline_research.md

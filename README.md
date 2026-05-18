@@ -490,7 +490,7 @@ artifact，不调用 AI provider，也不把 raw prompt 写进默认 packet。
 
 日志驱动质量闭环见 [docs/log_driven_quality_loop.md](docs/log_driven_quality_loop.md)；
 当前证据状态见 [docs/route_quality_evidence_status.md](docs/route_quality_evidence_status.md)；
-数据管线和持久化研究基线见 [docs/router_data_pipeline_research.md](docs/router_data_pipeline_research.md)。
+`dataset-pipeline-v2` 执行基线见 [docs/router_data_pipeline_research.md](docs/router_data_pipeline_research.md)。
 route audit log 只负责发现低置信、异常状态码、慢请求和分布漂移；prompt review log 是显式开启的本地私有补充证据。
 需要 AI 复核或人工审计的候选可以从审计日志里生成：
 

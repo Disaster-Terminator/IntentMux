@@ -2,7 +2,7 @@
 
 This historical note has been superseded.
 
-Use the current research baseline instead:
+Use the current dataset-pipeline execution baseline instead:
 
 ```text
 docs/router_data_pipeline_research.md
@@ -15,6 +15,6 @@ docs/PROJECT_CONTROL.md
 ```
 
 Older versions of this note discussed the same themes now consolidated in the
-data-pipeline research document: `lite` / `deep` routing, mature-source corpus
+dataset-pipeline execution baseline: `lite` / `deep` routing, mature-source corpus
 policy, Semantic Router-style route examples, RouteLLM-style cost-quality
 evaluation, and generated local semantic assets.

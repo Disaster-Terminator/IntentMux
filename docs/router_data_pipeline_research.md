@@ -1,324 +1,210 @@
-# Router Data Pipeline Research
+# Dataset Pipeline v2
 
-This document records the current research baseline for improving IntentMux
-routing quality without losing the project's lightweight local-first shape.
+This is the execution baseline for `dataset-pipeline-v2`. It replaces the older
+research-note shape: the goal is not to collect more references, but to define
+the artifacts, scoring inputs, persistence, and rollout gates needed to improve
+IntentMux routing quality without making the runtime heavy.
 
-## Current Reality
+IntentMux is Chinese-first, not Chinese-only. Chinese route quality is the
+product differentiator, while English datasets and mature router methodology
+are required to keep the default two-tier router credible.
 
-IntentMux currently stores semantic assets as YAML:
+## Current Baseline
 
-- tracked examples:
-  - `examples/route_bank.sample.yaml`
-  - `examples/eval_bank.sample.yaml`
-- generated local or production assets, ignored by git:
-  - `data/semantic_sets/route_bank.yaml`
-  - `data/semantic_sets/eval_bank.yaml`
-  - runtime-mounted `/data/semantic_sets/route_bank.yaml`
+Runtime behavior is still lightweight:
 
-Runtime behavior is simple:
-
-1. `router.config.merge_route_bank()` loads YAML route-bank utterances into the
+1. `router.config.merge_route_bank()` loads YAML route-bank utterances into
    configured `lite` / `deep` routes.
 2. The first embedding route request calls `Router._ensure_route_vectors()`.
-3. `_ensure_route_vectors()` embeds all loaded route utterances once and stores
-   vectors in process memory.
-4. Later requests embed only the incoming request text and compare it with the
-   in-memory route vectors.
+3. Loaded route utterances are embedded once and stored in process memory.
+4. Later requests embed only the incoming request and compare it with route
+   vectors.
 
 There is no persistent embedding cache, vector database, SQLite store, FAISS
 index, Chroma, Qdrant, Milvus, or Postgres vector table. A process restart
 re-embeds the route bank.
 
-Current authoritative local route bank size is 280 examples:
+Current local route bank is `bootstrap-v1`, not a quality baseline:
 
 | route | source | count |
 | --- | --- | ---: |
-| lite | MASSIVE zh-CN general | 80 |
-| lite | MASSIVE zh-TW general | 40 |
-| deep | SWE-bench issue resolution | 80 |
-| deep | MBPP code generation | 40 |
-| deep | HumanEval code generation | 40 |
+| `lite` | MASSIVE zh-CN general | 80 |
+| `lite` | MASSIVE zh-TW general | 40 |
+| `deep` | SWE-bench issue resolution | 80 |
+| `deep` | MBPP code generation | 40 |
+| `deep` | HumanEval code generation | 40 |
 
-This is a useful bootstrap, but it is not a serious quality baseline.
+This proves that the asset path works. It does not prove Chinese semantic
+routing quality.
 
-## User Direction
+## Borrowed Principles
 
-The desired product shape is:
+From Semantic Router:
 
-- Chinese-first routing quality;
-- learnable from real usage;
-- lightweight deployment and runtime;
-- rigorous enough that route quality is not sacrificed.
+- route examples are first-class assets;
+- examples should be encoded into an index;
+- thresholds should be fit or calibrated from labeled examples, not guessed.
 
-The important distinction is:
+From RouteLLM and routing benchmarks:
 
-```text
-lightweight runtime != toy dataset
-```
+- keep the strong/weak, here `deep`/`lite`, cost-quality tradeoff explicit;
+- judge router changes by quality and `deep` call rate together;
+- compare every improvement against simple baselines;
+- slice-level metrics matter because global accuracy hides failures.
 
-IntentMux should not become a large training platform, but it does need a real
-data pipeline: upstream dataset ingestion, persisted derived artifacts,
-repeatable evals, slice metrics, and route-change gates.
+These principles fit IntentMux. Heavy trained routers, large labeling
+platforms, and vector databases are out of scope for the default runtime.
 
-## Mature Project Lessons
+## Default Routing Standard
 
-### Semantic Router
-
-Semantic Router's useful pattern is route examples plus encoders plus an index.
-Routes are defined by example utterances, encoded into vectors, and selected by
-similarity over an index. It also treats thresholds as something to fit and
-evaluate rather than guess manually.
-
-Lessons to borrow:
-
-- route examples are a first-class asset;
-- route vectors are an index, not just loose strings;
-- threshold optimization needs labeled examples;
-- in-memory indexes are acceptable at small scale;
-- vector DBs are a scale option, not a default requirement.
-
-Relevant references:
-
-- https://docs.aurelio.ai/semantic-router/user-guide/concepts/architecture
-- https://docs.aurelio.ai/semantic-router/user-guide/features/threshold-optimization
-
-### RouteLLM
-
-RouteLLM frames routing as a strong/weak model-pair cost-quality decision. It
-supports calibration by target strong-model call rate and evaluates routers
-against benchmarks. Its trained routers and preference-data pipeline are heavier
-than IntentMux should adopt now, but the evaluation discipline is directly
-relevant.
-
-Lessons to borrow:
-
-- keep two-tier model semantics explicit;
-- measure `deep` call rate against quality;
-- calibrate thresholds from representative queries;
-- compare against simple baselines before claiming improvement.
-
-Relevant references:
-
-- https://github.com/lm-sys/RouteLLM
-- https://arxiv.org/abs/2406.18665
-
-### RouterBench, LLMRouterBench, RouterEval
-
-Router benchmark projects make the same point at larger scale: router quality
-needs structured evaluation data, repeated model outcomes, cost metrics, and
-baseline comparisons. They are not a direct runtime dependency for IntentMux,
-but they define what "not a toy" means.
-
-Relevant reported scales:
-
-- RouterBench: over 405k inference outcomes for multi-LLM routing evaluation.
-- LLMRouterBench: over 400k instances from 21 datasets and 33 models, plus
-  performance and performance-cost metrics.
-- RouterEval: over 200M performance records across many LLM evaluations.
-
-Lessons to borrow:
-
-- route quality should be judged by baseline comparisons, not only pass/fail
-  smoke tests;
-- cost-quality tradeoff metrics are core, not optional;
-- a simple baseline can be hard to beat, so reports must include
-  `always-lite`, `always-deep`, and rule-only baselines;
-- dataset slices matter because global accuracy hides bad routing behavior.
-
-Relevant references:
-
-- https://arxiv.org/abs/2403.12031
-- https://github.com/withmartian/routerbench
-- https://arxiv.org/abs/2601.07206
-- https://github.com/ynulihao/LLMRouterBench
-- https://arxiv.org/abs/2503.10657
-- https://github.com/MilkThink-Lab/RouterEval
-
-## Gap Analysis
-
-Current IntentMux is strong enough as a protocol sidecar, but weak as a data
-pipeline.
-
-Implemented:
-
-- route-bank YAML with source metadata;
-- generated local route bank and eval bank;
-- metadata audit logs;
-- review candidate selection;
-- AI review packet generation and summary validation;
-- quality reports with route distribution and baseline eval outputs;
-- match provenance for embedding decisions.
-
-Missing or incomplete:
-
-- persistent embedding cache keyed by route-bank content and embedding model;
-- source manifest with artifact hashes and build provenance for every generated
-  semantic asset;
-- larger Chinese-first route/eval corpora;
-- slice metadata for all eval cases;
-- threshold and margin calibration workflow;
-- clear separation between route-bank examples, eval cases, calibration cases,
-  and production review samples;
-- data pipeline commands that can refresh artifacts reproducibly;
-- CI or local gate that compares v1 and v2 route banks before rollout.
-
-## Data Pipeline Direction
-
-The next design should introduce a pipeline with explicit artifact layers:
+The default route decision should remain simple:
 
 ```text
-source manifests
-  -> raw dataset cache
-  -> normalized candidate records
-  -> route bank
-  -> eval/calibration bank
-  -> embedding cache / route-vector index
-  -> quality report
-  -> rollout gate
+explicit route
+  -> high-precision hard escalation
+  -> embedded route-bank similarity
+  -> threshold and margin
+  -> fallback to lite when confidence is low
 ```
 
-Recommended artifact boundaries:
+The scoring mechanism should be evaluated as:
 
-| artifact | purpose | git policy |
-| --- | --- | --- |
-| `examples/*.sample.yaml` | public shape and smoke examples | tracked |
-| `config/*sources*.yaml` | source declarations and policy | tracked |
-| `data/downloads/` | raw upstream cache | ignored |
-| `data/semantic_sets/*.yaml` | generated route/eval/calibration assets | ignored by default |
-| `/data/cache/route_embeddings.*` | persistent local embedding cache | ignored |
-| `/data/logs/quality/` | daily quality outputs | ignored |
-| curated redacted examples | public examples only | tracked case by case |
+- accepted route: top route score passes threshold;
+- ambiguous route: top score passes threshold but margin is too small;
+- low-confidence route: no route passes threshold, fallback to `lite`;
+- policy escalation: high-precision hard rule chooses `deep`;
+- quality metric: expected route accuracy by slice;
+- cost metric: `deep` call rate by slice;
+- regression metric: change versus `always-lite`, `always-deep`, and
+  `hard-rule-only`.
 
-Recommended slices for the next baseline:
+Do not make request structure, agent identity, local model group name, or
+deployment cost bucket a product route label. Those are audit or deployment
+signals. Product routes remain `lite` and `deep`.
 
-- `lite_general_zh`
-- `lite_short_task_zh`
-- `lite_translation_summary`
-- `deep_code_generation`
-- `deep_debug_issue`
-- `deep_security_risk`
-- `deep_long_context_zh`
-- `borderline_code_light`
-- `agent_workflow`
+## Artifact Contract
 
-The first serious baseline should target thousands of records, not hundreds,
-but should stay generated-local by default. The public repository should not
-commit the full generated dataset unless a license and distribution decision is
-made deliberately.
+`dataset-pipeline-v2` must keep generated assets separated by role:
 
-## Candidate Source Expansion
+| artifact | input | output | git policy | required fields |
+| --- | --- | --- | --- | --- |
+| source manifest | tracked config | source declarations | tracked | `name`, `kind`, `license`, `language`, `intended_use`, `limit` |
+| raw cache | public datasets | `data/downloads/*` | ignored | source name, source version, download hash |
+| normalized records | raw cache | `data/semantic_sets/normalized/*.jsonl` | ignored | `id`, `text`, `source`, `license`, `language`, `slice`, `proposed_use` |
+| route bank | normalized route records | `data/semantic_sets/route_bank.yaml` | ignored | `route_id`, `text`, `source`, `slice`, `language` |
+| eval bank | held-out records and reviewed samples | `data/semantic_sets/eval_bank.yaml` | ignored | `id`, `text`, `expect`, `source`, `slice`, `language` |
+| calibration bank | eval subset | `data/semantic_sets/calibration_bank.yaml` | ignored | `id`, `text`, `expect`, `slice`, `weight` |
+| embedding cache | route bank | `data/cache/route_embeddings.*` | ignored | embedding model, route-bank hash, text hash, vector dim |
+| quality report | eval outputs and logs | `data/logs/quality/*` | ignored | baseline results, slice metrics, recommendation |
 
-The next source expansion should separate route-bank data from eval/calibration
-data.
+Tracked files should stay examples and contracts:
 
-Good route-bank candidates:
+- `examples/*.sample.yaml`;
+- `config/*sources*.yaml`;
+- documentation of schemas and commands.
 
-- MASSIVE zh-CN / zh-TW assistant utterances for `lite` general and short-task
-  slices.
-- SWE-bench, MBPP, HumanEval, and similar coding tasks for `deep_code` and
-  `deep_debug_issue` slices.
-- Curated, redacted production review samples after AI review and human audit
-  when needed.
+Generated local or production assets stay ignored unless a deliberate license
+and redistribution decision promotes a small public example.
 
-Potential eval/calibration candidates:
+## Source Admission Matrix
 
-- C-Eval: Chinese multi-level, multi-discipline questions. Useful for Chinese
-  reasoning and knowledge slices, but subject categories are not automatically
-  `deep`; mapping must be reviewed.
-- CMMLU: Chinese multitask understanding. Useful for measuring Chinese
-  knowledge and reasoning difficulty; not all categories should become route
-  examples.
-- LongBench: bilingual long-context benchmark with Chinese tasks. Useful for
-  `deep_long_context_zh`, context-length stress tests, and calibration.
-- CS-Eval or similar cybersecurity benchmarks: possible source for
-  `deep_security_risk`, but non-commercial or share-alike licenses may restrict
-  redistribution.
-- RouterBench, LLMRouterBench, RouterEval: methodology and metric references
-  first. Their model-output tables may be useful for offline experiments, but
-  they should not be mixed into the default route bank without a specific
-  mapping decision.
+Do not load every available dataset into the online route bank. Ingest upstream
+data into local artifacts, then split by use.
 
-Do not treat benchmark category names as route labels by default. A benchmark
-can be excellent eval evidence while being a poor route-bank source.
+| source family | default use | route bank | eval/calibration | notes |
+| --- | --- | --- | --- | --- |
+| Chinese general utterances | `lite` bootstrap | yes | limited | useful for short low-risk requests |
+| English general utterances | `lite` coverage | yes | limited | keeps English default behavior from drifting |
+| SWE-bench-like issues | `deep_debug_issue` | yes | yes | good for realistic debug intent |
+| MBPP/HumanEval-like tasks | `deep_code_generation` | yes | yes | short code intent, not full agent work |
+| LongBench | long-context stress | limited | yes | bilingual, useful for `deep_long_context` |
+| C-Eval/CMMLU | Chinese reasoning evidence | no by default | yes after mapping | subject category is not a route label |
+| RouterBench/LLMRouterBench | router methodology | no by default | offline experiments | useful for cost-quality evaluation design |
+| redacted production review | regression and drift | after review | yes | local-first, privacy-gated |
 
-References:
+Initial v2 scale target:
 
-- C-Eval: https://github.com/hkust-nlp/ceval
-- CMMLU: https://github.com/haonan-li/CMMLU
-- LongBench: https://arxiv.org/abs/2308.14508
-- LongBench repository: https://github.com/THUDM/LongBench
-- CS-Eval: https://github.com/CS-EVAL/CS-Eval
+- online route bank: thousands, not tens of thousands;
+- eval/calibration: larger than route bank and held out from route examples;
+- raw cache: as large as license and local storage allow.
 
-## Persistence Strategy
+## Split Rules
 
-Do not add a vector database first.
+Route-bank-derived eval cases are smoke evidence only. They prove that samples
+are loaded and reachable; they do not prove general routing quality.
 
-Prometheus is not a semantic asset store. The local `litellm_prometheus`
-container is useful for metrics such as latency, request counts, error rate,
-token usage, and possibly route distribution. It should not store route banks,
-eval sets, embedding vectors, or nearest-neighbor indexes. Prometheus TSDB is a
-time-series metrics database, not a vector search system.
+Quality eval and calibration cases should be held out from route-bank examples
+unless the report explicitly labels the run as route-bank recall smoke.
 
-For the current product shape, the first persistence layer should be a local
-embedding cache:
+Production samples may enter generated assets only after:
+
+1. selection from audit or prompt review logs;
+2. AI review packet output;
+3. human audit for subjective, risky, or privacy-sensitive cases;
+4. rewrite into private-content-free representative prompts;
+5. `redacted: true`;
+6. validation against product route ids;
+7. import into eval or route-bank assets before a route policy change.
+
+## Embedding Cache v2
+
+Persistent embedding cache is part of v2 before expanding route-bank scale.
+
+Initial backend: JSONL plus manifest. Avoid SQLite, Parquet, FAISS, or vector
+databases until scale forces the choice.
+
+Cache key:
 
 ```text
-cache key = embedding_model + normalized_text_sha256
-manifest key = route_bank_sha256 + embedding_model + builder_version
+embedding_model + normalized_text_sha256
 ```
 
-Suggested storage:
+Manifest key:
 
-- JSONL for inspectability, or NPZ/Parquet if vector size becomes a bottleneck;
-- stored under runtime `/data/cache/`;
-- never tracked by git;
-- invalidated when route-bank content, embedding model, or embedding dimensions
-  change.
+```text
+route_bank_sha256 + embedding_model + vector_dim + builder_version
+```
 
-This keeps runtime lightweight while avoiding repeated route-bank embedding
-after restarts.
+Invalidate and rebuild when route-bank content, embedding model, vector
+dimension, or builder version changes.
 
-Vector DBs become reasonable only if:
+Vector databases become reasonable only when route-bank size reaches tens of
+thousands of examples, approximate nearest-neighbor search is needed, multiple
+services share the same index, or online updates become a hard requirement.
 
-- route-bank size grows to tens of thousands of examples;
-- approximate nearest neighbor search is needed;
-- multiple services share the same index;
-- online updates/hot reload become a hard requirement.
+## Implementation Order
 
-Mature projects use vector databases as a scale option, not as the first step.
-Semantic Router supports local indexes and remote indexes such as Qdrant or
-Pinecone. That maps well to IntentMux: keep local cache/index as the default,
-and only introduce FAISS, Qdrant, pgvector, or a similar index when scale or
-sharing requirements justify the dependency.
+Do not change production routing thresholds during this sequence.
 
-## Open Questions
+1. Define source manifest and normalized record schema.
+2. Build normalized candidates from allowed upstream data.
+3. Split candidates into route, eval, and calibration assets.
+4. Add embedding cache with manifest invalidation.
+5. Extend quality reports with slice metrics and before/after comparison.
+6. Use production logs and AI review packets to import redacted regression
+   samples through a gate.
 
-These need more research before implementation:
+Rollout-ready changes must include:
 
-1. Which Chinese datasets can be mapped to `lite` / `deep` without subjective
-   labels?
-2. Which datasets are suitable for route-bank examples, and which should remain
-   eval-only?
-3. How large should v2 be before embedding cache becomes mandatory?
-4. Should threshold calibration use a global threshold/margin or per-route
-   thresholds?
-5. How should local learning artifacts be filtered before they are eligible for
-   upstream contribution?
-6. Which storage format is best for a lightweight embedding cache in Python:
-   JSONL, SQLite, NPZ, or Parquet?
+- `current-router` eval;
+- `always-lite` eval;
+- `always-deep` eval;
+- `hard-rule-only` eval;
+- slice-level results;
+- current-day or post-migration log summary;
+- quality report recommendation;
+- rollback note.
 
-## Current Recommendation
+## Open Decisions
 
-Treat the current 280-example route bank as `bootstrap-v1`.
+These decisions must be resolved by evidence or implementation constraints:
 
-The next major quality milestone should be `dataset-pipeline-v2`:
+1. exact v2 source list and per-source limits;
+2. per-route versus global threshold and margin calibration;
+3. JSONL versus compact binary storage once cache size is measured;
+4. rules for promoting local learning artifacts into public upstream examples.
 
-- expand upstream sources and slices;
-- generate local route/eval/calibration assets reproducibly;
-- add persistent embedding cache;
-- add slice-aware quality reports and before/after comparison;
-- do not change production routing thresholds until reports show an actionable
-  improvement.
-
-This keeps IntentMux aligned with mature router projects while preserving its
-own niche: Chinese-first, learnable, auditable, and lightweight to deploy.
+The next milestone is not "more data". The next milestone is a reproducible
+asset lifecycle where every route-quality change can be traced from source
+records to generated artifacts, eval baselines, slice metrics, and rollout
+decision.
