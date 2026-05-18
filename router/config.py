@@ -10,6 +10,7 @@ from pydantic import AliasChoices, BaseModel, Field, model_validator
 
 
 DEFAULT_REPO_CONFIG = Path("config/routes.yaml")
+DEFAULT_RUNTIME_HOME = Path(".intentmux-home")
 
 
 def runtime_home_from_env() -> Path | None:
@@ -19,20 +20,24 @@ def runtime_home_from_env() -> Path | None:
     return Path(raw).expanduser()
 
 
+def default_runtime_home() -> Path:
+    return runtime_home_from_env() or DEFAULT_RUNTIME_HOME
+
+
 def runtime_path_from_home(*parts: str) -> str | None:
-    runtime_home = runtime_home_from_env()
-    if runtime_home is None:
-        return None
-    return str(runtime_home.joinpath(*parts))
+    return str(default_runtime_home().joinpath(*parts))
 
 
 def default_config_path() -> Path:
     configured = os.getenv("ROUTER_CONFIG")
     if configured:
         return Path(configured).expanduser()
-    runtime_home = runtime_home_from_env()
-    if runtime_home is not None:
-        return runtime_home / "config" / "routes.yaml"
+    explicit_runtime_home = runtime_home_from_env()
+    if explicit_runtime_home is not None:
+        return explicit_runtime_home / "config" / "routes.yaml"
+    runtime_config = DEFAULT_RUNTIME_HOME / "config" / "routes.yaml"
+    if runtime_config.exists():
+        return runtime_config
     return DEFAULT_REPO_CONFIG
 
 
@@ -246,8 +251,6 @@ def load_settings(path: str | Path | None = None) -> RouterSettings:
 
 
 def apply_runtime_home_defaults(raw: dict[str, Any]) -> None:
-    if runtime_home_from_env() is None:
-        return
     raw.setdefault("audit_log_dir", runtime_path_from_home("logs", "routes"))
     prompt_mode = os.getenv("ROUTER_PROMPT_LOG_MODE", raw.get("prompt_log_mode", "off"))
     if prompt_mode != "off":

@@ -398,6 +398,13 @@ def test_default_log_dir_uses_intentmux_home_when_log_dir_env_is_unset(
     assert default_log_dir() == runtime_home / "logs"
 
 
+def test_default_log_dir_uses_ignored_repo_runtime_home_by_default(monkeypatch):
+    monkeypatch.delenv("INTENTMUX_LOG_DIR", raising=False)
+    monkeypatch.delenv("INTENTMUX_HOME", raising=False)
+
+    assert default_log_dir() == Path(".intentmux-home") / "logs"
+
+
 def test_default_log_dir_prefers_explicit_log_dir_env(tmp_path: Path, monkeypatch):
     runtime_home = tmp_path / "intentmux-home"
     explicit_logs = tmp_path / "logs"

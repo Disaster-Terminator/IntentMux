@@ -38,7 +38,7 @@ def default_log_dir() -> Path:
     runtime_home = os.getenv("INTENTMUX_HOME")
     if runtime_home:
         return Path(runtime_home).expanduser() / "logs"
-    return Path("logs")
+    return Path(".intentmux-home") / "logs"
 
 
 def run(cmd: str, *, cwd: Path, timeout: int = 120) -> dict[str, Any]:

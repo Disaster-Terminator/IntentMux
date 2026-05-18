@@ -5,7 +5,13 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from router.config import RouteSpec, RouterSettings, default_config_path, load_settings
+from router.config import (
+    DEFAULT_RUNTIME_HOME,
+    RouteSpec,
+    RouterSettings,
+    default_config_path,
+    load_settings,
+)
 
 
 def test_tracked_default_config_loads_example_route_bank(monkeypatch):
@@ -557,6 +563,29 @@ def test_default_config_path_uses_intentmux_home_when_router_config_is_unset(
     assert default_config_path() == runtime_home / "config" / "routes.yaml"
 
 
+def test_default_config_path_uses_ignored_repo_runtime_home_when_present(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    routes_path = DEFAULT_RUNTIME_HOME / "config" / "routes.yaml"
+    routes_path.parent.mkdir(parents=True)
+    routes_path.write_text("routes: {}\n", encoding="utf-8")
+    monkeypatch.delenv("ROUTER_CONFIG", raising=False)
+    monkeypatch.delenv("INTENTMUX_HOME", raising=False)
+
+    assert default_config_path() == routes_path
+
+
+def test_default_config_path_falls_back_to_repo_config_for_source_checkout(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("ROUTER_CONFIG", raising=False)
+    monkeypatch.delenv("INTENTMUX_HOME", raising=False)
+
+    assert default_config_path() == Path("config/routes.yaml")
+
+
 def test_router_config_env_takes_precedence_over_intentmux_home(
     tmp_path: Path, monkeypatch
 ):
@@ -600,6 +629,36 @@ routes:
     assert settings.audit_log_dir == str(runtime_home / "logs" / "routes")
     assert settings.prompt_log_mode == "raw_local"
     assert settings.prompt_log_dir == str(runtime_home / "logs" / "prompts")
+
+
+def test_load_settings_defaults_logs_to_ignored_repo_runtime_home(
+    tmp_path: Path, monkeypatch
+):
+    routes_path = tmp_path / "routes.yaml"
+    routes_path.write_text(
+        """
+route_model: auto
+fallback_route_id: lite
+audit_log_enabled: true
+routes:
+  lite:
+    target_model: lite-upstream
+    description: low risk
+    utterances:
+      - hi
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("INTENTMUX_HOME", raising=False)
+    monkeypatch.delenv("ROUTER_AUDIT_LOG_DIR", raising=False)
+    monkeypatch.delenv("ROUTER_PROMPT_LOG_DIR", raising=False)
+    monkeypatch.setenv("ROUTER_PROMPT_LOG_MODE", "raw_local")
+
+    settings = load_settings(routes_path)
+
+    assert settings.audit_log_dir == str(DEFAULT_RUNTIME_HOME / "logs" / "routes")
+    assert settings.prompt_log_dir == str(DEFAULT_RUNTIME_HOME / "logs" / "prompts")
 
 
 def test_load_settings_fails_loudly_when_router_config_env_is_missing(
@@ -664,7 +723,7 @@ routes:
     assert settings.prompt_log_max_chars == 123
 
 
-def test_load_settings_revalidates_prompt_review_log_env_overrides(
+def test_load_settings_defaults_prompt_review_log_dir_for_runtime_home(
     tmp_path: Path, monkeypatch
 ):
     routes_path = tmp_path / "routes.yaml"
@@ -680,10 +739,14 @@ routes:
 """,
         encoding="utf-8",
     )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("INTENTMUX_HOME", raising=False)
+    monkeypatch.delenv("ROUTER_PROMPT_LOG_DIR", raising=False)
     monkeypatch.setenv("ROUTER_PROMPT_LOG_MODE", "raw_local")
 
-    with pytest.raises(ValidationError, match="prompt_log_dir"):
-        load_settings(routes_path)
+    settings = load_settings(routes_path)
+
+    assert settings.prompt_log_dir == str(DEFAULT_RUNTIME_HOME / "logs" / "prompts")
 
 
 def test_router_settings_rejects_prompt_review_log_without_directory():

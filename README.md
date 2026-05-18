@@ -161,14 +161,16 @@ IntentMux 支持本地进程和容器两种运行方式。先区分三类目录�
 | --- | --- | --- |
 | `config/routes.yaml` | 仓库内置开发/示例配置；未设置 `ROUTER_CONFIG` 时读取 | 可以用于本地开发，不是生产状态 |
 | `examples/intentmux-home/` | 可复制的运行时目录模板 | 不作为生产目录直接挂载 |
-| `$INTENTMUX_HOME` / 容器内 `/data` | 用户自己的运行时目录，保存真实配置、语义资产和日志 | 生产应改这里 |
+| `.intentmux-home/` | 默认本地运行时目录，已被 git ignore | 本地试用和 dogfood 可改这里 |
+| `$INTENTMUX_HOME` / 容器内 `/data` | 显式运行时目录，保存真实配置、语义资产和日志 | 生产应改这里 |
 
 配置读取规则：
 
 ```text
 本地进程: ROUTER_CONFIG 已设置 -> 指向的 routes.yaml
-本地进程: INTENTMUX_HOME 已设置且 ROUTER_CONFIG 未设置 -> $INTENTMUX_HOME/config/routes.yaml
-本地进程: 两者都未设置 -> config/routes.yaml
+本地进程: ROUTER_CONFIG 未设置且 INTENTMUX_HOME 已设置 -> $INTENTMUX_HOME/config/routes.yaml
+本地进程: ROUTER_CONFIG 未设置且 .intentmux-home/config/routes.yaml 存在 -> 读取它
+本地进程: 上述运行时配置都不存在 -> config/routes.yaml
 compose 示例: ROUTER_CONFIG=/data/config/routes.yaml
 ```
 
@@ -176,9 +178,9 @@ compose 示例: ROUTER_CONFIG=/data/config/routes.yaml
 
 ```text
 ROUTER_AUDIT_LOG_DIR 已设置 -> 指向的 route audit log 目录
-ROUTER_AUDIT_LOG_DIR 未设置且 INTENTMUX_HOME 已设置 -> $INTENTMUX_HOME/logs/routes
+ROUTER_AUDIT_LOG_DIR 未设置 -> $INTENTMUX_HOME/logs/routes 或 .intentmux-home/logs/routes
 ROUTER_PROMPT_LOG_DIR 已设置 -> 指向的 prompt review log 目录
-ROUTER_PROMPT_LOG_DIR 未设置且 INTENTMUX_HOME 已设置 -> $INTENTMUX_HOME/logs/prompts
+ROUTER_PROMPT_LOG_DIR 未设置 -> $INTENTMUX_HOME/logs/prompts 或 .intentmux-home/logs/prompts
 ```
 
 容器不是唯一部署形态；挂载目录也不是开发必需项，而是生产持久化配置、语义资产和

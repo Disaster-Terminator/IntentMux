@@ -46,7 +46,9 @@ INTENTMUX_TIMEZONE=Asia/Shanghai
 `INTENTMUX_HOME` is the runtime root for user-owned config, semantic assets,
 logs, health reports, and local review artifacts. `INTENTMUX_LOG_DIR` may be
 omitted by wrappers that export `INTENTMUX_HOME`; the daily health script then
-defaults to `$INTENTMUX_HOME/logs`.
+defaults to `$INTENTMUX_HOME/logs`. If neither variable is set, repository-local
+manual runs use the ignored `.intentmux-home/logs` directory. Production
+schedulers should set `INTENTMUX_HOME` or `INTENTMUX_LOG_DIR` explicitly.
 
 `INTENTMUX_LOG_DIR` is the directory that contains:
 

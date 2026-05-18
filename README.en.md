@@ -145,13 +145,16 @@ cp -R examples/intentmux-home/. .intentmux-home/
 docker compose -f examples/docker-compose.yml up -d --build
 ```
 
-By default, the example mounts `.intentmux-home/` from the repository root to `/data`. That directory is ignored by git and is suitable for local trials. For production, copy [examples/intentmux-home](examples/intentmux-home) outside the source checkout and point `INTENTMUX_HOME=/path/to/intentmux-home` at it.
+By default, local assets live under the repository-internal `.intentmux-home/`
+directory. It is ignored by git and suitable for local trials or dogfood. For
+production, copy [examples/intentmux-home](examples/intentmux-home) outside the
+source checkout and explicitly set `INTENTMUX_HOME=/path/to/intentmux-home`.
 
 Common overrides:
 
 - `INTENTMUX_PORT`: host port, default `4001`; the example compose binds it to `127.0.0.1` by default.
 - `INTENTMUX_HOME`: host-side IntentMux home, default `../.intentmux-home` relative to `examples/docker-compose.yml`.
-- `ROUTER_CONFIG`: explicit `routes.yaml` path. When unset, local process runs use `$INTENTMUX_HOME/config/routes.yaml` if `INTENTMUX_HOME` is set, otherwise `config/routes.yaml`.
+- `ROUTER_CONFIG`: explicit `routes.yaml` path. When unset, local process runs use `$INTENTMUX_HOME/config/routes.yaml` if `INTENTMUX_HOME` is set, then `.intentmux-home/config/routes.yaml` if it exists, otherwise `config/routes.yaml`.
 - `ROUTER_LITELLM_BASE_URL`: LiteLLM upstream URL, default `http://host.docker.internal:4000`.
 - `ROUTER_LITELLM_API_KEY`: dedicated key used by IntentMux when calling upstream LiteLLM. When set, inbound `Authorization` is not forwarded upstream.
 - `ROUTER_INBOUND_API_KEY`: optional IntentMux inbound key for `/v1/chat/completions` and `/v1/semantic-router/decision`; `/health` and `/ready` remain unauthenticated.
@@ -161,11 +164,12 @@ Common overrides:
 - `ROUTER_EMBEDDING_URL`: embedding upstream URL, default `http://host.docker.internal:1234/v1/embeddings`.
 - `ROUTER_EMBEDDING_MODEL`: embedding model name.
 
-When `INTENTMUX_HOME` is set and explicit log directories are not set,
-IntentMux defaults route audit logs to `$INTENTMUX_HOME/logs/routes` and prompt
-review logs to `$INTENTMUX_HOME/logs/prompts`. Scheduler wrappers can also set
+When explicit log directories are not set, IntentMux defaults route audit logs
+to `$INTENTMUX_HOME/logs/routes` or `.intentmux-home/logs/routes`, and prompt
+review logs to the matching `logs/prompts` directory. Scheduler wrappers can set
 only `INTENTMUX_HOME`; `scripts/intentmux_daily_health.py` will then use
-`$INTENTMUX_HOME/logs` unless `INTENTMUX_LOG_DIR` is provided.
+`$INTENTMUX_HOME/logs`. Without both `INTENTMUX_HOME` and `INTENTMUX_LOG_DIR`,
+the health script defaults to `.intentmux-home/logs`.
 
 See [examples/litellm-model-entry.yaml](examples/litellm-model-entry.yaml) for a LiteLLM entry-model snippet. If IntentMux and LiteLLM share one compose network, `api_base` can be `http://intentmux:4001/v1`; otherwise, set it to the IntentMux URL reachable from LiteLLM.
 
