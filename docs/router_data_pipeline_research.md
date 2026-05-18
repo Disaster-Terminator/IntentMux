@@ -253,6 +253,12 @@ References:
 
 Do not add a vector database first.
 
+Prometheus is not a semantic asset store. The local `litellm_prometheus`
+container is useful for metrics such as latency, request counts, error rate,
+token usage, and possibly route distribution. It should not store route banks,
+eval sets, embedding vectors, or nearest-neighbor indexes. Prometheus TSDB is a
+time-series metrics database, not a vector search system.
+
 For the current product shape, the first persistence layer should be a local
 embedding cache:
 
@@ -278,6 +284,12 @@ Vector DBs become reasonable only if:
 - approximate nearest neighbor search is needed;
 - multiple services share the same index;
 - online updates/hot reload become a hard requirement.
+
+Mature projects use vector databases as a scale option, not as the first step.
+Semantic Router supports local indexes and remote indexes such as Qdrant or
+Pinecone. That maps well to IntentMux: keep local cache/index as the default,
+and only introduce FAISS, Qdrant, pgvector, or a similar index when scale or
+sharing requirements justify the dependency.
 
 ## Open Questions
 

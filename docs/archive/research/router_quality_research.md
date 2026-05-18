@@ -1,92 +1,20 @@
 # Router Quality Research
 
-This note records the product direction for improving IntentMux routing quality
-without turning it into a large router platform.
+This historical note has been superseded.
 
-## Position
+Use the current research baseline instead:
 
-IntentMux remains a lightweight LiteLLM sidecar with a two-tier product model:
+```text
+docs/router_data_pipeline_research.md
+```
 
-- `lite`: low-risk requests routed to the economical model group.
-- `deep`: coding, debugging, agent, security, incident, and high-risk requests routed to the stronger model group.
+The active control surface remains:
 
-The runtime should stay small: OpenAI-compatible proxying, route selection,
-structured audit logs, and validation gates. Training routers, hosting vector
-databases, or replacing LiteLLM are out of scope.
+```text
+docs/PROJECT_CONTROL.md
+```
 
-## Mature Patterns To Borrow
-
-Semantic Router uses explicit `Route` objects with example utterances, encoders,
-indexes, confidence scores, and thresholds. Its core workflow is still the right
-shape for IntentMux: define routes, encode route examples, compare incoming
-queries by similarity, and only route when confidence is high enough.
-
-RouteLLM and RoRF are useful mainly as product constraints, not as runtime
-dependencies. They reinforce a deep/weak model-pair framing, threshold
-calibration, cost-quality tradeoff measurement, and evaluation before rollout.
-Their trained routers and preference pipelines are heavier than IntentMux should
-adopt.
-
-LLMRouterBench is a warning against overbuilding. It reports that many router
-methods perform similarly under unified evaluation and that careful model
-selection and simple baselines remain hard to beat. For IntentMux, that means
-route quality should improve through sourced evaluation data and calibration
-first, not through a new classifier.
-
-## Corpus Policy
-
-IntentMux must not self-generate semantic routing corpora. Route-bank candidates
-come from:
-
-- mature public datasets declared in `config/route_sources.yaml`;
-- redacted production review samples imported with
-  `scripts/import_review_samples.py`;
-- hand-written minimal seed examples in `config/routes.yaml` and example runtime
-  homes.
-
-Generated route banks must retain source names. Source manifests must include
-homepages and license URLs where available. Runtime code must not depend on
-Hugging Face or dataset tooling; dataset ingestion remains an offline asset build
-step.
-
-## Current Source Set
-
-`config/route_sources.yaml` currently declares:
-
-- MASSIVE zh-CN / zh-TW general assistant utterances for `lite`.
-- SWE-bench issue statements for `deep`.
-- MBPP code-generation prompts for `deep`.
-- HumanEval prompts for `deep`.
-
-These sources are chosen because they map naturally to the product's two tiers:
-general assistant traffic should usually stay cheap, while code generation and
-real issue resolution should be deep by default unless later evaluation proves
-otherwise.
-
-The next eval milestone is `zh-intentmux-router-eval-v1`, described in
-`docs/zh_route_eval_plan.md`. It uses Chinese-native datasets as the primary
-source and borrows RouterBench / LLMRouterBench evaluation methodology without
-bulk-translating English benchmarks into the main eval bank.
-
-## Next Quality Loop
-
-1. Build or refresh route banks from declared mature sources only.
-2. Merge redacted production review samples into eval cases.
-3. Run route evals before changing production config.
-4. Compare route distribution and error budgets against the previous production
-   health report.
-5. Promote the new route bank only through the production rollout gate.
-
-The goal is to reduce excessive `low_confidence` routing with sourced examples,
-while preserving conservative fallback to `lite` when IntentMux cannot make a
-defensible decision.
-
-## Public Example
-
-`examples/route_bank.sample.yaml` is the tracked public example. It is
-deliberately small and should not be treated as a production route bank. Its job
-is to show the shape of `sources`, source/license metadata, and route utterance
-records without committing local generated assets under `data/semantic_sets/`.
-
-Generated route banks and eval banks remain deployment assets unless a sample is
-explicitly curated for public use.
+Older versions of this note discussed the same themes now consolidated in the
+data-pipeline research document: `lite` / `deep` routing, mature-source corpus
+policy, Semantic Router-style route examples, RouteLLM-style cost-quality
+evaluation, and generated local semantic assets.

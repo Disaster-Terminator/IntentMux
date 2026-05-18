@@ -489,7 +489,8 @@ artifact，不调用 AI provider，也不把 raw prompt 写进默认 packet。
 `metadata.semantic_router_request_id`。OpenAI `user` 字段可能包含真实用户标识，IntentMux 不会把它写入 audit log 的 `request_id`。
 
 日志驱动质量闭环见 [docs/log_driven_quality_loop.md](docs/log_driven_quality_loop.md)；
-当前路由质量证据状态见 [docs/route_quality_evidence_status.md](docs/route_quality_evidence_status.md)。
+当前证据状态见 [docs/route_quality_evidence_status.md](docs/route_quality_evidence_status.md)；
+数据管线和持久化研究基线见 [docs/router_data_pipeline_research.md](docs/router_data_pipeline_research.md)。
 route audit log 只负责发现低置信、异常状态码、慢请求和分布漂移；prompt review log 是显式开启的本地私有补充证据。
 需要 AI 复核或人工审计的候选可以从审计日志里生成：
 
@@ -567,8 +568,8 @@ utterances 中第 12 条、来源为 `swebench_issue_resolution` 的样本；`ma
 ## 语义资产
 
 运行时保持轻依赖。更大的 route bank 从 `config/route_sources.yaml` 声明的来源离线生成，不把 Hugging Face 等构建依赖带进运行时。
-来源选择、语料政策和可学习路由边界见 [docs/PROJECT_CONTROL.md](docs/PROJECT_CONTROL.md)：默认不使用自生成语料，只使用能自然映射到 `lite` / `deep` 的成熟公开数据源和脱敏生产 review 样本。
-当前哪些能力已经落地、哪些仍只是计划，见 [docs/route_quality_evidence_status.md](docs/route_quality_evidence_status.md)。
+产品控制面见 [docs/PROJECT_CONTROL.md](docs/PROJECT_CONTROL.md)；数据管线、上游语料、embedding cache
+和向量库取舍见 [docs/router_data_pipeline_research.md](docs/router_data_pipeline_research.md)。
 
 仓库默认只跟踪 example 基线：
 

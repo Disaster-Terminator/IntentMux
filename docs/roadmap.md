@@ -1,105 +1,19 @@
-# Roadmap
+# 路线图
 
-## Long-Term Operational Goal
+当前路线图以 `docs/PROJECT_CONTROL.md` 为准。本文只保留面向人的短摘要。
 
-Make IntentMux a lightweight OpenAI-compatible routing gateway with canonical
-`auto` / `lite` / `deep` entries. It must run without LiteLLM by targeting any
-OpenAI-compatible upstream, and it must also support LiteLLM-first sidecar
-deployment as a first-class production topology.
+## 长期目标
 
-The current control surface for product direction and scope is
-`docs/PROJECT_CONTROL.md`. If this roadmap appears to conflict with that file,
-prefer the control document and update this roadmap in a separate cleanup.
+IntentMux 是轻量 OpenAI-compatible `auto` / `lite` / `deep` 路由网关：
 
-Current operating target:
+- 可作为独立 gateway 连接任意 OpenAI-compatible upstream；
+- 可作为 LiteLLM-first sidecar，保留 LiteLLM 的 provider routing、fallback、keys、budgets；
+- 路由质量由数据管线、eval、日志和质量报告驱动，而不是手写猜测；
+- 默认运行时保持轻量，数据集构建和 embedding cache 属于离线/本地资产。
 
-- every routed request emits one structured `route_complete` or `route_error`
-  event without prompt or bearer-token leakage
-- upstream disconnects and HTTP `5xx` statuses return a controlled `502` and
-  are visible in route-log summaries
-- runtime config validation prevents recursive entry-model targets while
-  allowing product route ids `lite` / `deep` to map to deployment-specific
-  target models
-- `/v1/models` advertises only canonical synthetic entries: `auto`, `lite`, and
-  `deep`; `semantic-router` remains the LiteLLM sidecar entry name, while
-  `fast`, `strong`, and local target model names remain accepted or configured
-  where needed but are not advertised
-- degraded embedding availability is explicit: `/ready` returns `503`, routed
-  chat requests fall back to `fallback_route_id` with
-  `reason=embedding_error`, and route summaries count route ids, targets, and
-  reasons for review
-- health-check noise stays out of default logs
-- production readiness is verified by unit tests, route evals, sidecar preflight,
-  LiteLLM-entry E2E, and recent-log summaries
+## 当前优先级
 
-Next hardening targets:
-
-- strict cross-layer correlation for LiteLLM model-entry requests; current
-  LiteLLM entry mode does not forward client request IDs to the sidecar, while
-  the sidecar now records `request_id_source` and injects its final
-  `x-request-id` upstream
-- explicit budget thresholds for `route_error` rates and degraded route reasons
-  such as `embedding_error` via `scripts/check_route_error_budget.py`
-- lifecycle coupling design for sidecar readiness and LiteLLM restart behavior;
-  current `/ready` reports layered health while `/health` remains local liveness
-- route-bank refresh workflow from real, redacted production examples using
-  `scripts/import_review_samples.py`
-- route quality review through `/v1/semantic-router/decision`, which returns
-  the would-route decision without forwarding to LiteLLM or a model backend
-- agent workload routing policy for tool-call and code-editing frameworks,
-  including when callers should use `model=deep` or `metadata.route_id=deep`
-- public-readiness work after the configurable route abstraction and
-  observability contract have both been audited; the current repository should
-  not be treated as public-release frozen
-
-Product boundary:
-
-- IntentMux owns OpenAI-compatible gateway behavior, entry-model semantics,
-  routing decisions, request IDs, streaming pass-through, error classes, and
-  privacy-safe logs.
-- IntentMux can run with any OpenAI-compatible upstream, including LiteLLM.
-- IntentMux does not replace LiteLLM provider routing, provider fallback,
-  provider credentials, virtual keys, budgets, or model pools when LiteLLM is
-  present.
-- LiteLLM-first sidecar is a first-class deployment topology for environments
-  that already use LiteLLM as the main entry point.
-
-## Lifecycle Management
-
-The gateway is a separate component, not an internal LiteLLM module. It may run
-in the same Docker Compose project for operational convenience, but its
-repository, image, config, audit logs, and secrets boundary stay separate from
-the LiteLLM mount directory.
-
-Future direction: keep direct-gateway lifecycle independent while making the
-LiteLLM-first sidecar lifecycle explicit. A good design should answer these
-questions before implementation:
-
-- Should router startup depend on LiteLLM health, service start, or a successful
-  authenticated `/v1/models` probe?
-- Should router restart when LiteLLM restarts, or only retry upstream calls?
-- Should clients use IntentMux `:4001` directly, or keep using LiteLLM `:4000`
-  with `semantic-router` in sidecar mode? For RayStorm's local production, the
-  answer is currently LiteLLM-first sidecar.
-- Should embedding degraded fallback remain fail-open for all routed requests,
-  or should selected high-risk categories fail closed in the future?
-
-This is intentionally not implemented yet. The current standard is a sibling
-Compose service with its own health check and explicit upstream URLs.
-
-## Semantic Assets
-
-The route bank should be built from mature datasets plus redacted production
-review samples, not from hand-written keyword expansion or self-generated
-semantic corpora. Mature datasets are useful only when they naturally map to
-the product's `lite` / `deep` tiers; otherwise they remain methodology or
-local-only evidence rather than route truth.
-
-The first production-grade milestone is:
-
-- source manifest with auditable dataset names and filters
-- reproducible small-sample route bank generation
-- generated utterance records that retain source names
-- regression cases expanded only from naturally mapped public data or accepted
-  redacted review findings
-- no runtime dependency on Hugging Face tooling
+1. 保持生产服务稳定，所有生产变更走 rollout gate。
+2. 建立 `dataset-pipeline-v2`：上游数据批量接入、route/eval/calibration 分层、embedding cache。
+3. 用日志候选和 AI review packet 降低审查成本。
+4. 只有 before/after quality report 显示收益时，才调整 route bank、hard rules、threshold 或 margin。

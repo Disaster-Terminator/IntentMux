@@ -1,49 +1,33 @@
-# Redacted Route Quality Review Runbook
+# 脱敏路由复核
 
-Use this runbook to evaluate route quality without exposing raw prompts or private logs.
+此文件保留最小命令。完整质量闭环见 `docs/log_driven_quality_loop.md`。
 
-## 1) Collect redacted samples only
-
-Create a JSONL file from review findings where every line is a **synthetic or redacted** sample:
-
-- MUST set `redacted: true`
-- MUST include non-empty `text`
-- MUST include non-empty `expect` as a **route_id** (for example `lite`, `deep`)
-- MUST NOT use `target_model` names in `expect` (for example `deep-upstream` is invalid)
-
-Optional fields:
-
-- `source` (added to output as `production_review:<source>`)
-- `note` (operator hint)
-
-## 2) Import with route config validation
-
-Convert JSONL into eval-case YAML and validate expected routes against config:
+生成候选：
 
 ```bash
-uv run python scripts/import_review_samples.py \
-  --input tests/samples/redacted_review_samples.synthetic.jsonl \
-  --output /tmp/redacted_review_cases.yaml \
-  --routes config/routes.yaml
+uv run python scripts/select_review_candidates.py /data/logs/routes/*.jsonl \
+  --routes /data/config/routes.yaml \
+  --prompt-path "/data/logs/prompts/*.jsonl" \
+  --json-output /tmp/intentmux-review-candidates.json \
+  --markdown-output /tmp/intentmux-review-candidates.md
 ```
 
-If a sample is not redacted or `expect` is not a configured route_id, import fails.
-
-## 3) Run review against the decision endpoint
+生成 AI 复核包：
 
 ```bash
-uv run python scripts/review_decisions.py \
-  --endpoint http://127.0.0.1:4001/v1/semantic-router/decision \
-  --cases /tmp/redacted_review_cases.yaml \
-  --routes config/routes.yaml
+uv run python scripts/prepare_ai_review_packet.py \
+  --input /tmp/intentmux-review-candidates.json \
+  --json-output /tmp/intentmux-ai-review-packet.json \
+  --markdown-output /tmp/intentmux-ai-review-packet.md
 ```
 
-Use `--output json` for machine-readable audit output.
+汇总 AI 输出：
 
-## 4) Interpret PASS/FAIL safely
+```bash
+uv run python scripts/summarize_ai_review.py \
+  --input /tmp/intentmux-ai-review-result.json \
+  --json-output /tmp/intentmux-ai-review-summary.json \
+  --markdown-output /tmp/intentmux-ai-review-summary.md
+```
 
-- `PASS`: selected `route_id` equals expected `route_id`
-- `FAIL`: selected `route_id` differs from expected `route_id`
-- `ERROR`: decision endpoint failure (network/HTTP/request)
-
-For audits, store the result table or JSON output, plus the redacted input file and route config revision. Do not attach raw prompts or private logs.
+默认产物不包含 raw prompt。只有本地私有审查可显式使用 raw prompt review log。
