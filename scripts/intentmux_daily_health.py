@@ -21,7 +21,6 @@ except ModuleNotFoundError:
     from router_log_summary import parse_route_records
 
 DEFAULT_REPO = Path(__file__).resolve().parents[1]
-DEFAULT_LOG_DIR = Path(os.getenv("INTENTMUX_LOG_DIR", "logs"))
 DEFAULT_ROUTER_BASE_URL = os.getenv("INTENTMUX_ROUTER_BASE_URL", "http://127.0.0.1:4001")
 DEFAULT_LITELLM_BASE_URL = os.getenv("INTENTMUX_LITELLM_BASE_URL", "http://127.0.0.1:4000")
 DEFAULT_TIMEZONE = os.getenv("INTENTMUX_TIMEZONE", DEFAULT_AUDIT_LOG_TIMEZONE)
@@ -30,6 +29,16 @@ DEFAULT_EVAL_BANK = Path("data/semantic_sets/eval_bank.yaml")
 EXAMPLE_EVAL_BANK = Path("examples/eval_bank.sample.yaml")
 DEFAULT_ROUTE_BANK = Path("data/semantic_sets/route_bank.yaml")
 EXAMPLE_ROUTE_BANK = Path("examples/route_bank.sample.yaml")
+
+
+def default_log_dir() -> Path:
+    configured = os.getenv("INTENTMUX_LOG_DIR")
+    if configured:
+        return Path(configured).expanduser()
+    runtime_home = os.getenv("INTENTMUX_HOME")
+    if runtime_home:
+        return Path(runtime_home).expanduser() / "logs"
+    return Path("logs")
 
 
 def run(cmd: str, *, cwd: Path, timeout: int = 120) -> dict[str, Any]:
@@ -665,7 +674,7 @@ def main() -> int:
     args = ap.parse_args()
 
     repo = path_from_arg_or_env(args.repo, "INTENTMUX_REPO", DEFAULT_REPO)
-    log_dir = path_from_arg_or_env(args.log_dir, "INTENTMUX_LOG_DIR", DEFAULT_LOG_DIR)
+    log_dir = path_from_arg_or_env(args.log_dir, "INTENTMUX_LOG_DIR", default_log_dir())
     route_all_glob = (
         args.route_log_glob
         or os.getenv("INTENTMUX_ROUTE_LOG_GLOB")

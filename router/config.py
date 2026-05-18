@@ -9,6 +9,33 @@ import yaml
 from pydantic import AliasChoices, BaseModel, Field, model_validator
 
 
+DEFAULT_REPO_CONFIG = Path("config/routes.yaml")
+
+
+def runtime_home_from_env() -> Path | None:
+    raw = os.getenv("INTENTMUX_HOME")
+    if not raw:
+        return None
+    return Path(raw).expanduser()
+
+
+def runtime_path_from_home(*parts: str) -> str | None:
+    runtime_home = runtime_home_from_env()
+    if runtime_home is None:
+        return None
+    return str(runtime_home.joinpath(*parts))
+
+
+def default_config_path() -> Path:
+    configured = os.getenv("ROUTER_CONFIG")
+    if configured:
+        return Path(configured).expanduser()
+    runtime_home = runtime_home_from_env()
+    if runtime_home is not None:
+        return runtime_home / "config" / "routes.yaml"
+    return DEFAULT_REPO_CONFIG
+
+
 class RouteSpec(BaseModel):
     target_model: str | None = None
     description: str
@@ -142,10 +169,11 @@ class RouterSettings(BaseModel):
 
 
 def load_settings(path: str | Path | None = None) -> RouterSettings:
-    config_path = Path(path or os.getenv("ROUTER_CONFIG", "config/routes.yaml"))
+    config_path = Path(path).expanduser() if path is not None else default_config_path()
     if not config_path.exists():
         raise FileNotFoundError(f"router config not found: {config_path}")
     raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    apply_runtime_home_defaults(raw)
     require_route_bank = bool_from_env(
         "ROUTER_REQUIRE_ROUTE_BANK",
         bool_from_value(raw.get("require_route_bank", raw.get("route_bank_required", False))),
@@ -192,13 +220,19 @@ def load_settings(path: str | Path | None = None) -> RouterSettings:
         "audit_log_enabled": bool_from_env(
             "ROUTER_AUDIT_LOG_ENABLED", settings.audit_log_enabled
         ),
-        "audit_log_dir": os.getenv("ROUTER_AUDIT_LOG_DIR", settings.audit_log_dir or ""),
+        "audit_log_dir": os.getenv(
+            "ROUTER_AUDIT_LOG_DIR",
+            settings.audit_log_dir or runtime_path_from_home("logs", "routes") or "",
+        ),
         "audit_log_timezone": os.getenv(
             "ROUTER_AUDIT_LOG_TIMEZONE",
             settings.audit_log_timezone,
         ),
         "prompt_log_mode": os.getenv("ROUTER_PROMPT_LOG_MODE", settings.prompt_log_mode),
-        "prompt_log_dir": os.getenv("ROUTER_PROMPT_LOG_DIR", settings.prompt_log_dir or ""),
+        "prompt_log_dir": os.getenv(
+            "ROUTER_PROMPT_LOG_DIR",
+            settings.prompt_log_dir or runtime_path_from_home("logs", "prompts") or "",
+        ),
         "prompt_log_max_chars": int(
             os.getenv("ROUTER_PROMPT_LOG_MAX_CHARS", str(settings.prompt_log_max_chars))
         ),
@@ -209,6 +243,15 @@ def load_settings(path: str | Path | None = None) -> RouterSettings:
         "listen_port": int(os.getenv("ROUTER_PORT", str(settings.listen_port))),
     }
     return RouterSettings.model_validate(settings.model_dump() | overrides)
+
+
+def apply_runtime_home_defaults(raw: dict[str, Any]) -> None:
+    if runtime_home_from_env() is None:
+        return
+    raw.setdefault("audit_log_dir", runtime_path_from_home("logs", "routes"))
+    prompt_mode = os.getenv("ROUTER_PROMPT_LOG_MODE", raw.get("prompt_log_mode", "off"))
+    if prompt_mode != "off":
+        raw.setdefault("prompt_log_dir", runtime_path_from_home("logs", "prompts"))
 
 
 def bool_from_value(value: Any) -> bool:

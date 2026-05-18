@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from router.config import RouteSpec, RouterSettings, load_settings
+from router.config import RouteSpec, RouterSettings, default_config_path, load_settings
 
 
 def test_tracked_default_config_loads_example_route_bank(monkeypatch):
@@ -545,6 +545,61 @@ routes:
 
     assert settings.route_model == "runtime-router"
     assert settings.routes["runtime-lite"].target_model == "runtime-target"
+
+
+def test_default_config_path_uses_intentmux_home_when_router_config_is_unset(
+    tmp_path: Path, monkeypatch
+):
+    runtime_home = tmp_path / "intentmux-home"
+    monkeypatch.delenv("ROUTER_CONFIG", raising=False)
+    monkeypatch.setenv("INTENTMUX_HOME", str(runtime_home))
+
+    assert default_config_path() == runtime_home / "config" / "routes.yaml"
+
+
+def test_router_config_env_takes_precedence_over_intentmux_home(
+    tmp_path: Path, monkeypatch
+):
+    runtime_home = tmp_path / "intentmux-home"
+    explicit_config = tmp_path / "custom" / "routes.yaml"
+    monkeypatch.setenv("INTENTMUX_HOME", str(runtime_home))
+    monkeypatch.setenv("ROUTER_CONFIG", str(explicit_config))
+
+    assert default_config_path() == explicit_config
+
+
+def test_load_settings_uses_intentmux_home_defaults_for_runtime_paths(
+    tmp_path: Path, monkeypatch
+):
+    runtime_home = tmp_path / "intentmux-home"
+    routes_path = runtime_home / "config" / "routes.yaml"
+    routes_path.parent.mkdir(parents=True)
+    routes_path.write_text(
+        """
+route_model: auto
+fallback_route_id: lite
+audit_log_enabled: true
+routes:
+  lite:
+    target_model: lite-upstream
+    description: low risk
+    utterances:
+      - hi
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.delenv("ROUTER_CONFIG", raising=False)
+    monkeypatch.delenv("ROUTER_AUDIT_LOG_DIR", raising=False)
+    monkeypatch.delenv("ROUTER_PROMPT_LOG_DIR", raising=False)
+    monkeypatch.setenv("INTENTMUX_HOME", str(runtime_home))
+    monkeypatch.setenv("ROUTER_PROMPT_LOG_MODE", "raw_local")
+
+    settings = load_settings()
+
+    assert settings.route_model == "auto"
+    assert settings.audit_log_dir == str(runtime_home / "logs" / "routes")
+    assert settings.prompt_log_mode == "raw_local"
+    assert settings.prompt_log_dir == str(runtime_home / "logs" / "prompts")
 
 
 def test_load_settings_fails_loudly_when_router_config_env_is_missing(

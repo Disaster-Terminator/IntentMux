@@ -101,9 +101,11 @@ errors are handled by semantic examples and thresholds by default, so agent
 context accumulation does not permanently pin a conversation to `deep`.
 
 OpenAI-compatible requests with `tools` / legacy `functions`, tool-call history,
-`tool_choice`, or long multi-turn context are escalated to `deep` with
-`policy_id=agent_signal` by default. This policy uses request structure only; it
-does not depend on local framework names such as OpenCode, Hermes, or Retinue.
+`tool_choice`, or long multi-turn context record these structural signals in
+`format_signals` for audit and candidate review. Request structure alone does
+not escalate to `deep`; escalation still comes from explicit route overrides,
+high-precision hard rules, semantic examples, and thresholds. This avoids
+depending on local framework names such as OpenCode, Hermes, or Retinue.
 
 ## Quick Start
 
@@ -149,6 +151,7 @@ Common overrides:
 
 - `INTENTMUX_PORT`: host port, default `4001`; the example compose binds it to `127.0.0.1` by default.
 - `INTENTMUX_HOME`: host-side IntentMux home, default `../.intentmux-home` relative to `examples/docker-compose.yml`.
+- `ROUTER_CONFIG`: explicit `routes.yaml` path. When unset, local process runs use `$INTENTMUX_HOME/config/routes.yaml` if `INTENTMUX_HOME` is set, otherwise `config/routes.yaml`.
 - `ROUTER_LITELLM_BASE_URL`: LiteLLM upstream URL, default `http://host.docker.internal:4000`.
 - `ROUTER_LITELLM_API_KEY`: dedicated key used by IntentMux when calling upstream LiteLLM. When set, inbound `Authorization` is not forwarded upstream.
 - `ROUTER_INBOUND_API_KEY`: optional IntentMux inbound key for `/v1/chat/completions` and `/v1/semantic-router/decision`; `/health` and `/ready` remain unauthenticated.
@@ -157,6 +160,12 @@ Common overrides:
 - `ROUTER_PROMPT_LOG_MAX_CHARS`: maximum latest-user-text characters per prompt review record, default `20000`.
 - `ROUTER_EMBEDDING_URL`: embedding upstream URL, default `http://host.docker.internal:1234/v1/embeddings`.
 - `ROUTER_EMBEDDING_MODEL`: embedding model name.
+
+When `INTENTMUX_HOME` is set and explicit log directories are not set,
+IntentMux defaults route audit logs to `$INTENTMUX_HOME/logs/routes` and prompt
+review logs to `$INTENTMUX_HOME/logs/prompts`. Scheduler wrappers can also set
+only `INTENTMUX_HOME`; `scripts/intentmux_daily_health.py` will then use
+`$INTENTMUX_HOME/logs` unless `INTENTMUX_LOG_DIR` is provided.
 
 See [examples/litellm-model-entry.yaml](examples/litellm-model-entry.yaml) for a LiteLLM entry-model snippet. If IntentMux and LiteLLM share one compose network, `api_base` can be `http://intentmux:4001/v1`; otherwise, set it to the IntentMux URL reachable from LiteLLM.
 

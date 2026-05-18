@@ -23,12 +23,17 @@ provides:
 - report delivery;
 - retry and alert policy.
 
+Repository scripts are the reusable product surface. Scheduler wrappers, job
+IDs, notification targets, and machine-specific absolute paths are deployment
+state and should stay outside this repository.
+
 ## Runtime Inputs
 
 Choose these values in your deployment:
 
 ```text
 INTENTMUX_REPO=/path/to/IntentMux
+INTENTMUX_HOME=/path/to/intentmux-home
 INTENTMUX_LOG_DIR=/path/to/intentmux-home/logs
 INTENTMUX_ROUTER_BASE_URL=http://127.0.0.1:4001
 INTENTMUX_LITELLM_BASE_URL=http://127.0.0.1:4000
@@ -37,6 +42,11 @@ INTENTMUX_LOG_CONTAINER=intentmux
 INTENTMUX_MIN_ROUTE_RECORDS=0
 INTENTMUX_TIMEZONE=Asia/Shanghai
 ```
+
+`INTENTMUX_HOME` is the runtime root for user-owned config, semantic assets,
+logs, health reports, and local review artifacts. `INTENTMUX_LOG_DIR` may be
+omitted by wrappers that export `INTENTMUX_HOME`; the daily health script then
+defaults to `$INTENTMUX_HOME/logs`.
 
 `INTENTMUX_LOG_DIR` is the directory that contains:
 

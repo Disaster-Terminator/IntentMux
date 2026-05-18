@@ -6,6 +6,7 @@ from pathlib import Path
 from scripts.intentmux_daily_health import (
     build_e2e_cmd,
     build_quality_artifact_paths,
+    default_log_dir,
     log_consistency_from_day_logs,
     run_quality_artifacts,
     traffic_evidence_from_day_log,
@@ -385,6 +386,25 @@ def test_path_from_arg_or_env_uses_env_before_default(monkeypatch):
     path = path_from_arg_or_env(None, "INTENTMUX_LOG_DIR", Path("logs"))
 
     assert path == Path("/env/logs")
+
+
+def test_default_log_dir_uses_intentmux_home_when_log_dir_env_is_unset(
+    tmp_path: Path, monkeypatch
+):
+    runtime_home = tmp_path / "intentmux-home"
+    monkeypatch.delenv("INTENTMUX_LOG_DIR", raising=False)
+    monkeypatch.setenv("INTENTMUX_HOME", str(runtime_home))
+
+    assert default_log_dir() == runtime_home / "logs"
+
+
+def test_default_log_dir_prefers_explicit_log_dir_env(tmp_path: Path, monkeypatch):
+    runtime_home = tmp_path / "intentmux-home"
+    explicit_logs = tmp_path / "logs"
+    monkeypatch.setenv("INTENTMUX_HOME", str(runtime_home))
+    monkeypatch.setenv("INTENTMUX_LOG_DIR", str(explicit_logs))
+
+    assert default_log_dir() == explicit_logs
 
 
 def test_build_e2e_cmd_sources_env_file_only_when_provided():

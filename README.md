@@ -138,6 +138,7 @@ uv run python -m router.app
 
 常用环境变量：
 
+- `INTENTMUX_HOME`
 - `ROUTER_CONFIG`
 - `ROUTER_HOST`
 - `ROUTER_PORT`
@@ -165,9 +166,19 @@ IntentMux 支持本地进程和容器两种运行方式。先区分三类目录�
 配置读取规则：
 
 ```text
-本地进程: ROUTER_CONFIG 未设置 -> config/routes.yaml
 本地进程: ROUTER_CONFIG 已设置 -> 指向的 routes.yaml
+本地进程: INTENTMUX_HOME 已设置且 ROUTER_CONFIG 未设置 -> $INTENTMUX_HOME/config/routes.yaml
+本地进程: 两者都未设置 -> config/routes.yaml
 compose 示例: ROUTER_CONFIG=/data/config/routes.yaml
+```
+
+日志路径读取规则：
+
+```text
+ROUTER_AUDIT_LOG_DIR 已设置 -> 指向的 route audit log 目录
+ROUTER_AUDIT_LOG_DIR 未设置且 INTENTMUX_HOME 已设置 -> $INTENTMUX_HOME/logs/routes
+ROUTER_PROMPT_LOG_DIR 已设置 -> 指向的 prompt review log 目录
+ROUTER_PROMPT_LOG_DIR 未设置且 INTENTMUX_HOME 已设置 -> $INTENTMUX_HOME/logs/prompts
 ```
 
 容器不是唯一部署形态；挂载目录也不是开发必需项，而是生产持久化配置、语义资产和

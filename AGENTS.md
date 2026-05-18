@@ -25,6 +25,9 @@ Guidelines:
   survive context compaction or future sessions.
 - Keep transient execution checklists in the active Codex plan when that is
   clearer; Beads is the persistent control plane, not a scratchpad.
+- Use Superpowers for methodology such as brainstorming, debugging, TDD,
+  planning, and verification. Beads records durable work state; it does not
+  replace those workflows.
 - Do not let Beads generate product requirements. Product direction comes from
   code, logs, explicit user decisions, and reviewed documents.
 - The current Beads workspace is local/stealth. Do not commit `.beads/`,
