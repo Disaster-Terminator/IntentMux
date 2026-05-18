@@ -16,13 +16,17 @@ Runtime behavior is still lightweight:
 1. `router.config.merge_route_bank()` loads YAML route-bank utterances into
    configured `lite` / `deep` routes.
 2. The first embedding route request calls `Router._ensure_route_vectors()`.
-3. Loaded route utterances are embedded once and stored in process memory.
-4. Later requests embed only the incoming request and compare it with route
+3. Loaded route utterances are restored from the persistent route embedding
+   cache when its manifest matches the route bank and embedding model.
+4. On a cache miss, route utterances are embedded once, stored in process
+   memory, and written back to the runtime cache.
+5. Later requests embed only the incoming request and compare it with route
    vectors.
 
-There is no persistent embedding cache, vector database, SQLite store, FAISS
-index, Chroma, Qdrant, Milvus, or Postgres vector table. A process restart
-re-embeds the route bank.
+The runtime has a lightweight JSON cache, not a vector database, SQLite store,
+FAISS index, Chroma, Qdrant, Milvus, or Postgres vector table. The cache lives
+under the runtime home by default and is invalidated by route-bank fingerprint
+or embedding-model changes.
 
 Current generated local route bank is a bootstrap asset, not a quality
 baseline. The tracked manifest now uses Simplified Chinese plus English by
@@ -111,7 +115,7 @@ signals. Product routes remain `lite` and `deep`.
 | route bank | normalized route records | `data/semantic_sets/route_bank.yaml` | ignored | `route_id`, `text`, `source`, `slice`, `language` |
 | eval bank | held-out records and reviewed samples | `data/semantic_sets/eval_bank.yaml` | ignored | `id`, `text`, `expect`, `source`, `slice`, `language` |
 | calibration bank | eval subset | `data/semantic_sets/calibration_bank.yaml` | ignored | `id`, `text`, `expect`, `slice`, `weight` |
-| embedding cache | route bank | `data/cache/route_embeddings.*` | ignored | embedding model, route-bank hash, text hash, vector dim |
+| embedding cache | route bank | `.intentmux-home/cache/route-embeddings.json` or `$INTENTMUX_HOME/cache/route-embeddings.json` | ignored | embedding model, route-bank hash, text hash, source, index, vector |
 | quality report | eval outputs and logs | `data/logs/quality/*` | ignored | baseline results, slice metrics, recommendation |
 
 Tracked files should stay examples and contracts:
@@ -171,10 +175,11 @@ Production samples may enter generated assets only after:
 
 ## Embedding Cache v2
 
-Persistent embedding cache is part of v2 before expanding route-bank scale.
+Persistent embedding cache is part of the runtime baseline before expanding
+route-bank scale.
 
-Initial backend: JSONL plus manifest. Avoid SQLite, Parquet, FAISS, or vector
-databases until scale forces the choice.
+Initial backend: compact JSON with an embedded manifest. Avoid SQLite, Parquet,
+FAISS, or vector databases until scale forces the choice.
 
 Cache key:
 
@@ -185,11 +190,11 @@ embedding_model + normalized_text_sha256
 Manifest key:
 
 ```text
-route_bank_sha256 + embedding_model + vector_dim + builder_version
+route_bank_sha256 + embedding_model + cache_schema_version
 ```
 
-Invalidate and rebuild when route-bank content, embedding model, vector
-dimension, or builder version changes.
+Invalidate and rebuild when route-bank content, utterance source, route-local
+index, embedding model, or cache schema version changes.
 
 Vector databases become reasonable only when route-bank size reaches tens of
 thousands of examples, approximate nearest-neighbor search is needed, multiple
@@ -202,7 +207,7 @@ Do not change production routing thresholds during this sequence.
 1. Define source manifest and normalized record schema.
 2. Build normalized candidates from allowed upstream data.
 3. Split candidates into route, eval, and calibration assets.
-4. Add embedding cache with manifest invalidation.
+4. Extend embedding cache metrics and optional offline prebuild command.
 5. Extend quality reports with slice metrics and before/after comparison.
 6. Use production logs and AI review packets to import redacted regression
    samples through a gate.

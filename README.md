@@ -239,6 +239,8 @@ docker compose -f examples/docker-compose.yml up -d --build
 - `ROUTER_EMBEDDING_MODEL`：embedding 模型名。
 - `ROUTER_EMBEDDING_API_KEY`：可选的 embedding 上游 key，设置后按 OpenAI-compatible `Authorization: Bearer ...` 发送。
 - `ROUTER_EMBEDDING_HEADERS_JSON`：可选的 embedding 自定义 headers JSON，例如 `{"X-Provider":"local"}`。只允许字符串键值。
+- `ROUTER_ROUTE_EMBEDDING_CACHE_ENABLED`：是否启用静态 route bank 向量落盘缓存，默认 `true`。
+- `ROUTER_ROUTE_EMBEDDING_CACHE_PATH`：route bank 向量缓存文件。未设置时默认 `$INTENTMUX_HOME/cache/route-embeddings.json`，没有 `INTENTMUX_HOME` 时使用 `.intentmux-home/cache/route-embeddings.json`。
 - `ROUTER_REQUIRE_ROUTE_BANK`：可选严格门禁。示例 compose 默认 `true`；设为 `true` 后，`route_bank_path` 缺失、文件不存在、或没有为已声明 route 提供任何有效 utterance 时启动失败。
 
 LiteLLM 入口模型示例见 [examples/litellm-model-entry.yaml](examples/litellm-model-entry.yaml)。如果 IntentMux 和 LiteLLM 在同一个 compose network 中，`api_base` 可以使用 `http://intentmux:4001/v1`；如果 LiteLLM 在宿主机或另一个网络里，请改成它能访问到的 IntentMux 地址。
@@ -252,7 +254,7 @@ LiteLLM 入口模型示例见 [examples/litellm-model-entry.yaml](examples/litel
 
 更新同步规则：
 
-- 只改 `/data/config/routes.yaml`、`/data/semantic_sets/route_bank.yaml` 或环境变量：重启 IntentMux sidecar，让启动时加载的配置和向量索引刷新。
+- 只改 `/data/config/routes.yaml`、`/data/semantic_sets/route_bank.yaml` 或环境变量：重启 IntentMux sidecar，让启动时加载的配置和向量索引刷新。route bank 向量缓存会按 route utterance 来源、顺序、文本 hash 和 embedding model 自动失效。
 - 改 Python 代码、`Dockerfile`、内置 `config/` 或 `examples/`：重新构建镜像，再重建 IntentMux sidecar。
 - 只改 README、测试或离线脚本：不影响正在运行的容器，但仍应跑对应测试或校验脚本。
 
@@ -310,6 +312,12 @@ git commit、生成时间、source manifest hash 和每个 source 的原始行�
 这样可以避免 route bank 路径写错时服务静默回退到 seed utterances，导致灰度验证误判。
 `/ready` 的 `components.router.detail` 会暴露 `route_bank_loaded` 和每个 route 的
 utterance 数量，用来快速确认运行时实际加载的路由资产规模。
+
+IntentMux 默认把静态 route bank 的 embedding 向量缓存到运行时目录的
+`cache/route-embeddings.json`。缓存只覆盖 route bank utterances；每条真实请求仍会实时
+embedding 一次，然后和缓存中的 route vectors 比分。缓存 manifest 包含 embedding model
+和 route bank 指纹，route utterance 文本、来源或顺序变更后会自动重建。读取或写入缓存失败
+不会让在线请求失败，只会退回到重新嵌入 route bank。
 
 ## 入口模型
 

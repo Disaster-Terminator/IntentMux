@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from router.config import HardRuleSpec, RouterSettings, RouteSpec, load_settings
@@ -10,8 +12,10 @@ class FakeEmbeddingClient:
     def __init__(self, vectors: dict[str, list[float]], fail: bool = False):
         self.vectors = vectors
         self.fail = fail
+        self.calls: list[list[str]] = []
 
     async def embed(self, texts: list[str]) -> list[list[float]]:
+        self.calls.append(list(texts))
         if self.fail:
             raise RuntimeError("embedding unavailable")
         return [self.vectors[text] for text in texts]
@@ -147,6 +151,199 @@ async def test_embedding_decision_reports_matched_route_bank_provenance():
     assert decision.match_source == "swebench_issue_resolution"
     assert decision.match_index == 0
     assert decision.match_text_sha256
+
+
+@pytest.mark.asyncio
+async def test_route_embedding_cache_reuses_persisted_vectors_between_router_instances(
+    tmp_path: Path,
+):
+    route_settings = RouterSettings(
+        route_model="auto",
+        fallback_route_id="lite",
+        threshold=0.5,
+        margin=0.05,
+        route_embedding_cache_path=str(tmp_path / "route-embeddings.json"),
+        routes={
+            "lite": RouteSpec(
+                target_model="local-lite-model",
+                description="low risk",
+                utterances=["翻译成中文"],
+                utterance_sources={"翻译成中文": "massive_zh_cn_general"},
+            ),
+            "deep": RouteSpec(
+                target_model="local-deep-model",
+                description="high risk",
+                utterances=["分析这个线上 bug"],
+                utterance_sources={"分析这个线上 bug": "swebench_issue_resolution"},
+            ),
+        },
+    )
+    first_client = FakeEmbeddingClient(
+        {
+            "翻译成中文": [1.0, 0.0, 0.0],
+            "分析这个线上 bug": [0.0, 1.0, 0.0],
+            "线上 bug 怎么修": [0.0, 1.0, 0.0],
+        }
+    )
+    first_router = Router(route_settings, first_client)
+
+    first_decision = await first_router.decide(
+        {"model": "auto", "messages": [{"role": "user", "content": "线上 bug 怎么修"}]}
+    )
+
+    assert first_decision.route_id == "deep"
+    assert first_client.calls[0] == ["翻译成中文", "分析这个线上 bug"]
+
+    second_client = FakeEmbeddingClient({"线上 bug 怎么修": [0.0, 1.0, 0.0]})
+    second_router = Router(route_settings, second_client)
+
+    second_decision = await second_router.decide(
+        {"model": "auto", "messages": [{"role": "user", "content": "线上 bug 怎么修"}]}
+    )
+
+    assert second_client.calls == [["线上 bug 怎么修"]]
+    assert second_decision.route_id == "deep"
+    assert second_decision.policy_id == "embedding"
+    assert second_decision.match_source == "swebench_issue_resolution"
+    assert second_decision.match_index == 0
+    assert second_decision.match_text_sha256
+
+
+@pytest.mark.asyncio
+async def test_route_embedding_cache_misses_when_embedding_model_changes(tmp_path: Path):
+    route_settings = RouterSettings(
+        route_model="auto",
+        fallback_route_id="lite",
+        threshold=0.5,
+        margin=0.05,
+        embedding_model="embed-model-a",
+        route_embedding_cache_path=str(tmp_path / "route-embeddings.json"),
+        routes={
+            "lite": RouteSpec(
+                target_model="local-lite-model",
+                description="low risk",
+                utterances=["翻译成中文"],
+            ),
+            "deep": RouteSpec(
+                target_model="local-deep-model",
+                description="high risk",
+                utterances=["分析这个线上 bug"],
+            ),
+        },
+    )
+    vectors = {
+        "翻译成中文": [1.0, 0.0, 0.0],
+        "分析这个线上 bug": [0.0, 1.0, 0.0],
+        "线上 bug 怎么修": [0.0, 1.0, 0.0],
+    }
+    first_router = Router(route_settings, FakeEmbeddingClient(vectors))
+    await first_router.decide(
+        {"model": "auto", "messages": [{"role": "user", "content": "线上 bug 怎么修"}]}
+    )
+    changed_model_settings = route_settings.model_copy(
+        update={"embedding_model": "embed-model-b"}
+    )
+    changed_model_client = FakeEmbeddingClient(vectors)
+    changed_model_router = Router(changed_model_settings, changed_model_client)
+
+    decision = await changed_model_router.decide(
+        {"model": "auto", "messages": [{"role": "user", "content": "线上 bug 怎么修"}]}
+    )
+
+    assert decision.route_id == "deep"
+    assert changed_model_client.calls[0] == ["翻译成中文", "分析这个线上 bug"]
+
+
+@pytest.mark.asyncio
+async def test_route_embedding_cache_misses_when_route_source_changes(tmp_path: Path):
+    cache_path = tmp_path / "route-embeddings.json"
+    base_settings = RouterSettings(
+        route_model="auto",
+        fallback_route_id="lite",
+        threshold=0.5,
+        margin=0.05,
+        route_embedding_cache_path=str(cache_path),
+        routes={
+            "lite": RouteSpec(
+                target_model="local-lite-model",
+                description="low risk",
+                utterances=["翻译成中文"],
+                utterance_sources={"翻译成中文": "old_source"},
+            ),
+            "deep": RouteSpec(
+                target_model="local-deep-model",
+                description="high risk",
+                utterances=["分析这个线上 bug"],
+            ),
+        },
+    )
+    vectors = {
+        "翻译成中文": [1.0, 0.0, 0.0],
+        "分析这个线上 bug": [0.0, 1.0, 0.0],
+        "翻译一下": [1.0, 0.0, 0.0],
+    }
+    await Router(base_settings, FakeEmbeddingClient(vectors)).decide(
+        {"model": "auto", "messages": [{"role": "user", "content": "翻译一下"}]}
+    )
+    changed_source_settings = base_settings.model_copy(
+        update={
+            "routes": {
+                "lite": RouteSpec(
+                    target_model="local-lite-model",
+                    description="low risk",
+                    utterances=["翻译成中文"],
+                    utterance_sources={"翻译成中文": "new_source"},
+                ),
+                "deep": base_settings.routes["deep"],
+            }
+        }
+    )
+    changed_source_client = FakeEmbeddingClient(vectors)
+
+    decision = await Router(changed_source_settings, changed_source_client).decide(
+        {"model": "auto", "messages": [{"role": "user", "content": "翻译一下"}]}
+    )
+
+    assert decision.match_source == "new_source"
+    assert changed_source_client.calls[0] == ["翻译成中文", "分析这个线上 bug"]
+
+
+@pytest.mark.asyncio
+async def test_route_embedding_cache_can_be_disabled(tmp_path: Path):
+    cache_path = tmp_path / "route-embeddings.json"
+    route_settings = RouterSettings(
+        route_model="auto",
+        fallback_route_id="lite",
+        threshold=0.5,
+        margin=0.05,
+        route_embedding_cache_enabled=False,
+        route_embedding_cache_path=str(cache_path),
+        routes={
+            "lite": RouteSpec(
+                target_model="local-lite-model",
+                description="low risk",
+                utterances=["翻译成中文"],
+            ),
+            "deep": RouteSpec(
+                target_model="local-deep-model",
+                description="high risk",
+                utterances=["分析这个线上 bug"],
+            ),
+        },
+    )
+    vectors = {
+        "翻译成中文": [1.0, 0.0, 0.0],
+        "分析这个线上 bug": [0.0, 1.0, 0.0],
+        "线上 bug 怎么修": [0.0, 1.0, 0.0],
+    }
+    router = Router(route_settings, FakeEmbeddingClient(vectors))
+
+    decision = await router.decide(
+        {"model": "auto", "messages": [{"role": "user", "content": "线上 bug 怎么修"}]}
+    )
+
+    assert decision.route_id == "deep"
+    assert not cache_path.exists()
 
 
 @pytest.mark.asyncio

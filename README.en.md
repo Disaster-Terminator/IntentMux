@@ -165,6 +165,8 @@ Common overrides:
 - `ROUTER_PROMPT_LOG_MAX_CHARS`: maximum latest-user-text characters per prompt review record, default `20000`.
 - `ROUTER_EMBEDDING_URL`: embedding upstream URL, default `http://host.docker.internal:1234/v1/embeddings`.
 - `ROUTER_EMBEDDING_MODEL`: embedding model name.
+- `ROUTER_ROUTE_EMBEDDING_CACHE_ENABLED`: persist static route-bank vectors, default `true`.
+- `ROUTER_ROUTE_EMBEDDING_CACHE_PATH`: route-bank vector cache file. When unset, IntentMux uses `$INTENTMUX_HOME/cache/route-embeddings.json`, or `.intentmux-home/cache/route-embeddings.json` without `INTENTMUX_HOME`.
 
 When explicit log directories are not set, IntentMux defaults route audit logs
 to `$INTENTMUX_HOME/logs/routes` or `.intentmux-home/logs/routes`, and prompt
@@ -183,7 +185,7 @@ Auth boundaries:
 
 Update rules:
 
-- Changes to `/data/config/routes.yaml`, `/data/semantic_sets/route_bank.yaml`, or environment variables require restarting the IntentMux sidecar so startup-loaded config and route vectors refresh.
+- Changes to `/data/config/routes.yaml`, `/data/semantic_sets/route_bank.yaml`, or environment variables require restarting the IntentMux sidecar so startup-loaded config and route vectors refresh. The route-bank vector cache invalidates automatically when route utterance source, order, text hash, or embedding model changes.
 - Changes to Python code, `Dockerfile`, built-in `config/`, or `examples/` require rebuilding the image and recreating the IntentMux sidecar.
 - README, test, and offline-script changes do not affect the running container, but should still be verified with the matching test or check command.
 
@@ -335,6 +337,14 @@ This returns the selected `route_id`, resolved `target_model`, `policy_id`, reas
 Runtime dependencies stay small. Larger route banks are built offline from the
 sources declared in `config/route_sources.yaml`; Hugging Face and dataset tools
 are not runtime dependencies.
+
+IntentMux caches static route-bank embeddings in
+`cache/route-embeddings.json` under the runtime home by default. The cache only
+covers route-bank utterances; each live request is still embedded once and then
+scored against cached route vectors. The manifest includes the embedding model
+and route-bank fingerprint, so text, source, or order changes rebuild the cache.
+Cache read/write failures do not fail live requests; they only fall back to
+re-embedding the route bank.
 
 The repository includes a small tracked example at
 [examples/route_bank.sample.yaml](examples/route_bank.sample.yaml). It is for

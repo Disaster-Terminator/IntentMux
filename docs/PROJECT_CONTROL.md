@@ -97,6 +97,8 @@ Implemented:
   `examples/route_bank.sample.yaml` and `examples/eval_bank.sample.yaml`;
 - embedding decisions expose route-bank match provenance through
   `match_source`, `match_index`, and `match_text_sha256`;
+- route-bank embedding vectors persist in the runtime cache and invalidate on
+  route-bank or embedding-model changes;
 - quality report generation from eval JSON and route summaries.
 - generic AI review packet generation and AI review summary validation;
 - daily health quality artifacts under `<log-dir>/quality/<day>/`: route
@@ -108,8 +110,8 @@ Not closed:
 - the route bank is still `bootstrap-v1`, not a serious bilingual quality
   baseline;
 - accepted findings are not routinely imported into redacted regression cases;
-- route/eval/calibration assets are not cleanly separated;
-- embedding vectors are not persisted across restarts;
+- route/eval/calibration assets are not cleanly separated enough for serious
+  threshold calibration;
 - threshold and margin are not calibrated from enough representative evidence;
 - full-history logs still include legacy `fast` / `strong`, so current policy
   analysis must prefer current-day or post-migration logs.

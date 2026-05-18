@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
+import json
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -219,28 +221,136 @@ class Router:
     async def _ensure_route_vectors(self) -> None:
         if self._route_vectors is not None:
             return
-        texts: list[str] = []
-        offsets: list[tuple[str, int, int]] = []
-        cursor = 0
+        entries: list[RouteCorpusEntry] = []
         for route, spec in self.settings.routes.items():
-            start = cursor
-            texts.extend(spec.utterances)
-            cursor += len(spec.utterances)
-            offsets.append((route, start, cursor))
+            for index, text in enumerate(spec.utterances):
+                entries.append(
+                    RouteCorpusEntry(
+                        route_id=route,
+                        text=text,
+                        source=spec.utterance_sources.get(text),
+                        index=index,
+                        text_sha256=sha256_text(text),
+                    )
+                )
 
+        cached_vectors = self._load_route_vector_cache(entries)
+        if cached_vectors is not None:
+            self._route_vectors = cached_vectors
+            return
+
+        texts = [entry.text for entry in entries]
         vectors = await self.embedding_client.embed(texts) if texts else []
-        self._route_vectors = {
-            route: [
+        route_vectors: dict[str, list[RouteVector]] = {
+            route: [] for route in self.settings.routes
+        }
+        for entry, vector in zip(entries, vectors):
+            route_vectors[entry.route_id].append(
                 RouteVector(
                     vector=vector,
-                    source=self.settings.routes[route].utterance_sources.get(text),
-                    index=index,
-                    text_sha256=sha256_text(text),
+                    source=entry.source,
+                    index=entry.index,
+                    text_sha256=entry.text_sha256,
                 )
-                for index, (text, vector) in enumerate(zip(texts[start:end], vectors[start:end]))
-            ]
-            for route, start, end in offsets
+            )
+        self._route_vectors = route_vectors
+        self._write_route_vector_cache(entries, vectors)
+
+    def _load_route_vector_cache(
+        self, entries: list["RouteCorpusEntry"]
+    ) -> dict[str, list["RouteVector"]] | None:
+        cache_path = self._route_embedding_cache_path()
+        if cache_path is None:
+            return None
+        try:
+            payload = json.loads(cache_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+
+        if (
+            payload.get("version") != 1
+            or payload.get("embedding_model") != self.settings.embedding_model
+            or payload.get("route_bank_sha256") != route_bank_fingerprint(entries)
+        ):
+            return None
+
+        items = payload.get("items")
+        if not isinstance(items, list) or len(items) != len(entries):
+            return None
+
+        route_vectors: dict[str, list[RouteVector]] = {
+            route: [] for route in self.settings.routes
         }
+        for entry, item in zip(entries, items):
+            if not isinstance(item, dict):
+                return None
+            vector = item.get("vector")
+            if (
+                item.get("route_id") != entry.route_id
+                or item.get("source") != entry.source
+                or item.get("index") != entry.index
+                or item.get("text_sha256") != entry.text_sha256
+                or not isinstance(vector, list)
+            ):
+                return None
+            route_vectors[entry.route_id].append(
+                RouteVector(
+                    vector=vector,
+                    source=entry.source,
+                    index=entry.index,
+                    text_sha256=entry.text_sha256,
+                )
+            )
+        return route_vectors
+
+    def _write_route_vector_cache(
+        self, entries: list["RouteCorpusEntry"], vectors: list[list[float]]
+    ) -> None:
+        cache_path = self._route_embedding_cache_path()
+        if cache_path is None or len(entries) != len(vectors):
+            return
+        payload = {
+            "version": 1,
+            "embedding_model": self.settings.embedding_model,
+            "route_bank_sha256": route_bank_fingerprint(entries),
+            "items": [
+                {
+                    "route_id": entry.route_id,
+                    "source": entry.source,
+                    "index": entry.index,
+                    "text_sha256": entry.text_sha256,
+                    "vector": vector,
+                }
+                for entry, vector in zip(entries, vectors)
+            ],
+        }
+        try:
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            tmp_path = cache_path.with_name(f".{cache_path.name}.tmp")
+            tmp_path.write_text(
+                json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+                encoding="utf-8",
+            )
+            tmp_path.replace(cache_path)
+        except OSError:
+            return
+
+    def _route_embedding_cache_path(self) -> Path | None:
+        if (
+            not self.settings.route_embedding_cache_enabled
+            or not self.settings.route_embedding_cache_path
+        ):
+            return None
+        return Path(self.settings.route_embedding_cache_path).expanduser()
+
+
+@dataclass(frozen=True)
+class RouteCorpusEntry:
+    route_id: str
+    text: str
+    source: str | None
+    index: int
+    text_sha256: str
 
 
 @dataclass(frozen=True)
@@ -261,6 +371,24 @@ class RouteMatch:
 
 def sha256_text(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def route_bank_fingerprint(entries: list[RouteCorpusEntry]) -> str:
+    lines = [
+        json.dumps(
+            {
+                "route_id": entry.route_id,
+                "source": entry.source,
+                "index": entry.index,
+                "text_sha256": entry.text_sha256,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        for entry in entries
+    ]
+    return sha256_text("\n".join(lines))
 
 
 def latest_user_text(messages: Any) -> str:

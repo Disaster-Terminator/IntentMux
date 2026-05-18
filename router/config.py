@@ -83,6 +83,8 @@ class RouterSettings(BaseModel):
         validation_alias=AliasChoices("require_route_bank", "route_bank_required"),
     )
     route_bank_loaded: bool = False
+    route_embedding_cache_enabled: bool = True
+    route_embedding_cache_path: str | None = None
     hard_rules: list[HardRuleSpec] = Field(default_factory=list)
     embedding_url: str = "http://127.0.0.1:1234/v1/embeddings"
     embedding_model: str = "text-embedding-jina-embeddings-v5-text-small-retrieval@q8_0"
@@ -194,6 +196,16 @@ def load_settings(path: str | Path | None = None) -> RouterSettings:
         "embedding_headers": headers_from_json_env(
             "ROUTER_EMBEDDING_HEADERS_JSON",
             settings.embedding_headers,
+        ),
+        "route_embedding_cache_enabled": bool_from_env(
+            "ROUTER_ROUTE_EMBEDDING_CACHE_ENABLED",
+            settings.route_embedding_cache_enabled,
+        ),
+        "route_embedding_cache_path": os.getenv(
+            "ROUTER_ROUTE_EMBEDDING_CACHE_PATH",
+            settings.route_embedding_cache_path
+            or runtime_path_from_home("cache", "route-embeddings.json")
+            or "",
         ),
         "agent_signal_enabled": bool_from_env(
             "ROUTER_AGENT_SIGNAL_ENABLED",

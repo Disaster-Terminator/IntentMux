@@ -419,6 +419,59 @@ routes:
     assert settings.embedding_headers == {"X-Provider": "local"}
 
 
+def test_route_embedding_cache_defaults_to_runtime_home(monkeypatch, tmp_path: Path):
+    runtime_home = tmp_path / "intentmux-home"
+    routes_path = runtime_home / "config" / "routes.yaml"
+    routes_path.parent.mkdir(parents=True)
+    routes_path.write_text(
+        """
+route_model: semantic-router
+default_route: lite-upstream
+routes:
+  lite-upstream:
+    description: seed cheap
+    utterances:
+      - seed cheap utterance
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("INTENTMUX_HOME", str(runtime_home))
+
+    settings = load_settings(routes_path)
+
+    assert settings.route_embedding_cache_enabled is True
+    assert settings.route_embedding_cache_path == str(
+        runtime_home / "cache" / "route-embeddings.json"
+    )
+
+
+def test_route_embedding_cache_path_can_come_from_environment(
+    monkeypatch, tmp_path: Path
+):
+    routes_path = tmp_path / "routes.yaml"
+    routes_path.write_text(
+        """
+route_model: semantic-router
+default_route: lite-upstream
+routes:
+  lite-upstream:
+    description: seed cheap
+    utterances:
+      - seed cheap utterance
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv(
+        "ROUTER_ROUTE_EMBEDDING_CACHE_PATH", str(tmp_path / "custom-cache.json")
+    )
+    monkeypatch.setenv("ROUTER_ROUTE_EMBEDDING_CACHE_ENABLED", "false")
+
+    settings = load_settings(routes_path)
+
+    assert settings.route_embedding_cache_enabled is False
+    assert settings.route_embedding_cache_path == str(tmp_path / "custom-cache.json")
+
+
 def test_empty_embedding_api_key_env_does_not_clear_configured_key(
     monkeypatch, tmp_path: Path
 ):
