@@ -12,6 +12,12 @@ and are background only.
 
 ## Current Status
 
+Active plan:
+
+| Plan | Status | How to Use |
+| --- | --- | --- |
+| `docs/superpowers/plans/2026-05-18-default-corpus-baseline.md` | Active | Next implementation entry for default corpus, runtime config clarity, and cache boundary. |
+
 | Archived Plan | Status | How to Use |
 | --- | --- | --- |
 | `docs/archive/plans/2026-05-18-ai-review-packet-v1.md` | Completed | Implemented generic AI review packet and summary workflow; current commands live in `docs/log_driven_quality_loop.md`. |
