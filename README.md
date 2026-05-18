@@ -218,12 +218,11 @@ compose 示例：
 仓库提供通用 compose 示例：[examples/docker-compose.yml](examples/docker-compose.yml)。
 
 ```bash
-mkdir -p .intentmux-home
-cp -R examples/intentmux-home/. .intentmux-home/
+uv run python scripts/init_runtime_home.py
 docker compose -f examples/docker-compose.yml up -d --build
 ```
 
-默认示例会把仓库根目录下的 `.intentmux-home/` 挂载到容器 `/data`，它已被 `.gitignore` 排除，适合本地试用。生产部署建议复制 [examples/intentmux-home](examples/intentmux-home) 到源码仓库外的持久化位置，再用 `INTENTMUX_HOME=/path/to/intentmux-home` 指向它。
+默认示例会把仓库根目录下的 `.intentmux-home/` 挂载到容器 `/data`，它已被 `.gitignore` 排除，适合本地试用和 dogfood。`scripts/init_runtime_home.py` 会从 [examples/intentmux-home](examples/intentmux-home) 幂等初始化这个目录：补齐缺失文件和运行时子目录，不覆盖已有配置。生产部署可以复制同一个模板到源码仓库外的持久化位置，再显式用 `INTENTMUX_HOME=/path/to/intentmux-home` 指向它。
 
 可覆盖变量：
 

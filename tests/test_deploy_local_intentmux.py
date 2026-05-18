@@ -4,10 +4,13 @@ import os
 import subprocess
 from pathlib import Path
 
+import yaml
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_ROOT / "scripts" / "rollout_compose_intentmux.sh"
 LEGACY_SCRIPT = REPO_ROOT / "scripts" / "deploy_local_intentmux.sh"
+COMPOSE_EXAMPLE = REPO_ROOT / "examples" / "docker-compose.yml"
 
 
 def run_script(*args: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
@@ -22,6 +25,13 @@ def run_script(*args: str, env: dict[str, str] | None = None) -> subprocess.Comp
         capture_output=True,
         check=False,
     )
+
+
+def test_compose_example_defaults_to_ignored_repo_runtime_home():
+    compose = yaml.safe_load(COMPOSE_EXAMPLE.read_text(encoding="utf-8"))
+    volumes = compose["services"]["intentmux"]["volumes"]
+
+    assert "${INTENTMUX_HOME:-../.intentmux-home}:/data" in volumes
 
 
 def test_deploy_script_dry_run_is_parameterized(tmp_path: Path):

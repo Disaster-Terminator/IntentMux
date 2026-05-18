@@ -140,8 +140,7 @@ Inside the container, `/app` is image code and `/data` is the user-mounted Inten
 The repository ships a generic compose example: [examples/docker-compose.yml](examples/docker-compose.yml).
 
 ```bash
-mkdir -p .intentmux-home
-cp -R examples/intentmux-home/. .intentmux-home/
+uv run python scripts/init_runtime_home.py
 docker compose -f examples/docker-compose.yml up -d --build
 ```
 
@@ -149,6 +148,9 @@ By default, local assets live under the repository-internal `.intentmux-home/`
 directory. It is ignored by git and suitable for local trials or dogfood. For
 production, copy [examples/intentmux-home](examples/intentmux-home) outside the
 source checkout and explicitly set `INTENTMUX_HOME=/path/to/intentmux-home`.
+`scripts/init_runtime_home.py` initializes the default home idempotently: it
+copies missing template files and creates runtime subdirectories without
+overwriting existing local config.
 
 Common overrides:
 
