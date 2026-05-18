@@ -107,6 +107,8 @@ Implemented:
 
 Not closed:
 
+- current self-built routing kernel is a bootstrap baseline, not the long-term
+  mature-router strategy;
 - the route bank is still `bootstrap-v1`, not a serious bilingual quality
   baseline;
 - accepted findings are not routinely imported into redacted regression cases;
@@ -123,11 +125,15 @@ item is closed.
 
 1. Keep this control surface, evidence status, log-driven loop, and plan
    registry consistent.
-2. Use `docs/router_data_pipeline_research.md` as the `dataset-pipeline-v2`
+2. Use `docs/upstream_router_kernel_spike_2026-05-18.md` to decide whether
+   the routing kernel should become a dependency adapter, fork, methodology-only
+   reference, or self-built fallback. Do not expand the self-built kernel until
+   this spike is closed.
+3. Use `docs/router_data_pipeline_research.md` as the `dataset-pipeline-v2`
    execution baseline: bilingual source ingestion, normalized records,
    route/eval/calibration split, embedding cache, and quality gates.
-3. Add a learning import gate for accepted redacted cases.
-4. Tune route bank, hard rules, threshold, or margin only after reports show a
+4. Add a learning import gate for accepted redacted cases.
+5. Tune route bank, hard rules, threshold, or margin only after reports show a
    repeated actionable pattern.
 
 ## Stop Conditions
