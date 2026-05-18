@@ -8,6 +8,9 @@ importers:
 
   .:
     devDependencies:
+      '@beads/bd':
+        specifier: ^1.0.4
+        version: 1.0.4
       task-master-ai:
         specifier: 0.43.1
         version: 0.43.1(@modelcontextprotocol/sdk@1.29.0(zod@3.25.76))(@opentelemetry/core@2.7.1(@opentelemetry/api@1.9.1))(@opentelemetry/exporter-trace-otlp-http@0.203.0(@opentelemetry/api@1.9.1))(@opentelemetry/resources@2.7.1(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-metrics@2.0.1(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.7.1(@opentelemetry/api@1.9.1))(@types/node@25.8.0)
@@ -269,6 +272,13 @@ packages:
   '@babel/helper-validator-identifier@7.28.5':
     resolution: {integrity: sha512-qSs4ifwzKJSV39ucNjsvc6WVHs6b7S03sOh2OcHF9UHfVPqWWALUsNUVzhSBiItjRZoLHx7nIarVjqKVusUZ1Q==}
     engines: {node: '>=6.9.0'}
+
+  '@beads/bd@1.0.4':
+    resolution: {integrity: sha512-MbLARdvt3xLliSqZMUAbWkRUpnfeOIviTE8HcVn7w7NlSCSj7r2VdwV2rUIQy9DyW5AjKYPPZfR2yxDA4Zf5ww==}
+    engines: {node: '>=14.0.0'}
+    cpu: [x64, arm64]
+    os: [darwin, linux, win32, android]
+    hasBin: true
 
   '@biomejs/cli-linux-x64@1.9.4':
     resolution: {integrity: sha512-lRCJv/Vi3Vlwmbd6K+oQ0KhLHMAysN8lXoCI7XeHlxaajk06u7G+UsFSO01NAs5iYuWKmVZjmiOzJ0OJmGsMwg==}
@@ -3569,6 +3579,8 @@ snapshots:
 
   '@babel/helper-validator-identifier@7.28.5': {}
 
+  '@beads/bd@1.0.4': {}
+
   '@biomejs/cli-linux-x64@1.9.4':
     optional: true
 
@@ -4872,7 +4884,7 @@ snapshots:
     optionalDependencies:
       '@openai/codex': 0.60.1
 
-  ai-sdk-provider-gemini-cli@1.5.1(@modelcontextprotocol/sdk@1.29.0(zod@3.25.76))(@opentelemetry/core@2.7.1(@opentelemetry/api@1.9.1))(@opentelemetry/resources@2.7.1(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-metrics@2.0.1(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.7.1(@opentelemetry/api@1.9.1))(zod@4.4.3):
+  ai-sdk-provider-gemini-cli@1.5.1(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))(@opentelemetry/core@2.7.1(@opentelemetry/api@1.9.1))(@opentelemetry/resources@2.7.1(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-metrics@2.0.1(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.7.1(@opentelemetry/api@1.9.1))(zod@4.4.3):
     dependencies:
       '@ai-sdk/provider': 2.0.0
       '@ai-sdk/provider-utils': 3.0.18(zod@4.4.3)
@@ -6678,7 +6690,7 @@ snapshots:
       ai: 5.0.188(zod@4.4.3)
       ai-sdk-provider-claude-code: 2.3.0(zod@4.4.3)
       ai-sdk-provider-codex-cli: 0.7.3(zod@4.4.3)
-      ai-sdk-provider-gemini-cli: 1.5.1(@modelcontextprotocol/sdk@1.29.0(zod@3.25.76))(@opentelemetry/core@2.7.1(@opentelemetry/api@1.9.1))(@opentelemetry/resources@2.7.1(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-metrics@2.0.1(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.7.1(@opentelemetry/api@1.9.1))(zod@4.4.3)
+      ai-sdk-provider-gemini-cli: 1.5.1(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))(@opentelemetry/core@2.7.1(@opentelemetry/api@1.9.1))(@opentelemetry/resources@2.7.1(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-metrics@2.0.1(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.7.1(@opentelemetry/api@1.9.1))(zod@4.4.3)
       ajv: 8.20.0
       ajv-formats: 3.0.1(ajv@8.20.0)
       boxen: 8.0.1

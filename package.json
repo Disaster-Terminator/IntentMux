@@ -4,11 +4,13 @@
   "type": "module",
   "packageManager": "pnpm@10.24.0",
   "scripts": {
+    "beads": "bd",
     "taskmaster": "task-master",
     "taskmaster:models": "task-master models",
     "taskmaster:parse-prd": "task-master parse-prd --input=.taskmaster/docs/intentmux-roadmap.prd.md --num-tasks=12"
   },
   "devDependencies": {
+    "@beads/bd": "^1.0.4",
     "task-master-ai": "0.43.1"
   }
 }
