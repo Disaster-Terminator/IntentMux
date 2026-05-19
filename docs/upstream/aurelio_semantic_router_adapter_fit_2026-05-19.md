@@ -4,26 +4,35 @@
 
 ## 结论
 
-Aurelio Semantic Router 适合作为 IntentMux 的 **adapter candidate**，但当前只能
-先按 **methodology-first** 采纳，不适合现在 fork，也不应直接替换主线依赖。
+Aurelio Semantic Router 适合作为 IntentMux 的默认成熟路由依赖。IntentMux
+保留 OpenAI-compatible / LiteLLM-first 网关外壳、审计日志和本地学习闭环。
 
 推荐判断：
 
 ```text
-methodology-first now -> adapter spike -> pass gates 后再考虑 optional dependency
+Aurelio Python package as default router dependency -> IntentMux gateway shell
 ```
 
-实现形态已经收敛为 dependency adapter，不整仓搬运、不复制核心代码：
+实现形态已经收敛为直接依赖 Aurelio Python 包：
 
 ```text
 IntentMux shell
-  -> optional Aurelio Semantic Router in-process adapter
+  -> default Aurelio Semantic Router in-process adapter
   -> LiteLLM / OpenAI-compatible upstream
 ```
 
 Aurelio 不是在线外部服务；它作为 Python library 在 IntentMux 请求路径内被调用。
 RouteLLM 不进入请求路径，只作为 quality / deep_call_rate / threshold calibration
 的评估方法来源。
+
+默认 adapter 形态改为 `HybridRouter + HybridLocalIndex`，因为它更接近成熟
+semantic router 的 dense+sparse 实践，同时仍能保持本地轻量：
+
+- dense 信号继续复用 IntentMux 现有 OpenAI-compatible embedding endpoint；
+- sparse 信号使用本地 lexical hash encoder，不加载额外模型、不调用外部服务；
+- `aurelio_hybrid_alpha` 默认 `0.3`，必须大于 `0`，避免 HybridLocalIndex
+  计算 dense cosine 时出现零向量分母；
+- `basic` 只保留为 fallback/debug baseline。
 
 它和 IntentMux 当前自研内核的问题域高度重合：`Route` / utterances / encoder /
 index / threshold optimization。这说明它值得学习和做 adapter spike，但也说明
@@ -102,16 +111,15 @@ Route(name="lite", utterances=["解释一下这个命令是什么意思", "翻�
 
 进入主线前必须补一个独立 branch/spike，通过以下门槛：
 
-1. **不污染主线依赖**：先以 optional dependency 或 spike 分支验证，不直接改默认安装。
-2. **本地 encoder 优先**：证明可以使用本地或 OpenAI-compatible embedding endpoint。
+1. **本地 encoder 优先**：证明可以使用本地或 OpenAI-compatible embedding endpoint。
    如果只能用官方 OpenAI encoder 或 HuggingFace endpoint，不能作为默认路径。
-3. **可审计输出**：单条请求必须能记录 route、score、threshold、候选 match、
+2. **可审计输出**：单条请求必须能记录 route、score、threshold、候选 match、
    route source、example hash。
-4. **持久化策略明确**：不能每次请求重新 embedding 全量 route bank；route bank
+3. **持久化策略明确**：不能每次请求重新 embedding 全量 route bank；route bank
    变更才重建 index/cache。
-5. **中英文样本可跑**：同一批 bilingual eval/calibration 样本能比较
+4. **中英文样本可跑**：同一批 bilingual eval/calibration 样本能比较
    current-router 与 Aurelio adapter。
-6. **低侵入接入**：IntentMux 的 OpenAI-compatible API、LiteLLM sidecar、
+5. **低侵入接入**：IntentMux 的 OpenAI-compatible API、LiteLLM sidecar、
    日志、健康检查不被替换。
 
 ## 风险
@@ -135,10 +143,9 @@ Route(name="lite", utterances=["解释一下这个命令是什么意思", "翻�
 
 ## 当前建议
 
-短期不 fork、不进默认依赖。先采纳它的 route/threshold/evaluate 方法作为设计
-参考；当前主线提供 `ROUTER_ROUTE_KERNEL=aurelio` 的可选 adapter 入口，但默认仍是
-`basic`，避免未安装 optional dependency 的用户启动失败。下一步如果继续验证，只做
-一个最小 adapter spike：
+当前主线默认提供 `ROUTER_ROUTE_KERNEL=aurelio` 和
+`ROUTER_AURELIO_ROUTER=hybrid`；`basic` 只是 fallback/debug baseline。下一步
+如果继续验证，只做一个最小质量对比 spike：
 
 ```text
 examples route/eval yaml

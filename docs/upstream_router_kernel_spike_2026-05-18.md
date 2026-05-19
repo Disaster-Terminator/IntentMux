@@ -16,7 +16,7 @@ hard rule -> request embedding -> route-bank cosine similarity -> threshold/marg
 snapshot/self-built-router-20260518 -> f60ea51
 ```
 
-后续主线必须先做上游内核 spike，再决定 fork、adapter、依赖或只借鉴方法。
+后续主线必须先做上游内核 spike，再决定如何用成熟 Python 包替换自研路由内核。
 
 ## 不可妥协的产品边界
 
@@ -48,7 +48,7 @@ IntentMux 的价值不应是“自研相似度算法”，而是成熟路由能�
 
 - 它是最接近“成熟系统级路由产品”的候选。
 - 但默认形态可能明显重于 IntentMux 当前本地 sidecar。
-- 适合重点调研：是否能作为 fork 主线，或作为配置/信号/决策架构参考。
+- 适合重点调研：是否能作为配置/信号/决策架构参考。
 - 不应在未跑通本机最小 demo 前直接迁移主线。
 
 ### Aurelio Semantic Router
@@ -65,7 +65,7 @@ IntentMux 的价值不应是“自研相似度算法”，而是成熟路由能�
 初步判断：
 
 - 它最接近我们当前“route examples + embedding + threshold”的内核问题。
-- 适合优先做 Python dependency/adapter spike，而不是先 fork。
+- 适合优先做 Python dependency adapter spike。
 - 风险是它偏分类库，不负责 LiteLLM/OpenAI-compatible gateway、日志、runtime、巡检。
 - 如果 adapter 能满足 provenance、阈值校准和本地 index，IntentMux 自研内核应降级为 fallback。
 
@@ -84,7 +84,7 @@ IntentMux 的价值不应是“自研相似度算法”，而是成熟路由能�
 
 - 它最适合作为 `lite` / `deep` 成本质量评估和 threshold calibration 方法来源。
 - 不一定适合作为中文 route-bank 语义分类内核。
-- 更可能是 methodology-only 或 eval/calibration adapter，而非主 fork。
+- 更可能是 methodology-only 或 eval/calibration adapter。
 
 ## 决策矩阵
 
@@ -99,7 +99,7 @@ IntentMux 的价值不应是“自研相似度算法”，而是成熟路由能�
 | 英文不落后 | 是否能复用英文成熟样本/benchmark 方法 | 英文 route/eval 样本跑通 |
 | 可学习 | 是否能导入本地 review 样本、校准阈值或更新 route examples | 离线 import/calibration demo |
 | 可审计 | 是否能输出 route reason、score、threshold、match provenance | 单条请求可解释输出 |
-| 维护成本 | fork 后是否可长期跟上上游 | 语言栈、依赖、release 节奏、patch 面 |
+| 维护成本 | 是否能正常依赖上游 Python 包并跟随更新 | 语言栈、依赖、release 节奏、patch 面 |
 | 许可证 | 能否和 Apache-2.0 IntentMux 兼容 | LICENSE 和依赖许可记录 |
 
 ## Spike Gates
@@ -110,14 +110,14 @@ IntentMux 的价值不应是“自研相似度算法”，而是成熟路由能�
 2. `demo_config.*`：表达 `lite` / `deep` 两档。
 3. `demo_requests.jsonl`：中英文、代码/debug、安全、普通短任务、agent 工具流量样本。
 4. `demo_result.json`：包含 route、score/threshold 或等价决策证据、耗时。
-5. 适配判断：`dependency`、`adapter`、`fork`、`methodology-only`、`reject` 五选一。
+5. 适配判断：`default dependency`、`adapter`、`methodology-only`、`reject` 四选一。
 
-## Fork / Adapter / Dependency 规则
+## Adapter / Dependency 规则
 
 默认顺序：
 
 ```text
-dependency/adapter > fork > self-built fallback
+default dependency/adapter > self-built fallback
 ```
 
 选择 dependency/adapter，当：
@@ -126,13 +126,6 @@ dependency/adapter > fork > self-built fallback
 - 能保留 IntentMux 的 OpenAI-compatible 壳层；
 - 能输出足够审计信息；
 - 不要求用户运行额外重服务。
-
-选择 fork，当：
-
-- 上游方向高度匹配；
-- adapter 无法访问核心路由/审计/配置能力；
-- 我们需要长期改中文、本地学习、LiteLLM 接入；
-- fork 维护面可控。
 
 选择 methodology-only，当：
 
@@ -160,7 +153,7 @@ Codex 交叉验证结论；Retinue 结果不作为证据。
 1. **RouteLLM methodology / calibration spike**  
    目的：先把 IntentMux 的质量判断变成成熟路由项目形态：`always-lite`、
    `always-deep`、current-router、rule-only、embedding-only、threshold
-   curve、`deep` call rate、slice metrics。没有这层，adapter/fork 的收益
+   curve、`deep` call rate、slice metrics。没有这层，adapter 的收益
    无法证明。
 
    当前入口：`scripts/route_calibration_report.py`。它生成
@@ -174,19 +167,17 @@ Codex 交叉验证结论；Retinue 结果不作为证据。
    runtime home 和 LiteLLM 边界。
 
    当前产物：`docs/upstream/aurelio_semantic_router_adapter_fit_2026-05-19.md`。
-   结论是 methodology-first / adapter candidate。短期学习 route、index、
-   threshold optimization 和 evaluate/fit 方法；必须先通过 provenance、
-   OpenAI-compatible 本地 encoder、持久化 index/cache 和 bilingual eval gate，
-   才能考虑进入主线依赖。
+   结论已更新为：Aurelio Python 包是默认路由依赖，默认形态为
+   `HybridRouter + HybridLocalIndex`；`basic` 只保留为 fallback/debug baseline。
 
 3. **vLLM Semantic Router architecture / product-fit spike**  
-   目的：验证是否值得 fork 或学习其 signal/projection/decision/provider
+   目的：验证是否值得学习其 signal/projection/decision/provider
    配置形态。重点看是否能压缩成本地轻量 sidecar，而不是照搬 Envoy /
    Kubernetes / control-plane 复杂度。
 
    当前产物：`docs/upstream/vllm_semantic_router_architecture_fit_2026-05-19.md`。
    结论是 methodology-only / architecture reference。短期学习
-   signal/projection/decision 分层和审计链，不 fork、不引入运行时依赖。
+   signal/projection/decision 分层和审计链，不引入运行时依赖。
 
 ## 当前主线约束
 

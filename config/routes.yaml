@@ -7,6 +7,9 @@ agent_signal_enabled: true
 agent_signal_route_id: deep
 agent_signal_min_input_chars: 12000
 agent_signal_min_message_count: 6
+route_kernel: aurelio
+aurelio_router: hybrid
+aurelio_hybrid_alpha: 0.3
 threshold: 0.55
 margin: 0.04
 route_bank_path: examples/route_bank.sample.yaml

@@ -200,6 +200,48 @@ async def test_aurelio_route_kernel_uses_upstream_router_and_keeps_provenance():
 
 
 @pytest.mark.asyncio
+async def test_aurelio_hybrid_kernel_uses_lexical_signal_without_extra_model():
+    route_settings = RouterSettings(
+        route_model="auto",
+        fallback_route_id="lite",
+        route_kernel="aurelio",
+        aurelio_router="hybrid",
+        aurelio_hybrid_alpha=0.001,
+        threshold=0.2,
+        margin=0.01,
+        routes={
+            "lite": RouteSpec(
+                target_model="local-lite-model",
+                description="low risk",
+                utterances=["翻译成中文"],
+            ),
+            "deep": RouteSpec(
+                target_model="local-deep-model",
+                description="high risk",
+                utterances=["线上事故分析"],
+                utterance_sources={"线上事故分析": "incident_zh"},
+            ),
+        },
+    )
+    vectors = {
+        "翻译成中文": [0.0, 0.0, 1.0],
+        "线上事故分析": [0.0, 1.0, 0.0],
+        # Dense signal is intentionally misleading; lexical sparse signal should
+        # keep the mature hybrid kernel from relying on embedding alone.
+        "线上事故怎么处理": [0.001, 0.0, 0.0],
+    }
+    router = Router(route_settings, FakeEmbeddingClient(vectors))
+
+    decision = await router.decide(
+        {"model": "auto", "messages": [{"role": "user", "content": "线上事故怎么处理"}]}
+    )
+
+    assert decision.route_id == "deep"
+    assert decision.match_source == "incident_zh"
+    assert decision.score is not None
+
+
+@pytest.mark.asyncio
 async def test_route_embedding_cache_reuses_persisted_vectors_between_router_instances(
     tmp_path: Path,
 ):
@@ -655,7 +697,9 @@ async def test_ambiguous_engineering_terms_use_embedding_not_hard_rule():
     assert decision.target_model == "deep-upstream"
     assert decision.policy_id == "embedding"
     assert decision.reason == "embedding"
-    assert decision.score == 1.0
+    assert decision.score is not None
+    assert decision.second_score is not None
+    assert decision.score > decision.second_score
 
 
 @pytest.mark.asyncio
@@ -1070,7 +1114,7 @@ async def test_all_empty_utterance_routes_fall_back_deterministically_without_em
     assert decision.score == 0.0
     assert decision.second_score == 0.0
 @pytest.mark.asyncio
-async def test_decide_with_empty_messages_and_embedding_failure_returns_embedding_error():
+async def test_decide_with_empty_messages_returns_low_confidence_without_embedding():
     router = Router(settings(), FakeEmbeddingClient({}, fail=True))
 
     decision = await router.decide(
@@ -1081,7 +1125,8 @@ async def test_decide_with_empty_messages_and_embedding_failure_returns_embeddin
     )
 
     assert decision.target_model == "lite-upstream"
-    assert decision.reason == "embedding_error"
+    assert decision.reason == "low_confidence"
+    assert decision.policy_id == "low_confidence"
 
 
 @pytest.mark.asyncio

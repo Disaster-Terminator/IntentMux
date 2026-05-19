@@ -74,7 +74,9 @@ class RouterSettings(BaseModel):
     agent_signal_route_id: str | None = None
     agent_signal_min_input_chars: int = 12_000
     agent_signal_min_message_count: int = 6
-    route_kernel: Literal["basic", "aurelio"] = "basic"
+    route_kernel: Literal["aurelio", "basic"] = "aurelio"
+    aurelio_router: Literal["hybrid", "semantic"] = "hybrid"
+    aurelio_hybrid_alpha: float = 0.3
     threshold: float = 0.55
     margin: float = 0.04
     routes: dict[str, RouteSpec]
@@ -133,6 +135,8 @@ class RouterSettings(BaseModel):
             raise ValueError("agent_signal_min_input_chars must be positive")
         if self.agent_signal_min_message_count <= 0:
             raise ValueError("agent_signal_min_message_count must be positive")
+        if not 0.0 < self.aurelio_hybrid_alpha <= 1.0:
+            raise ValueError("aurelio_hybrid_alpha must be greater than 0 and at most 1")
         if (
             self.agent_signal_enabled
             and self.agent_signal_route_id is not None
@@ -229,6 +233,10 @@ def load_settings(path: str | Path | None = None) -> RouterSettings:
             )
         ),
         "route_kernel": os.getenv("ROUTER_ROUTE_KERNEL", settings.route_kernel),
+        "aurelio_router": os.getenv("ROUTER_AURELIO_ROUTER", settings.aurelio_router),
+        "aurelio_hybrid_alpha": float(
+            os.getenv("ROUTER_AURELIO_HYBRID_ALPHA", str(settings.aurelio_hybrid_alpha))
+        ),
         "litellm_base_url": os.getenv("ROUTER_LITELLM_BASE_URL", settings.litellm_base_url),
         "litellm_api_key": os.getenv("ROUTER_LITELLM_API_KEY") or settings.litellm_api_key,
         "inbound_api_key": os.getenv("ROUTER_INBOUND_API_KEY") or settings.inbound_api_key,

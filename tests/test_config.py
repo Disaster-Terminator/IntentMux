@@ -499,6 +499,50 @@ routes:
     assert loaded.route_kernel == "aurelio"
 
 
+def test_route_kernel_defaults_to_aurelio_hybrid():
+    settings = RouterSettings(
+        route_model="auto",
+        fallback_route_id="lite",
+        routes={
+            "lite": RouteSpec(
+                target_model="local-lite-model",
+                description="low risk",
+                utterances=["翻译成中文"],
+            ),
+            "deep": RouteSpec(
+                target_model="local-deep-model",
+                description="high risk",
+                utterances=["分析这个线上 bug"],
+            ),
+        },
+    )
+
+    assert settings.route_kernel == "aurelio"
+    assert settings.aurelio_router == "hybrid"
+    assert settings.aurelio_hybrid_alpha == 0.3
+
+
+def test_aurelio_hybrid_alpha_must_not_be_zero():
+    with pytest.raises(ValueError, match="aurelio_hybrid_alpha"):
+        RouterSettings(
+            route_model="auto",
+            fallback_route_id="lite",
+            aurelio_hybrid_alpha=0.0,
+            routes={
+                "lite": RouteSpec(
+                    target_model="local-lite-model",
+                    description="low risk",
+                    utterances=["翻译成中文"],
+                ),
+                "deep": RouteSpec(
+                    target_model="local-deep-model",
+                    description="high risk",
+                    utterances=["分析这个线上 bug"],
+                ),
+            },
+        )
+
+
 def test_empty_embedding_api_key_env_does_not_clear_configured_key(
     monkeypatch, tmp_path: Path
 ):

@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import hashlib
 import json
 from pathlib import Path
+import re
 from typing import Any
 
 import numpy as np
@@ -83,6 +84,17 @@ class Router:
             )
 
         text = latest_user_text(request_json.get("messages", []))
+        if not text.strip():
+            return RoutingDecision(
+                route_id=self.settings.fallback_route_id,
+                target_model=self._target_model_for_route(self.settings.fallback_route_id),
+                source_model=source_model,
+                reason="low_confidence",
+                policy_id="low_confidence",
+                rewrite=True,
+                score=0.0,
+                second_score=0.0,
+            )
         hard_rule_text = "" if looks_like_agent_instruction_boilerplate(text) else text
         hard_rule = self._matching_hard_rule(hard_rule_text)
         if hard_rule:
@@ -99,7 +111,7 @@ class Router:
         try:
             await self._ensure_route_vectors()
             query_vector = (await self.embedding_client.embed([text]))[0]
-            route_matches = self._rank_route_matches(query_vector)
+            route_matches = self._rank_route_matches(text, query_vector)
         except Exception:
             return RoutingDecision(
                 route_id=self.settings.fallback_route_id,
@@ -331,11 +343,15 @@ class Router:
             return None
         return Path(self.settings.route_embedding_cache_path).expanduser()
 
-    def _rank_route_matches(self, query_vector: list[float]) -> dict[str, "RouteMatch"]:
+    def _rank_route_matches(
+        self, text: str, query_vector: list[float]
+    ) -> dict[str, "RouteMatch"]:
         if self._route_vectors is None:
             return {}
+        if not any(self._route_vectors.values()):
+            return {}
         if self.settings.route_kernel == "aurelio":
-            return self._rank_route_matches_with_aurelio(query_vector)
+            return self._rank_route_matches_with_aurelio(text, query_vector)
         return self._rank_route_matches_basic(query_vector)
 
     def _rank_route_matches_basic(self, query_vector: list[float]) -> dict[str, "RouteMatch"]:
@@ -352,12 +368,30 @@ class Router:
         return route_matches
 
     def _rank_route_matches_with_aurelio(
-        self, query_vector: list[float]
+        self, text: str, query_vector: list[float]
     ) -> dict[str, "RouteMatch"]:
         if self._route_vectors is None:
             return {}
         router = self._ensure_aurelio_router()
-        choices = router(vector=np.asarray(query_vector, dtype=np.float32), limit=2)
+        kwargs: dict[str, Any] = {
+            "limit": 2,
+        }
+        if isinstance(router, HybridKernel):
+            kwargs["text"] = text
+            kwargs["vector"] = (
+                np.asarray(query_vector, dtype=np.float32)
+                * self.settings.aurelio_hybrid_alpha
+            )
+            sparse_embedding = router.sparse_encoder([text])[0]
+            kwargs["sparse_vector"] = scale_sparse_embedding(
+                sparse_embedding,
+                1.0 - self.settings.aurelio_hybrid_alpha,
+            )
+            router_object = router.router
+        else:
+            kwargs["vector"] = np.asarray(query_vector, dtype=np.float32)
+            router_object = router
+        choices = router_object(**kwargs)
         if choices is None:
             return {}
         if not isinstance(choices, list):
@@ -386,12 +420,16 @@ class Router:
 
         try:
             from semantic_router import Route as AurelioRoute
+            from semantic_router import HybridRouter as AurelioHybridRouter
             from semantic_router import SemanticRouter as AurelioSemanticRouter
             from semantic_router.encoders import DenseEncoder
+            from semantic_router.encoders import SparseEncoder
+            from semantic_router.index import HybridLocalIndex
             from semantic_router.index import LocalIndex
+            from semantic_router.schema import SparseEmbedding
         except ImportError as exc:
             raise RuntimeError(
-                "route_kernel=aurelio requires the optional upstream-router dependency group"
+                "route_kernel=aurelio requires the semantic-router dependency"
             ) from exc
 
         embeddings: list[list[float]] = []
@@ -422,6 +460,42 @@ class Router:
             def __call__(self, docs: list[Any]) -> list[list[float]]:
                 return [[0.0] * dimensions for _ in docs]
 
+        aurelio_routes = [
+            AurelioRoute(name=route_id, utterances=[])
+            for route_id in self.settings.routes
+        ]
+        if self.settings.aurelio_router == "hybrid":
+
+            class IntentMuxHashSparseEncoder(SparseEncoder):
+                name: str = "intentmux-hash-sparse"
+
+                def __call__(self, docs: list[str]) -> list[Any]:
+                    return [
+                        SparseEmbedding.from_compact_array(sparse_compact_array(doc))
+                        for doc in docs
+                    ]
+
+            sparse_encoder = IntentMuxHashSparseEncoder()
+            index = HybridLocalIndex()
+            index.add(
+                embeddings=embeddings,
+                routes=routes,
+                utterances=utterances,
+                sparse_embeddings=sparse_encoder(utterances),
+            )
+            self._aurelio_router = HybridKernel(
+                router=AurelioHybridRouter(
+                    encoder=IntentMuxVectorOnlyEncoder(),
+                    sparse_encoder=sparse_encoder,
+                    index=index,
+                    routes=aurelio_routes,
+                    auto_sync=None,
+                    alpha=self.settings.aurelio_hybrid_alpha,
+                ),
+                sparse_encoder=sparse_encoder,
+            )
+            return self._aurelio_router
+
         index = LocalIndex()
         index.add(
             embeddings=embeddings,
@@ -429,10 +503,6 @@ class Router:
             utterances=utterances,
             metadata_list=metadata,
         )
-        aurelio_routes = [
-            AurelioRoute(name=route_id, utterances=[])
-            for route_id in self.settings.routes
-        ]
         self._aurelio_router = AurelioSemanticRouter(
             encoder=IntentMuxVectorOnlyEncoder(),
             index=index,
@@ -497,8 +567,55 @@ class RouteMatch:
     text_sha256: str
 
 
+@dataclass(frozen=True)
+class HybridKernel:
+    router: Any
+    sparse_encoder: Any
+
+
 def sha256_text(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def sparse_compact_array(text: str) -> np.ndarray:
+    tokens = lexical_tokens(text)
+    if not tokens:
+        return np.empty((1, 2), dtype=np.float32)
+    counts: dict[int, float] = {}
+    for token in tokens:
+        index = stable_sparse_index(token)
+        counts[index] = counts.get(index, 0.0) + 1.0
+    norm = float(np.linalg.norm(list(counts.values())))
+    if norm == 0.0:
+        norm = 1.0
+    return np.asarray(
+        [[index, value / norm] for index, value in sorted(counts.items())],
+        dtype=np.float32,
+    )
+
+
+def lexical_tokens(text: str) -> list[str]:
+    lowered = text.lower()
+    word_tokens = re.findall(r"[a-z0-9_+#.-]+", lowered)
+    cjk_tokens = re.findall(r"[\u4e00-\u9fff]", lowered)
+    cjk_bigrams = [
+        "".join(pair)
+        for pair in zip(cjk_tokens, cjk_tokens[1:])
+        if pair[0].strip() and pair[1].strip()
+    ]
+    return word_tokens + cjk_tokens + cjk_bigrams
+
+
+def stable_sparse_index(token: str) -> int:
+    return int.from_bytes(hashlib.sha256(token.encode("utf-8")).digest()[:8], "big") % (
+        2**20
+    )
+
+
+def scale_sparse_embedding(sparse_embedding: Any, factor: float) -> Any:
+    scaled = sparse_embedding.model_copy(deep=True)
+    scaled.embedding[:, 1] = scaled.embedding[:, 1] * factor
+    return scaled
 
 
 def route_bank_fingerprint(entries: list[RouteCorpusEntry]) -> str:

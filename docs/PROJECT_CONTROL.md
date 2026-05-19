@@ -99,8 +99,9 @@ Implemented:
   `match_source`, `match_index`, and `match_text_sha256`;
 - route-bank embedding vectors persist in the runtime cache and invalidate on
   route-bank or embedding-model changes;
-- optional `aurelio` route kernel adapter entry through `ROUTER_ROUTE_KERNEL`,
-  while keeping `basic` as the dependency-free fallback kernel;
+- Aurelio route kernel as the default through `ROUTER_ROUTE_KERNEL=aurelio`;
+  default mode is `HybridRouter + HybridLocalIndex`, with `basic` retained as
+  fallback/debug baseline;
 - quality report generation from eval JSON and route summaries.
 - generic AI review packet generation and AI review summary validation;
 - daily health quality artifacts under `<log-dir>/quality/<day>/`: route
@@ -109,9 +110,9 @@ Implemented:
 
 Not closed:
 
-- current `basic` routing kernel is a bootstrap baseline, not the long-term
-  mature-router strategy; the `aurelio` adapter still needs offline quality
-  comparison before becoming a recommended production kernel;
+- current production default should move toward the mature Aurelio kernel; the
+  `basic` kernel is now a bootstrap fallback/debug baseline, not the product
+  default;
 - the route bank is still `bootstrap-v1`, not a serious bilingual quality
   baseline;
 - accepted findings are not routinely imported into redacted regression cases;
@@ -128,10 +129,9 @@ item is closed.
 
 1. Keep this control surface, evidence status, log-driven loop, and plan
    registry consistent.
-2. Use `docs/upstream_router_kernel_spike_2026-05-18.md` to decide whether
-   the routing kernel should become a dependency adapter, fork, methodology-only
-   reference, or self-built fallback. Do not expand the self-built kernel until
-   this spike is closed.
+2. Keep Aurelio as the default mature routing dependency and keep `basic` only
+   as a fallback/debug baseline. Do not expand the self-built kernel as product
+   strategy.
 3. Use `docs/router_data_pipeline_research.md` as the `dataset-pipeline-v2`
    execution baseline: bilingual source ingestion, normalized records,
    route/eval/calibration split, embedding cache, and quality gates.

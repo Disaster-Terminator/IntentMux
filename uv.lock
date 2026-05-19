@@ -701,6 +701,7 @@ dependencies = [
     { name = "numpy" },
     { name = "pydantic" },
     { name = "pyyaml" },
+    { name = "semantic-router" },
     { name = "uvicorn" },
 ]
 
@@ -713,9 +714,6 @@ dev = [
     { name = "pytest-asyncio" },
     { name = "ruff" },
 ]
-upstream-router = [
-    { name = "semantic-router" },
-]
 
 [package.metadata]
 requires-dist = [
@@ -724,6 +722,7 @@ requires-dist = [
     { name = "numpy", specifier = ">=1.26.0" },
     { name = "pydantic", specifier = ">=2.8.0" },
     { name = "pyyaml", specifier = ">=6.0.0" },
+    { name = "semantic-router", specifier = ">=0.1.14" },
     { name = "uvicorn", specifier = ">=0.30.0" },
 ]
 
@@ -734,7 +733,6 @@ dev = [
     { name = "pytest-asyncio", specifier = ">=0.24.0" },
     { name = "ruff", specifier = ">=0.15.13" },
 ]
-upstream-router = [{ name = "semantic-router", specifier = ">=0.1.14" }]
 
 [[package]]
 name = "jinja2"
