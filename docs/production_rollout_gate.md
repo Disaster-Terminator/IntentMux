@@ -55,7 +55,7 @@ Avoid `docker restart`, `docker compose up`, `docker compose build`, and
 Run from the repository before touching production:
 
 ```bash
-uv run python -m pytest -q
+uv run pytest -n auto -q
 uv run python scripts/verify_route_contract.py
 uv run python scripts/eval_routes.py \
   --cases data/semantic_sets/eval_bank.yaml \

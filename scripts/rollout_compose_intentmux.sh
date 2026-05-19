@@ -25,6 +25,7 @@ Environment:
   INTENTMUX_SOURCE_CONFIG      Source routes.yaml. Default: config/routes.yaml
   INTENTMUX_API_KEY            Optional inbound API key for preflight.
   ROUTER_INBOUND_API_KEY       Fallback inbound API key when INTENTMUX_API_KEY is unset.
+  INTENTMUX_PYTEST_ARGS        Pytest args for rollout tests. Default: -n auto -q
   INTENTMUX_READY_TIMEOUT      Wait timeout in seconds. Default: 60
   INTENTMUX_ROLLOUT_LOG_DIR    Command log directory. Default: .intentmux-home/logs/rollouts
 EOF
@@ -43,6 +44,7 @@ allow_dirty=0
 skip_tests=0
 sync_runtime_config=0
 ready_timeout="${INTENTMUX_READY_TIMEOUT:-60}"
+pytest_args="${INTENTMUX_PYTEST_ARGS:--n auto -q}"
 verbose=0
 rollout_log_dir="${INTENTMUX_ROLLOUT_LOG_DIR:-${repo_dir}/.intentmux-home/logs/rollouts}"
 rollout_log="${rollout_log_dir}/intentmux-rollout-$(date +%Y%m%d-%H%M%S).log"
@@ -243,7 +245,9 @@ else
 fi
 
 if ((skip_tests == 0)); then
-  run uv run pytest -q
+  # shellcheck disable=SC2206
+  pytest_args_array=($pytest_args)
+  run uv run pytest "${pytest_args_array[@]}"
 else
   log "skipping pytest by request"
 fi

@@ -406,7 +406,8 @@ routes:
 基础测试：
 
 ```bash
-uv run python -m pytest -q
+uv run pytest -n auto -q
+uv run python -m pytest -q  # 串行排查时使用
 uv run python scripts/eval_routes.py --cases examples/eval_bank.sample.yaml --mock-embeddings
 uv run python scripts/verify_route_contract.py
 ```
