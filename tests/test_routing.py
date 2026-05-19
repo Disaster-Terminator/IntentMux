@@ -154,6 +154,52 @@ async def test_embedding_decision_reports_matched_route_bank_provenance():
 
 
 @pytest.mark.asyncio
+async def test_aurelio_route_kernel_uses_upstream_router_and_keeps_provenance():
+    pytest.importorskip("semantic_router")
+    route_settings = RouterSettings(
+        route_model="auto",
+        fallback_route_id="lite",
+        route_kernel="aurelio",
+        threshold=0.5,
+        margin=0.05,
+        routes={
+            "lite": RouteSpec(
+                target_model="local-lite-model",
+                description="low risk",
+                utterances=["翻译成中文"],
+                utterance_sources={"翻译成中文": "massive_zh_cn_general"},
+            ),
+            "deep": RouteSpec(
+                target_model="local-deep-model",
+                description="high risk",
+                utterances=["分析这个线上 bug"],
+                utterance_sources={"分析这个线上 bug": "swebench_issue_resolution"},
+            ),
+        },
+    )
+    vectors = {
+        "翻译成中文": [1.0, 0.0, 0.0],
+        "分析这个线上 bug": [0.0, 1.0, 0.0],
+        "线上 bug 怎么修": [0.0, 1.0, 0.0],
+    }
+    router = Router(route_settings, FakeEmbeddingClient(vectors))
+
+    decision = await router.decide(
+        {"model": "auto", "messages": [{"role": "user", "content": "线上 bug 怎么修"}]}
+    )
+
+    assert decision.route_id == "deep"
+    assert decision.target_model == "local-deep-model"
+    assert decision.policy_id == "embedding"
+    assert decision.reason == "embedding"
+    assert decision.score is not None
+    assert decision.second_score is not None
+    assert decision.match_source == "swebench_issue_resolution"
+    assert decision.match_index == 0
+    assert decision.match_text_sha256
+
+
+@pytest.mark.asyncio
 async def test_route_embedding_cache_reuses_persisted_vectors_between_router_instances(
     tmp_path: Path,
 ):

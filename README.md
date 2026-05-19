@@ -106,6 +106,24 @@ IntentMux 的差异化不是“再造一个复杂 router”，而是轻量、本
 explicit override -> high-precision hard escalation -> semantic score + threshold -> fallback lite
 ```
 
+路由内核是可插拔的：
+
+- `basic`：内置轻量 baseline，使用本地 embedding、route bank、threshold/margin 和
+  持久化向量缓存。
+- `aurelio`：可选的 Aurelio Semantic Router adapter，在请求路径内调用 Python
+  library 评分；IntentMux 仍负责 OpenAI-compatible API、LiteLLM sidecar 转发、
+  hard rule、fallback、日志和审计字段。
+
+启用 Aurelio 内核需要安装可选依赖组并显式设置环境变量：
+
+```bash
+uv sync --group upstream-router
+ROUTER_ROUTE_KERNEL=aurelio uv run python -m router.app
+```
+
+不要整仓搬运或复制上游核心代码；成熟 router 应以 dependency adapter 的方式接入。
+RouteLLM 当前作为评估和阈值校准方法来源，不进入在线请求路径。
+
 `hard_rules` 只用于安全、密钥泄露、线上事故、数据损坏等高风险强制升级场景。
 `PR`、`debug`、`部署`、`索引`、`异常`、`报错` 等容易被 agent 累积上下文污染的普通工程词，
 默认交给语义样本、相似度分数和阈值判断，避免后续轻量请求长期粘在 `deep`。
@@ -148,6 +166,8 @@ uv run python -m router.app
 - `ROUTER_LITELLM_TIMEOUT`
 - `ROUTER_EMBEDDING_URL`
 - `ROUTER_EMBEDDING_MODEL`
+- `ROUTER_ROUTE_KERNEL`：`basic` 或 `aurelio`。默认 `basic`；`aurelio` 需要
+  `uv sync --group upstream-router` 或等价安装。
 - `ROUTER_ACCESS_LOG`
 - `ROUTER_AUDIT_LOG_ENABLED`
 - `ROUTER_AUDIT_LOG_DIR`

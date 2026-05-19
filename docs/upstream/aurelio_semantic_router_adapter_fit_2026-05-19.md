@@ -13,6 +13,18 @@ Aurelio Semantic Router 适合作为 IntentMux 的 **adapter candidate**，但�
 methodology-first now -> adapter spike -> pass gates 后再考虑 optional dependency
 ```
 
+实现形态已经收敛为 dependency adapter，不整仓搬运、不复制核心代码：
+
+```text
+IntentMux shell
+  -> optional Aurelio Semantic Router in-process adapter
+  -> LiteLLM / OpenAI-compatible upstream
+```
+
+Aurelio 不是在线外部服务；它作为 Python library 在 IntentMux 请求路径内被调用。
+RouteLLM 不进入请求路径，只作为 quality / deep_call_rate / threshold calibration
+的评估方法来源。
+
 它和 IntentMux 当前自研内核的问题域高度重合：`Route` / utterances / encoder /
 index / threshold optimization。这说明它值得学习和做 adapter spike，但也说明
 它不是架构跃迁。它不负责 OpenAI-compatible 入口、LiteLLM 接入、runtime home、
@@ -124,7 +136,9 @@ Route(name="lite", utterances=["解释一下这个命令是什么意思", "翻�
 ## 当前建议
 
 短期不 fork、不进默认依赖。先采纳它的 route/threshold/evaluate 方法作为设计
-参考；下一步如果继续验证，只做一个最小 adapter spike：
+参考；当前主线提供 `ROUTER_ROUTE_KERNEL=aurelio` 的可选 adapter 入口，但默认仍是
+`basic`，避免未安装 optional dependency 的用户启动失败。下一步如果继续验证，只做
+一个最小 adapter spike：
 
 ```text
 examples route/eval yaml

@@ -74,6 +74,7 @@ class RouterSettings(BaseModel):
     agent_signal_route_id: str | None = None
     agent_signal_min_input_chars: int = 12_000
     agent_signal_min_message_count: int = 6
+    route_kernel: Literal["basic", "aurelio"] = "basic"
     threshold: float = 0.55
     margin: float = 0.04
     routes: dict[str, RouteSpec]
@@ -227,6 +228,7 @@ def load_settings(path: str | Path | None = None) -> RouterSettings:
                 str(settings.agent_signal_min_message_count),
             )
         ),
+        "route_kernel": os.getenv("ROUTER_ROUTE_KERNEL", settings.route_kernel),
         "litellm_base_url": os.getenv("ROUTER_LITELLM_BASE_URL", settings.litellm_base_url),
         "litellm_api_key": os.getenv("ROUTER_LITELLM_API_KEY") or settings.litellm_api_key,
         "inbound_api_key": os.getenv("ROUTER_INBOUND_API_KEY") or settings.inbound_api_key,

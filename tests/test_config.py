@@ -472,6 +472,33 @@ routes:
     assert settings.route_embedding_cache_path == str(tmp_path / "custom-cache.json")
 
 
+def test_route_kernel_can_come_from_environment(monkeypatch, tmp_path: Path):
+    config_path = tmp_path / "routes.yaml"
+    config_path.write_text(
+        """
+route_model: auto
+fallback_route_id: lite
+routes:
+  lite:
+    target_model: local-lite-model
+    description: low risk
+    utterances:
+      - 翻译成中文
+  deep:
+    target_model: local-deep-model
+    description: high risk
+    utterances:
+      - 分析这个线上 bug
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("ROUTER_ROUTE_KERNEL", "aurelio")
+
+    loaded = load_settings(config_path)
+
+    assert loaded.route_kernel == "aurelio"
+
+
 def test_empty_embedding_api_key_env_does_not_clear_configured_key(
     monkeypatch, tmp_path: Path
 ):

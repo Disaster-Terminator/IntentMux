@@ -99,6 +99,8 @@ Implemented:
   `match_source`, `match_index`, and `match_text_sha256`;
 - route-bank embedding vectors persist in the runtime cache and invalidate on
   route-bank or embedding-model changes;
+- optional `aurelio` route kernel adapter entry through `ROUTER_ROUTE_KERNEL`,
+  while keeping `basic` as the dependency-free fallback kernel;
 - quality report generation from eval JSON and route summaries.
 - generic AI review packet generation and AI review summary validation;
 - daily health quality artifacts under `<log-dir>/quality/<day>/`: route
@@ -107,8 +109,9 @@ Implemented:
 
 Not closed:
 
-- current self-built routing kernel is a bootstrap baseline, not the long-term
-  mature-router strategy;
+- current `basic` routing kernel is a bootstrap baseline, not the long-term
+  mature-router strategy; the `aurelio` adapter still needs offline quality
+  comparison before becoming a recommended production kernel;
 - the route bank is still `bootstrap-v1`, not a serious bilingual quality
   baseline;
 - accepted findings are not routinely imported into redacted regression cases;

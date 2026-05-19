@@ -42,6 +42,7 @@ class Router:
         self.settings = settings
         self.embedding_client = embedding_client
         self._route_vectors: dict[str, list[RouteVector]] | None = None
+        self._aurelio_router: Any | None = None
 
     async def decide(
         self,
@@ -98,22 +99,7 @@ class Router:
         try:
             await self._ensure_route_vectors()
             query_vector = (await self.embedding_client.embed([text]))[0]
-            route_matches = {}
-            for route, vectors in self._route_vectors.items():
-                if not vectors:
-                    continue
-                route_matches[route] = max(
-                    (
-                        RouteMatch(
-                            score=cosine_similarity(query_vector, item.vector),
-                            source=item.source,
-                            index=item.index,
-                            text_sha256=item.text_sha256,
-                        )
-                        for item in vectors
-                    ),
-                    key=lambda item: item.score,
-                )
+            route_matches = self._rank_route_matches(query_vector)
         except Exception:
             return RoutingDecision(
                 route_id=self.settings.fallback_route_id,
@@ -248,6 +234,7 @@ class Router:
             route_vectors[entry.route_id].append(
                 RouteVector(
                     vector=vector,
+                    text=entry.text,
                     source=entry.source,
                     index=entry.index,
                     text_sha256=entry.text_sha256,
@@ -296,6 +283,7 @@ class Router:
             route_vectors[entry.route_id].append(
                 RouteVector(
                     vector=vector,
+                    text=entry.text,
                     source=entry.source,
                     index=entry.index,
                     text_sha256=entry.text_sha256,
@@ -343,6 +331,145 @@ class Router:
             return None
         return Path(self.settings.route_embedding_cache_path).expanduser()
 
+    def _rank_route_matches(self, query_vector: list[float]) -> dict[str, "RouteMatch"]:
+        if self._route_vectors is None:
+            return {}
+        if self.settings.route_kernel == "aurelio":
+            return self._rank_route_matches_with_aurelio(query_vector)
+        return self._rank_route_matches_basic(query_vector)
+
+    def _rank_route_matches_basic(self, query_vector: list[float]) -> dict[str, "RouteMatch"]:
+        if self._route_vectors is None:
+            return {}
+        route_matches = {}
+        for route, vectors in self._route_vectors.items():
+            if not vectors:
+                continue
+            route_matches[route] = max(
+                (self._match_for_vector(query_vector, item) for item in vectors),
+                key=lambda item: item.score,
+            )
+        return route_matches
+
+    def _rank_route_matches_with_aurelio(
+        self, query_vector: list[float]
+    ) -> dict[str, "RouteMatch"]:
+        if self._route_vectors is None:
+            return {}
+        router = self._ensure_aurelio_router()
+        choices = router(vector=np.asarray(query_vector, dtype=np.float32), limit=2)
+        if choices is None:
+            return {}
+        if not isinstance(choices, list):
+            choices = [choices]
+
+        route_matches: dict[str, RouteMatch] = {}
+        for choice in choices:
+            route_name = getattr(choice, "name", None)
+            if not isinstance(route_name, str) or route_name not in self._route_vectors:
+                continue
+            score = getattr(choice, "similarity_score", None)
+            if score is None:
+                continue
+            route_matches[route_name] = self._best_match_for_route(
+                route_name,
+                query_vector,
+                score=float(score),
+            )
+        return route_matches
+
+    def _ensure_aurelio_router(self) -> Any:
+        if self._aurelio_router is not None:
+            return self._aurelio_router
+        if self._route_vectors is None:
+            raise RuntimeError("route vectors must be initialized before aurelio router")
+
+        try:
+            from semantic_router import Route as AurelioRoute
+            from semantic_router import SemanticRouter as AurelioSemanticRouter
+            from semantic_router.encoders import DenseEncoder
+            from semantic_router.index import LocalIndex
+        except ImportError as exc:
+            raise RuntimeError(
+                "route_kernel=aurelio requires the optional upstream-router dependency group"
+            ) from exc
+
+        embeddings: list[list[float]] = []
+        routes: list[str] = []
+        utterances: list[str] = []
+        metadata: list[dict[str, Any]] = []
+        for route_id, vectors in self._route_vectors.items():
+            for item in vectors:
+                embeddings.append(item.vector)
+                routes.append(route_id)
+                utterances.append(item.text)
+                metadata.append(
+                    {
+                        "source": item.source,
+                        "index": item.index,
+                        "text_sha256": item.text_sha256,
+                    }
+                )
+
+        if not embeddings:
+            raise RuntimeError("route_kernel=aurelio requires at least one route vector")
+
+        dimensions = len(embeddings[0])
+
+        class IntentMuxVectorOnlyEncoder(DenseEncoder):
+            name: str = "intentmux-vector-only"
+
+            def __call__(self, docs: list[Any]) -> list[list[float]]:
+                return [[0.0] * dimensions for _ in docs]
+
+        index = LocalIndex()
+        index.add(
+            embeddings=embeddings,
+            routes=routes,
+            utterances=utterances,
+            metadata_list=metadata,
+        )
+        aurelio_routes = [
+            AurelioRoute(name=route_id, utterances=[])
+            for route_id in self.settings.routes
+        ]
+        self._aurelio_router = AurelioSemanticRouter(
+            encoder=IntentMuxVectorOnlyEncoder(),
+            index=index,
+            routes=aurelio_routes,
+            auto_sync=None,
+        )
+        return self._aurelio_router
+
+    def _best_match_for_route(
+        self, route_id: str, query_vector: list[float], *, score: float
+    ) -> "RouteMatch":
+        if self._route_vectors is None:
+            raise RuntimeError("route vectors are not initialized")
+        vectors = self._route_vectors.get(route_id) or []
+        if not vectors:
+            return RouteMatch(score=score, source=None, index=0, text_sha256="")
+        basic_match = max(
+            (self._match_for_vector(query_vector, item) for item in vectors),
+            key=lambda item: item.score,
+        )
+        return RouteMatch(
+            score=score,
+            source=basic_match.source,
+            index=basic_match.index,
+            text_sha256=basic_match.text_sha256,
+        )
+
+    def _match_for_vector(
+        self, query_vector: list[float], item: "RouteVector"
+    ) -> "RouteMatch":
+        return RouteMatch(
+            score=cosine_similarity(query_vector, item.vector),
+            source=item.source,
+            index=item.index,
+            text_sha256=item.text_sha256,
+        )
+
 
 @dataclass(frozen=True)
 class RouteCorpusEntry:
@@ -356,6 +483,7 @@ class RouteCorpusEntry:
 @dataclass(frozen=True)
 class RouteVector:
     vector: list[float]
+    text: str
     source: str | None
     index: int
     text_sha256: str
