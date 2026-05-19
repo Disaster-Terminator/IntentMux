@@ -49,6 +49,8 @@ route/utterance 抽象、dense/hybrid matching、本地 index 和 score；Intent
 - Aurelio hybrid 模式下 `match_provenance=aurelio_hybrid_exact` 表示审计字段
   来自与 hybrid scoring 一致的本地样例匹配，而不是同 route 内的 dense-only
   近似归因；
+- `match_source=inline_config` 表示命中的是当前 `routes.yaml` 内联种子样例，
+  不是上游 route-bank 数据集；
 - `examples/*.sample.yaml` 可运行，正式 `data/semantic_sets/*.yaml` 默认不进 git。
 
 ## 未闭环

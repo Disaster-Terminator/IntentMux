@@ -234,7 +234,7 @@ class Router:
                     RouteCorpusEntry(
                         route_id=route,
                         text=text,
-                        source=spec.utterance_sources.get(text),
+                        source=spec.utterance_sources.get(text) or "inline_config",
                         index=index,
                         text_sha256=sha256_text(text),
                     )

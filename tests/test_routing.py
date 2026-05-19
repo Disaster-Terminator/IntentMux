@@ -154,6 +154,41 @@ async def test_embedding_decision_reports_matched_route_bank_provenance():
 
 
 @pytest.mark.asyncio
+async def test_embedding_decision_reports_inline_config_source_when_no_bank_source():
+    route_settings = RouterSettings(
+        route_model="auto",
+        fallback_route_id="lite",
+        threshold=0.5,
+        margin=0.05,
+        routes={
+            "lite": RouteSpec(
+                target_model="local-lite-model",
+                description="low risk",
+                utterances=["翻译成中文"],
+            ),
+            "deep": RouteSpec(
+                target_model="local-deep-model",
+                description="high risk",
+                utterances=["分析这个线上 bug"],
+            ),
+        },
+    )
+    vectors = {
+        "翻译成中文": [1.0, 0.0, 0.0],
+        "分析这个线上 bug": [0.0, 1.0, 0.0],
+        "线上 bug 怎么修": [0.0, 1.0, 0.0],
+    }
+    router = Router(route_settings, FakeEmbeddingClient(vectors))
+
+    decision = await router.decide(
+        {"model": "auto", "messages": [{"role": "user", "content": "线上 bug 怎么修"}]}
+    )
+
+    assert decision.route_id == "deep"
+    assert decision.match_source == "inline_config"
+
+
+@pytest.mark.asyncio
 async def test_aurelio_route_kernel_uses_upstream_router_and_keeps_provenance():
     pytest.importorskip("semantic_router")
     route_settings = RouterSettings(

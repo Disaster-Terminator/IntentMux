@@ -37,6 +37,8 @@ the attribution used the same dense-plus-sparse local scoring shape as the
 hybrid route decision. This keeps audit evidence separate from IntentMux's
 product decision: Aurelio supplies the matching kernel; IntentMux owns the
 two-tier `lite` / `deep` contract, score gates, logs, and learning workflow.
+`match_source=inline_config` means the matched sample came from the active
+routes.yaml seed utterances rather than a route-bank dataset.
 
 Prompt review logging is a separate local-only surface. It is disabled by
 default with `ROUTER_PROMPT_LOG_MODE=off`. When enabled, it writes to
