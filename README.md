@@ -587,6 +587,25 @@ AI 可以先做候选归纳和不确定性上浮；只有经接受、脱敏且�
 `scripts/summarize_ai_review.py` 校验并汇总 AI 输出；脚本本身不调用任何 AI
 provider，不在请求时路由路径里运行，也不依赖 Retinue、Hermes 或 OpenCode。
 
+路由策略变更前应优先使用固定 replay set 做离线重放，而不是靠单次日志阅读或
+AI 口头判断：
+
+```bash
+uv run python scripts/replay_routes.py /data/logs/prompts/*.jsonl \
+  --routes /data/config/routes.yaml \
+  --json-output /data/reports/replay/intentmux-replay-YYYY-MM-DD.json \
+  --markdown-output /data/reports/replay/intentmux-replay-YYYY-MM-DD.md
+```
+
+`replay_routes.py` 会把同一批本地样本跑过 `current-router`、`always-lite`、
+`always-deep` 和 `hard-rule-only`，输出 route 分布和与历史/显式标签的一致性。
+历史 `route_id` 只能说明漂移，不等于质量真值；默认报告不复制 prompt 原文，只写
+hash 和字符数。需要本地人工查看文本时必须显式加 `--include-text`，且产物只能放在
+私有 runtime 目录。
+replay 会调用当前配置的 embedding endpoint，因此默认只允许 localhost、私网地址或
+`host.docker.internal`；如果确实要把样本发给可信远端 embedding 服务，必须显式加
+`--allow-remote-embeddings`。
+
 配置 + 日志诊断摘要：
 
 ```bash

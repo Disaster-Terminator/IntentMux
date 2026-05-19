@@ -164,6 +164,29 @@ These scripts do not call an AI provider and are not part of the request-time
 routing path. The repository prepares and validates generic artifacts; local
 automation decides which external AI runner reads the packet.
 
+## Route Replay
+
+Replay is the offline reproducibility layer between raw production logs and
+route-bank or threshold changes:
+
+```bash
+uv run python scripts/replay_routes.py /data/logs/prompts/*.jsonl \
+  --routes /data/config/routes.yaml \
+  --json-output /data/reports/replay/intentmux-replay-YYYY-MM-DD.json \
+  --markdown-output /data/reports/replay/intentmux-replay-YYYY-MM-DD.md
+```
+
+It replays the same local samples through `current-router`, `always-lite`,
+`always-deep`, and `hard-rule-only`. This follows the RouteLLM / router
+benchmark lesson: judge routing changes by quality evidence, cost-tier
+distribution, and simple baselines together. Historical route ids in prompt
+review logs are drift evidence, not ground truth labels unless the replay input
+was explicitly labeled. By default replay reports include text hashes and
+character counts, not raw prompt text; use `--include-text` only for private
+local review artifacts. Replay calls the configured embedding endpoint, so it
+only allows localhost, private addresses, or `host.docker.internal` by default;
+use `--allow-remote-embeddings` only for trusted private review runs.
+
 ## Promoting Samples
 
 Candidate records do not become eval cases automatically. AI may summarize and
