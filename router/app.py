@@ -149,6 +149,8 @@ def create_app(
             "match_source": decision.match_source,
             "match_index": decision.match_index,
             "match_text_sha256": decision.match_text_sha256,
+            "match_score": decision.match_score,
+            "match_provenance": decision.match_provenance,
         }
 
     @app.post("/v1/chat/completions")

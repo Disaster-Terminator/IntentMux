@@ -159,6 +159,8 @@ def test_route_record_includes_match_provenance_only_when_available():
             match_source="swebench_issue_resolution",
             match_index=3,
             match_text_sha256="abc123",
+            match_score=0.91,
+            match_provenance="aurelio_hybrid_exact",
         ),
         stream=False,
         started_ms=0.0,
@@ -171,6 +173,8 @@ def test_route_record_includes_match_provenance_only_when_available():
     assert with_match["match_source"] == "swebench_issue_resolution"
     assert with_match["match_index"] == 3
     assert with_match["match_text_sha256"] == "abc123"
+    assert with_match["match_score"] == 0.91
+    assert with_match["match_provenance"] == "aurelio_hybrid_exact"
 
 
 def test_error_class_for_stable_upstream_statuses_and_timeouts():

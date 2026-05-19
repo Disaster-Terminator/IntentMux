@@ -18,9 +18,14 @@ IntentMux 的协议、日志、候选筛选和质量报告框架已经可用；�
 显式 route override
   -> 非入口模型 passthrough
   -> hard rule 升级
-  -> lite/deep route examples 的 embedding 相似度判断
+  -> Aurelio semantic-router 内核对 lite/deep route examples 做 hybrid 匹配
   -> 低置信 fallback 到 lite
 ```
+
+Aurelio 覆盖的是成熟路由内核，不是 IntentMux 的完整产品语义。它提供
+route/utterance 抽象、dense/hybrid matching、本地 index 和 score；IntentMux
+仍负责 OpenAI-compatible / LiteLLM sidecar 或 gateway、`lite` / `deep` 两档
+模型语义、配置、日志、审计、健康检查、生产质量报告和本地学习闭环。
 
 当前权威本地 route bank 是 `bootstrap-v1`，共 280 条：
 
@@ -39,7 +44,11 @@ IntentMux 的协议、日志、候选筛选和质量报告框架已经可用；�
 - route audit log 和 prompt review log 分离；
 - daily health 生成 route summary、baseline eval、quality report、review candidates、AI review packet；
 - `route_quality_report.py` 支持 baseline 对比和产品指标；
-- embedding 决策暴露 `match_source`、`match_index`、`match_text_sha256`；
+- embedding 决策暴露 `match_source`、`match_index`、`match_text_sha256`、
+  `match_score`、`match_provenance`；
+- Aurelio hybrid 模式下 `match_provenance=aurelio_hybrid_exact` 表示审计字段
+  来自与 hybrid scoring 一致的本地样例匹配，而不是同 route 内的 dense-only
+  近似归因；
 - `examples/*.sample.yaml` 可运行，正式 `data/semantic_sets/*.yaml` 默认不进 git。
 
 ## 未闭环

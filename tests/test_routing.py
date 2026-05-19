@@ -238,7 +238,58 @@ async def test_aurelio_hybrid_kernel_uses_lexical_signal_without_extra_model():
 
     assert decision.route_id == "deep"
     assert decision.match_source == "incident_zh"
+    assert decision.match_provenance == "aurelio_hybrid_exact"
     assert decision.score is not None
+
+
+@pytest.mark.asyncio
+async def test_aurelio_hybrid_provenance_tracks_hybrid_match_not_dense_fallback():
+    pytest.importorskip("semantic_router")
+    route_settings = RouterSettings(
+        route_model="auto",
+        fallback_route_id="lite",
+        route_kernel="aurelio",
+        aurelio_router="hybrid",
+        aurelio_hybrid_alpha=0.001,
+        threshold=0.2,
+        margin=0.01,
+        routes={
+            "lite": RouteSpec(
+                target_model="local-lite-model",
+                description="low risk",
+                utterances=["翻译成中文"],
+            ),
+            "deep": RouteSpec(
+                target_model="local-deep-model",
+                description="high risk",
+                utterances=["dense-only incident"],
+                utterance_sources={
+                    "dense-only incident": "dense_fallback_source",
+                    "线上事故分析": "lexical_hybrid_source",
+                },
+            ),
+        },
+    )
+    route_settings.routes["deep"].utterances.append("线上事故分析")
+    vectors = {
+        "翻译成中文": [0.0, 0.0, 1.0, 0.0],
+        "dense-only incident": [1.0, 0.0, 0.0, 0.0],
+        "线上事故分析": [0.0, 1.0, 0.0, 0.0],
+        # The dense nearest utterance inside the deep route is index 0, but the
+        # hybrid sparse signal should attribute the match to index 1.
+        "线上事故怎么处理": [0.2, 0.0, 0.0, 0.98],
+    }
+    router = Router(route_settings, FakeEmbeddingClient(vectors))
+
+    decision = await router.decide(
+        {"model": "auto", "messages": [{"role": "user", "content": "线上事故怎么处理"}]}
+    )
+
+    assert decision.route_id == "deep"
+    assert decision.match_source == "lexical_hybrid_source"
+    assert decision.match_index == 1
+    assert decision.match_provenance == "aurelio_hybrid_exact"
+    assert decision.match_score is not None
 
 
 @pytest.mark.asyncio

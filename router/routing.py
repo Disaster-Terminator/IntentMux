@@ -36,6 +36,8 @@ class RoutingDecision:
     match_source: str | None = None
     match_index: int | None = None
     match_text_sha256: str | None = None
+    match_score: float | None = None
+    match_provenance: str | None = None
 
 
 class Router:
@@ -165,6 +167,12 @@ class Router:
             match_source=best_match.source,
             match_index=best_match.index,
             match_text_sha256=best_match.text_sha256,
+            match_score=(
+                round(best_match.utterance_score, 6)
+                if best_match.utterance_score is not None
+                else None
+            ),
+            match_provenance=best_match.provenance,
         )
 
     def _is_entry_model(self, source_model: Any) -> bool:
@@ -250,6 +258,7 @@ class Router:
                     source=entry.source,
                     index=entry.index,
                     text_sha256=entry.text_sha256,
+                    sparse=sparse_embedding_to_dict(sparse_compact_array(entry.text)),
                 )
             )
         self._route_vectors = route_vectors
@@ -299,6 +308,7 @@ class Router:
                     source=entry.source,
                     index=entry.index,
                     text_sha256=entry.text_sha256,
+                    sparse=sparse_embedding_to_dict(sparse_compact_array(entry.text)),
                 )
             )
         return route_vectors
@@ -383,14 +393,20 @@ class Router:
                 * self.settings.aurelio_hybrid_alpha
             )
             sparse_embedding = router.sparse_encoder([text])[0]
-            kwargs["sparse_vector"] = scale_sparse_embedding(
+            scaled_sparse_embedding = scale_sparse_embedding(
                 sparse_embedding,
                 1.0 - self.settings.aurelio_hybrid_alpha,
             )
+            kwargs["sparse_vector"] = scaled_sparse_embedding
             router_object = router.router
+            provenance_matches = self._rank_hybrid_provenance_matches(
+                query_vector,
+                scaled_sparse_embedding,
+            )
         else:
             kwargs["vector"] = np.asarray(query_vector, dtype=np.float32)
             router_object = router
+            provenance_matches = None
         choices = router_object(**kwargs)
         if choices is None:
             return {}
@@ -405,12 +421,46 @@ class Router:
             score = getattr(choice, "similarity_score", None)
             if score is None:
                 continue
-            route_matches[route_name] = self._best_match_for_route(
-                route_name,
-                query_vector,
-                score=float(score),
-            )
+            if provenance_matches is not None and route_name in provenance_matches:
+                route_matches[route_name] = provenance_matches[route_name].with_score(
+                    float(score)
+                )
+            else:
+                route_matches[route_name] = self._best_match_for_route(
+                    route_name,
+                    query_vector,
+                    score=float(score),
+                    provenance="aurelio_semantic_dense_nearest",
+                )
         return route_matches
+
+    def _rank_hybrid_provenance_matches(
+        self,
+        query_vector: list[float],
+        scaled_sparse_embedding: Any,
+    ) -> dict[str, "RouteMatch"]:
+        if self._route_vectors is None:
+            return {}
+        query_sparse = sparse_embedding_to_dict(scaled_sparse_embedding)
+        matches: dict[str, RouteMatch] = {}
+        for route_id, vectors in self._route_vectors.items():
+            best_match: RouteMatch | None = None
+            for item in vectors:
+                dense_score = cosine_similarity(query_vector, item.vector)
+                score = dense_score + sparse_dot_product(query_sparse, item.sparse)
+                candidate = RouteMatch(
+                    score=score,
+                    source=item.source,
+                    index=item.index,
+                    text_sha256=item.text_sha256,
+                    utterance_score=score,
+                    provenance="aurelio_hybrid_exact",
+                )
+                if best_match is None or candidate.score > best_match.score:
+                    best_match = candidate
+            if best_match is not None:
+                matches[route_id] = best_match
+        return matches
 
     def _ensure_aurelio_router(self) -> Any:
         if self._aurelio_router is not None:
@@ -512,13 +562,25 @@ class Router:
         return self._aurelio_router
 
     def _best_match_for_route(
-        self, route_id: str, query_vector: list[float], *, score: float
+        self,
+        route_id: str,
+        query_vector: list[float],
+        *,
+        score: float,
+        provenance: str = "basic_dense",
     ) -> "RouteMatch":
         if self._route_vectors is None:
             raise RuntimeError("route vectors are not initialized")
         vectors = self._route_vectors.get(route_id) or []
         if not vectors:
-            return RouteMatch(score=score, source=None, index=0, text_sha256="")
+            return RouteMatch(
+                score=score,
+                source=None,
+                index=0,
+                text_sha256="",
+                utterance_score=None,
+                provenance=provenance,
+            )
         basic_match = max(
             (self._match_for_vector(query_vector, item) for item in vectors),
             key=lambda item: item.score,
@@ -528,16 +590,21 @@ class Router:
             source=basic_match.source,
             index=basic_match.index,
             text_sha256=basic_match.text_sha256,
+            utterance_score=basic_match.score,
+            provenance=provenance,
         )
 
     def _match_for_vector(
         self, query_vector: list[float], item: "RouteVector"
     ) -> "RouteMatch":
+        score = cosine_similarity(query_vector, item.vector)
         return RouteMatch(
-            score=cosine_similarity(query_vector, item.vector),
+            score=score,
             source=item.source,
             index=item.index,
             text_sha256=item.text_sha256,
+            utterance_score=score,
+            provenance="basic_dense",
         )
 
 
@@ -557,6 +624,7 @@ class RouteVector:
     source: str | None
     index: int
     text_sha256: str
+    sparse: dict[int, float]
 
 
 @dataclass(frozen=True)
@@ -565,6 +633,18 @@ class RouteMatch:
     source: str | None
     index: int
     text_sha256: str
+    utterance_score: float | None = None
+    provenance: str | None = None
+
+    def with_score(self, score: float) -> "RouteMatch":
+        return RouteMatch(
+            score=score,
+            source=self.source,
+            index=self.index,
+            text_sha256=self.text_sha256,
+            utterance_score=self.utterance_score,
+            provenance=self.provenance,
+        )
 
 
 @dataclass(frozen=True)
@@ -610,6 +690,25 @@ def stable_sparse_index(token: str) -> int:
     return int.from_bytes(hashlib.sha256(token.encode("utf-8")).digest()[:8], "big") % (
         2**20
     )
+
+
+def sparse_embedding_to_dict(sparse_embedding: Any) -> dict[int, float]:
+    if isinstance(sparse_embedding, dict):
+        return {int(index): float(value) for index, value in sparse_embedding.items()}
+    if hasattr(sparse_embedding, "to_dict"):
+        return {
+            int(index): float(value)
+            for index, value in sparse_embedding.to_dict().items()
+        }
+    if isinstance(sparse_embedding, np.ndarray):
+        return {int(index): float(value) for index, value in sparse_embedding}
+    return {}
+
+
+def sparse_dot_product(left: dict[int, float], right: dict[int, float]) -> float:
+    if len(left) > len(right):
+        left, right = right, left
+    return sum(value * right.get(index, 0.0) for index, value in left.items())
 
 
 def scale_sparse_embedding(sparse_embedding: Any, factor: float) -> Any:

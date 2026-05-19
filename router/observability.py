@@ -427,6 +427,10 @@ def add_match_provenance(record: dict[str, Any], decision: RoutingDecision) -> N
         record["match_index"] = decision.match_index
     if decision.match_text_sha256 is not None:
         record["match_text_sha256"] = decision.match_text_sha256
+    if decision.match_score is not None:
+        record["match_score"] = decision.match_score
+    if decision.match_provenance is not None:
+        record["match_provenance"] = decision.match_provenance
 
 
 def emit_route_record(

@@ -31,6 +31,13 @@ logging the matched sample text. Hard rules, explicit route overrides,
 low-confidence fallback, and passthrough decisions do not claim a semantic
 sample match.
 
+`match_score` and `match_provenance` describe how that sample attribution was
+computed. With the default Aurelio hybrid kernel, `aurelio_hybrid_exact` means
+the attribution used the same dense-plus-sparse local scoring shape as the
+hybrid route decision. This keeps audit evidence separate from IntentMux's
+product decision: Aurelio supplies the matching kernel; IntentMux owns the
+two-tier `lite` / `deep` contract, score gates, logs, and learning workflow.
+
 Prompt review logging is a separate local-only surface. It is disabled by
 default with `ROUTER_PROMPT_LOG_MODE=off`. When enabled, it writes to
 `ROUTER_PROMPT_LOG_DIR/YYYY-MM-DD.jsonl`, not to stdout, route audit JSONL, or
