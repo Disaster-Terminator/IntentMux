@@ -91,6 +91,7 @@ class RouterSettings(BaseModel):
     hard_rules: list[HardRuleSpec] = Field(default_factory=list)
     embedding_url: str = "http://127.0.0.1:1234/v1/embeddings"
     embedding_model: str = "text-embedding-jina-embeddings-v5-text-small-retrieval@q8_0"
+    embedding_batch_size: int = 128
     embedding_api_key: str | None = None
     embedding_headers: dict[str, str] = Field(default_factory=dict)
     litellm_base_url: str = "http://127.0.0.1:4000"
@@ -151,6 +152,8 @@ class RouterSettings(BaseModel):
             raise ValueError("prompt_log_dir is required when prompt logging is enabled")
         if self.prompt_log_max_chars <= 0:
             raise ValueError("prompt_log_max_chars must be positive")
+        if self.embedding_batch_size <= 0:
+            raise ValueError("embedding_batch_size must be positive")
         return self
 
     def resolve_route_id_alias(self, route_id: str) -> str:
@@ -196,6 +199,9 @@ def load_settings(path: str | Path | None = None) -> RouterSettings:
     overrides = {
         "embedding_url": os.getenv("ROUTER_EMBEDDING_URL", settings.embedding_url),
         "embedding_model": os.getenv("ROUTER_EMBEDDING_MODEL", settings.embedding_model),
+        "embedding_batch_size": int(
+            os.getenv("ROUTER_EMBEDDING_BATCH_SIZE", str(settings.embedding_batch_size))
+        ),
         "embedding_api_key": os.getenv("ROUTER_EMBEDDING_API_KEY")
         or settings.embedding_api_key,
         "embedding_headers": headers_from_json_env(

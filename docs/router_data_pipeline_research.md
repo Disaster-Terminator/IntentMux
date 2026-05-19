@@ -133,6 +133,24 @@ Do not load every available dataset into the online route bank. Ingest
 authoritative upstream data broadly into local normalized artifacts, then split
 and cap by use.
 
+The default baseline should be large enough to avoid a toy route bank while
+remaining small enough for a lightweight sidecar without ANN/vector database
+infrastructure. IntentMux therefore keeps the full normalized corpus as an
+ignored local artifact and selects a bounded runtime route bank from it. Inspect
+the current split with:
+
+```bash
+uv run python scripts/inspect_semantic_assets.py
+```
+
+Use this distinction in reports:
+
+- `normalized corpus`: broad local source material, not scored per request.
+- `runtime route bank`: selected utterances embedded and scored in the hot path.
+- `eval/calibration bank`: held-out evidence, not route-bank seed material.
+- `prompt/review logs`: local feedback evidence, not redistributable upstream
+  corpus unless explicitly redacted and promoted.
+
 | source family | default use | route bank | eval/calibration | notes |
 | --- | --- | --- | --- | --- |
 | Chinese general utterances | `lite` bootstrap | yes | limited | useful for short low-risk requests |

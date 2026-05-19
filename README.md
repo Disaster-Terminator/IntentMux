@@ -261,6 +261,8 @@ docker compose -f examples/docker-compose.yml up -d --build
 - `ROUTER_PROMPT_LOG_MAX_CHARS`：每条 latest user text 最多记录字符数，默认 `20000`。
 - `ROUTER_EMBEDDING_URL`：embedding 上游地址，默认 `http://host.docker.internal:1234/v1/embeddings`。
 - `ROUTER_EMBEDDING_MODEL`：embedding 模型名。
+- `ROUTER_EMBEDDING_BATCH_SIZE`：构建 route bank 向量缓存时的 embedding 批大小，默认 `128`。本地
+  OpenAI-compatible embedding 服务通常不适合一次接收几千条 route utterance。
 - `ROUTER_EMBEDDING_API_KEY`：可选的 embedding 上游 key，设置后按 OpenAI-compatible `Authorization: Bearer ...` 发送。
 - `ROUTER_EMBEDDING_HEADERS_JSON`：可选的 embedding 自定义 headers JSON，例如 `{"X-Provider":"local"}`。只允许字符串键值。
 - `ROUTER_ROUTE_EMBEDDING_CACHE_ENABLED`：是否启用静态 route bank 向量落盘缓存，默认 `true`。
@@ -694,6 +696,17 @@ uv run python scripts/build_semantic_assets.py
 records，并按 `intended_use` 分流到 route bank、eval bank 和 calibration bank。
 旧的 `scripts/build_route_bank.py` / `scripts/build_eval_bank.py` 仍可用于 bootstrap
 和兼容流程，但新的质量基线应优先走 `dataset-pipeline-v2`。
+
+默认运行时 route bank 是从完整 normalized corpus 中选择的可审计索引，不是完整语料库本身。
+当前默认选择几千条公开样本进入请求时相似度计算，避免几百条玩具样本，也避免在没有
+ANN/向量库前把全部 normalized records 放进每次请求的热路径。查看本地生成资产规模：
+
+```bash
+uv run python scripts/inspect_semantic_assets.py
+```
+
+这个命令只输出计数、来源和 slice 摘要；需要机器可读结果时加 `--json`。它不会输出
+prompt review log，也不会把本地私有语料写进仓库跟踪文件。
 
 生成文件默认不进 git。生产 review 样本必须先脱敏，再导入 eval：
 

@@ -15,6 +15,7 @@ from scripts.build_semantic_assets import (
     build_route_bank_from_records,
     load_sources,
 )
+from scripts.inspect_semantic_assets import render_text, summarize_assets
 
 
 def test_build_normalized_records_preserves_audit_fields_and_splits_uses():
@@ -445,3 +446,90 @@ def test_route_sources_manifest_declares_bilingual_v2_metadata():
     )
     assert {"route", "eval", "calibration"}.issubset(curated_uses)
     assert uses == {"route", "eval", "calibration"}
+
+
+def test_route_sources_default_limits_are_not_toy_sized():
+    sources = load_sources(Path("config/route_sources.yaml"))
+    route_limits = {
+        source.name: source.limit
+        for source in sources
+        if source.intended_use == "route"
+    }
+
+    assert route_limits["massive_zh_cn_train"] >= 1000
+    assert route_limits["massive_en_us_train"] >= 500
+    assert route_limits["swebench_issue_resolution"] >= 1000
+    assert route_limits["mbpp_codegen"] >= 500
+    assert route_limits["humaneval_codegen"] >= 100
+
+
+def test_inspect_semantic_assets_reports_bounded_counts(tmp_path: Path):
+    sources = tmp_path / "sources.yaml"
+    normalized = tmp_path / "normalized.jsonl"
+    route_bank = tmp_path / "route_bank.yaml"
+    eval_bank = tmp_path / "eval_bank.yaml"
+    calibration_bank = tmp_path / "calibration_bank.yaml"
+
+    sources.write_text(
+        """
+sources:
+  - name: local_lite
+    kind: local_jsonl
+    path: local.jsonl
+    route: lite
+    text_field: prompt
+    language: zh-CN
+    slice: lite_general_zh
+    intended_use: route
+    license: Apache-2.0
+    ingest_all: true
+    limit: 1000
+""",
+        encoding="utf-8",
+    )
+    normalized.write_text(
+        json.dumps(
+            {
+                "id": "local_lite:1",
+                "text": "帮我总结这段话",
+                "source": "local_lite",
+                "route_id": "lite",
+                "language": "zh-CN",
+                "slice": "lite_general_zh",
+                "proposed_use": "route",
+                "license": "Apache-2.0",
+            },
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    route_bank.write_text(
+        """
+routes:
+  lite:
+    utterances:
+      - id: local_lite:1
+        text: 帮我总结这段话
+        source: local_lite
+        language: zh-CN
+        slice: lite_general_zh
+""",
+        encoding="utf-8",
+    )
+    eval_bank.write_text("cases: []\n", encoding="utf-8")
+    calibration_bank.write_text("cases: []\n", encoding="utf-8")
+
+    summary = summarize_assets(
+        sources,
+        normalized,
+        route_bank,
+        eval_bank,
+        calibration_bank,
+    )
+    text = render_text(summary)
+
+    assert summary["normalized"]["total"] == 1
+    assert summary["route_bank"]["by_route"] == {"lite": 1}
+    assert "route_bank: 1 (lite=1)" in text
+    assert "local_lite: route=lite language=zh-CN limit=1000" in text
