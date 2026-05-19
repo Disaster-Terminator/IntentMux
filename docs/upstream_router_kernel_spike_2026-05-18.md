@@ -173,10 +173,20 @@ Codex 交叉验证结论；Retinue 结果不作为证据。
    替换当前 cosine route-bank 内核，同时保留 IntentMux 的 API、日志、
    runtime home 和 LiteLLM 边界。
 
+   当前产物：`docs/upstream/aurelio_semantic_router_adapter_fit_2026-05-19.md`。
+   结论是 methodology-first / adapter candidate。短期学习 route、index、
+   threshold optimization 和 evaluate/fit 方法；必须先通过 provenance、
+   OpenAI-compatible 本地 encoder、持久化 index/cache 和 bilingual eval gate，
+   才能考虑进入主线依赖。
+
 3. **vLLM Semantic Router architecture / product-fit spike**  
    目的：验证是否值得 fork 或学习其 signal/projection/decision/provider
    配置形态。重点看是否能压缩成本地轻量 sidecar，而不是照搬 Envoy /
    Kubernetes / control-plane 复杂度。
+
+   当前产物：`docs/upstream/vllm_semantic_router_architecture_fit_2026-05-19.md`。
+   结论是 methodology-only / architecture reference。短期学习
+   signal/projection/decision 分层和审计链，不 fork、不引入运行时依赖。
 
 ## 当前主线约束
 
