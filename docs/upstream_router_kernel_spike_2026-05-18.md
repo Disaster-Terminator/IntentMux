@@ -163,6 +163,11 @@ Codex 交叉验证结论；Retinue 结果不作为证据。
    curve、`deep` call rate、slice metrics。没有这层，adapter/fork 的收益
    无法证明。
 
+   当前入口：`scripts/route_calibration_report.py`。它生成
+   `intentmux-route-calibration-v1` JSON 和 Markdown，包含 baseline
+   comparison、threshold curve、slice metrics、coverage 和 recommendation。
+   产物默认写到 ignored runtime/work 目录；报告只提供证据，不修改生产配置。
+
 2. **Aurelio Semantic Router adapter spike**  
    目的：验证是否能用成熟 route/encoder/index/threshold optimization
    替换当前 cosine route-bank 内核，同时保留 IntentMux 的 API、日志、

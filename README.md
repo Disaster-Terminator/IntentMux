@@ -705,6 +705,22 @@ uv run python scripts/route_quality_report.py \
   --markdown-output /tmp/intentmux-quality.md
 ```
 
+RouteLLM 风格的阈值/成本质量校准报告使用独立 thin script，不修改生产路由：
+
+```bash
+uv run python scripts/route_calibration_report.py \
+  --cases data/semantic_sets/eval_bank.yaml \
+  --work-dir .intentmux-home/quality-spikes/route-calibration \
+  --json-output /tmp/intentmux-route-calibration.json \
+  --markdown-output /tmp/intentmux-route-calibration.md \
+  --mock-embeddings \
+  --thresholds 0.35,0.45,0.55,0.65,0.75
+```
+
+输出包含 baseline comparison、threshold curve、slice metrics、coverage 和
+recommendation。它只用于判断 scorer、route bank 或 threshold 变化是否值得继续，
+不会自动修改生产配置。
+
 `always-lite`、`always-deep` 和 `hard-rule-only` baseline 可能故意返回非零退出码，
 因为它们会输掉一部分 regression cases；只要 JSON 已生成，就可以进入质量报告对比。
 轻量质量闭环的当前工作顺序以 [docs/PROJECT_CONTROL.md](docs/PROJECT_CONTROL.md)

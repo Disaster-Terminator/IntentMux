@@ -307,3 +307,75 @@ cases:
         ("lite", "baseline:fallback"),
         ("deep", "baseline:hard_rule:生产事故"),
     ]
+
+
+def test_eval_routes_embedding_only_baseline_ignores_hard_rules(tmp_path: Path):
+    cases = tmp_path / "cases.yaml"
+    output = tmp_path / "eval.json"
+    cases.write_text(
+        """
+cases:
+  - id: hard_rule_keyword_only
+    text: 生产事故
+    expect: deep
+""",
+        encoding="utf-8",
+    )
+
+    subprocess.run(
+        [
+            sys.executable,
+            "scripts/eval_routes.py",
+            "--cases",
+            str(cases),
+            "--baseline",
+            "embedding-only",
+            "--mock-embeddings",
+            "--json-output",
+            str(output),
+        ],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["baseline"] == "embedding-only"
+    assert payload["cases"][0]["reason"] != "hard_rule:生产事故"
+
+
+def test_eval_routes_json_records_threshold_and_margin_overrides(tmp_path: Path):
+    cases = tmp_path / "cases.yaml"
+    output = tmp_path / "eval.json"
+    cases.write_text(
+        """
+cases:
+  - id: simple_001
+    text: 帮我总结这段话
+    expect: lite
+""",
+        encoding="utf-8",
+    )
+
+    subprocess.run(
+        [
+            sys.executable,
+            "scripts/eval_routes.py",
+            "--cases",
+            str(cases),
+            "--threshold",
+            "0.42",
+            "--margin",
+            "0.07",
+            "--mock-embeddings",
+            "--json-output",
+            str(output),
+        ],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["threshold"] == 0.42
+    assert payload["margin"] == 0.07

@@ -1,13 +1,21 @@
 cases:
-  - text: 解释一下这个命令是什么意思
+  - id: lite_general_zh_001
+    slice: lite_general_zh
+    text: 解释一下这个命令是什么意思
     expect: lite
     source: manual
-  - text: Fix crash when parsing config files.
+  - id: deep_debug_en_001
+    slice: deep_debug_en
+    text: Fix crash when parsing config files.
     expect: deep
     source: swebench_issue_resolution
-  - text: 翻译成中文
+  - id: lite_general_zh_002
+    slice: lite_general_zh
+    text: 翻译成中文
     expect: lite
     source: massive_zh_cn_general
-  - text: Analyze why this bug only happens in production.
+  - id: deep_debug_en_002
+    slice: deep_debug_en
+    text: Analyze why this bug only happens in production.
     expect: deep
     source: swebench_issue_resolution

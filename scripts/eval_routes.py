@@ -24,7 +24,13 @@ from router.routing import (
 )
 
 
-BASELINES = {"current-router", "always-lite", "always-deep", "hard-rule-only"}
+BASELINES = {
+    "current-router",
+    "always-lite",
+    "always-deep",
+    "embedding-only",
+    "hard-rule-only",
+}
 
 
 @dataclass(frozen=True)
@@ -129,10 +135,19 @@ async def run_eval(
     mock_embeddings: bool,
     json_output: Path | None = None,
     baseline: str = "current-router",
+    threshold: float | None = None,
+    margin: float | None = None,
 ) -> int:
     if baseline not in BASELINES:
         raise ValueError(f"baseline must be one of {sorted(BASELINES)}")
     settings = load_settings(routes_path)
+    updates: dict[str, float] = {}
+    if threshold is not None:
+        updates["threshold"] = threshold
+    if margin is not None:
+        updates["margin"] = margin
+    if updates:
+        settings = settings.model_copy(update=updates)
     embedding_client = (
         MockEmbeddingClient.from_settings(settings)
         if mock_embeddings
@@ -144,6 +159,7 @@ async def run_eval(
         )
     )
     router = Router(settings, embedding_client)
+    decision_router = router_for_baseline(router, baseline)
     failures: list[str] = []
     results: list[dict[str, Any]] = []
 
@@ -155,7 +171,7 @@ async def run_eval(
             "model": settings.route_model,
             "messages": [{"role": "user", "content": case.text}],
         }
-        decision = await decide_for_baseline(router, request_json, baseline)
+        decision = await decide_for_baseline(decision_router, request_json, baseline)
         actual_route = decision.route_id or decision.target_model
         status = "PASS" if actual_route == case.expect else "FAIL"
         result = {
@@ -189,6 +205,8 @@ async def run_eval(
                 {
                     "schema": "intentmux-route-eval-v1",
                     "baseline": baseline,
+                    "threshold": settings.threshold,
+                    "margin": settings.margin,
                     "cases": results,
                 },
                 ensure_ascii=False,
@@ -208,6 +226,8 @@ async def run_eval(
 async def decide_for_baseline(router: Router, request_json: dict[str, Any], baseline: str):
     if baseline == "current-router":
         return await router.decide(request_json)
+    if baseline == "embedding-only":
+        return await router.decide(request_json)
     if baseline == "always-lite":
         route_id = named_route_or_fallback(router, "lite")
         return baseline_decision(router, route_id, "baseline:always-lite")
@@ -223,6 +243,13 @@ async def decide_for_baseline(router: Router, request_json: dict[str, Any], base
             return baseline_decision(router, route_id, f"baseline:hard_rule:{keyword}")
         return baseline_decision(router, router.settings.fallback_route_id, "baseline:fallback")
     raise ValueError(f"unsupported baseline: {baseline}")
+
+
+def router_for_baseline(router: Router, baseline: str) -> Router:
+    if baseline != "embedding-only":
+        return router
+    settings = router.settings.model_copy(update={"hard_rules": []})
+    return Router(settings, router.embedding_client)
 
 
 def baseline_decision(router: Router, route_id: str, reason: str):
@@ -248,6 +275,8 @@ def main() -> None:
     parser.add_argument("--routes", default="config/routes.yaml")
     parser.add_argument("--mock-embeddings", action="store_true")
     parser.add_argument("--json-output")
+    parser.add_argument("--threshold", type=float)
+    parser.add_argument("--margin", type=float)
     parser.add_argument(
         "--baseline",
         default="current-router",
@@ -262,6 +291,8 @@ def main() -> None:
                 mock_embeddings=args.mock_embeddings,
                 json_output=Path(args.json_output) if args.json_output else None,
                 baseline=args.baseline,
+                threshold=args.threshold,
+                margin=args.margin,
             )
         )
     )
