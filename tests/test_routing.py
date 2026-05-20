@@ -635,7 +635,7 @@ async def test_metadata_route_id_accepts_canonical_ids_and_legacy_aliases():
 
 
 @pytest.mark.asyncio
-async def test_high_precision_hard_rule_routes_to_strong_without_embedding():
+async def test_high_precision_hard_rule_routes_to_deep_without_embedding():
     router = Router(settings(), FakeEmbeddingClient({}))
 
     decision = await router.decide(
@@ -653,7 +653,7 @@ async def test_high_precision_hard_rule_routes_to_strong_without_embedding():
 
 
 @pytest.mark.asyncio
-async def test_default_security_reviewer_role_text_does_not_force_strong_route():
+async def test_default_security_reviewer_role_text_does_not_force_deep_route():
     route_settings = load_settings("config/routes.yaml")
     router = Router(route_settings, FakeEmbeddingClient({}, fail=True))
 
@@ -794,7 +794,7 @@ async def test_ambiguous_engineering_terms_use_embedding_not_hard_rule():
 
 
 @pytest.mark.asyncio
-async def test_ambiguous_engineering_terms_can_route_fast_when_semantics_are_light():
+async def test_ambiguous_engineering_terms_can_route_lite_when_semantics_are_light():
     vectors = {
         "翻译成中文": [1.0, 0.0, 0.0],
         "总结这篇文章": [1.0, 0.0, 0.0],
@@ -947,7 +947,7 @@ async def test_long_multiturn_context_does_not_override_cost_first_routing():
 
 
 @pytest.mark.asyncio
-async def test_empty_agent_signal_fields_do_not_route_to_strong():
+async def test_empty_agent_signal_fields_do_not_route_to_deep():
     vectors = {
         "翻译成中文": [1.0, 0.0, 0.0],
         "总结这篇文章": [1.0, 0.0, 0.0],

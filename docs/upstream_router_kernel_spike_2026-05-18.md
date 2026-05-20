@@ -78,7 +78,7 @@ IntentMux 的价值不应是“自研相似度算法”，而是成熟路由能�
 - 项目目标是 serving and evaluating LLM routers。
 - 提供 OpenAI client/server 替换形态，用 router 在强弱模型之间分流。
 - 官方 README 声称预训练 router 可降低成本，同时保持接近强模型性能。
-- PyPI 文档提供 `calibrate_threshold`，通过 strong-model percentage 校准 router threshold。
+- PyPI 文档提供 `calibrate_threshold`，通过 high-capability route percentage 校准 router threshold。
 
 初步判断：
 

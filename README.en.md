@@ -37,7 +37,7 @@ completion requests and routes `model=auto` traffic to two product routes:
 
 - `lite`: lower-risk, lower-cost, lightweight tasks.
 - `deep`: code, debugging, architecture, risk analysis, and tasks that need a
-  stronger model.
+  more capable model.
 
 IntentMux is not a model provider and does not replace LiteLLM, OpenRouter, or
 another provider gateway. It owns entry-model semantics, route decisions,

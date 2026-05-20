@@ -24,8 +24,8 @@ def test_load_cases_ignores_eval_builder_metadata(tmp_path: Path):
     cases.write_text(
         """
 cases:
-  - id: fast_001
-    slice: fast_general_zh
+  - id: lite_001
+    slice: lite_general_zh
     text: 帮我总结这段话
     expect: lite
     source: curated
@@ -36,8 +36,8 @@ cases:
 
     assert load_cases(cases) == [
         EvalCase(
-            id="fast_001",
-            slice="fast_general_zh",
+            id="lite_001",
+            slice="lite_general_zh",
             text="帮我总结这段话",
             expect="lite",
             source="curated",
@@ -51,7 +51,7 @@ def test_load_cases_preserves_long_context_metadata(tmp_path: Path):
         """
 cases:
   - id: long_001
-    slice: strong_long_context_zh
+    slice: deep_long_context_zh
     text: 请基于长文档定位冲突结论
     expect: deep
     source: curated
@@ -65,7 +65,7 @@ cases:
     assert load_cases(cases) == [
         EvalCase(
             id="long_001",
-            slice="strong_long_context_zh",
+            slice="deep_long_context_zh",
             text="请基于长文档定位冲突结论",
             expect="deep",
             source="curated",
@@ -167,7 +167,7 @@ cases:
     assert case["context_policy"] == "preserved_length"
 
 
-def test_mock_eval_keeps_generic_advice_on_fast(tmp_path: Path):
+def test_mock_eval_keeps_generic_advice_on_lite(tmp_path: Path):
     cases = tmp_path / "cases.yaml"
     output = tmp_path / "eval.json"
     cases.write_text(

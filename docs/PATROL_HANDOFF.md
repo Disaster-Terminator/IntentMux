@@ -211,9 +211,9 @@ For a tolerant budget, tune thresholds from your own production baseline.
 
 Strict LiteLLM-entry E2E should verify:
 
-- non-stream strong route succeeds;
-- stream strong route succeeds;
-- non-stream fast route succeeds;
+- non-stream `deep` route succeeds;
+- stream `deep` route succeeds;
+- non-stream `lite` route succeeds;
 - each probe has a matching IntentMux route log by request id;
 - route audit logs do not contain prompts or bearer tokens.
 

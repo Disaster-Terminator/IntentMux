@@ -1159,7 +1159,7 @@ def test_router_settings_defaults_target_model_to_route_id_when_omitted():
     assert settings.routes["deep"].target_model == "deep"
 
 
-def test_router_settings_defaults_agent_signal_to_strong_when_present():
+def test_router_settings_defaults_agent_signal_to_deep_when_present():
     settings = RouterSettings.model_validate(
         {
             "routes": {
@@ -1173,7 +1173,7 @@ def test_router_settings_defaults_agent_signal_to_strong_when_present():
     assert settings.effective_agent_signal_route_id == "deep"
 
 
-def test_router_settings_defaults_agent_signal_to_deep_when_present():
+def test_router_settings_defaults_agent_signal_to_deep_with_fallback_when_present():
     settings = RouterSettings.model_validate(
         {
             "fallback_route_id": "lite",
@@ -1224,7 +1224,7 @@ def test_router_settings_accepts_canonical_route_aliases_with_legacy_routes():
     assert settings.hard_rules[0].route_id == "deep"
 
 
-def test_router_settings_disables_agent_signal_when_strong_is_absent_by_default():
+def test_router_settings_disables_agent_signal_when_deep_is_absent_by_default():
     settings = RouterSettings.model_validate(
         {
             "routes": {

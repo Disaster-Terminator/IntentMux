@@ -307,7 +307,7 @@ def test_main_writes_json_and_markdown(tmp_path: Path):
     json_path = tmp_path / "report.json"
     md_path = tmp_path / "report.md"
     eval_path.write_text(
-        "PASS\tfast\tfast\tyour-lite-model\tlow_confidence\t翻译成中文\n",
+        "PASS\tlite\tlite\tyour-lite-model\tlow_confidence\t翻译成中文\n",
         encoding="utf-8",
     )
     summary_path.write_text(

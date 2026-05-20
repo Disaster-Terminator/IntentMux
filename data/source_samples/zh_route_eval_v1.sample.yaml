@@ -1,14 +1,14 @@
 samples:
-  - id: fast_general_001
-    slice: fast_general_zh
+  - id: lite_general_001
+    slice: lite_general_zh
     text: 帮我把这段话润色一下
     expect: lite
     source: curated_public_sample
     rationale: 普通改写请求低风险，适合 lite。
     redacted: true
 
-  - id: strong_code_001
-    slice: strong_code_zh
+  - id: deep_code_001
+    slice: deep_code_zh
     text: 这个 PR 会不会引入回归
     expect: deep
     source: curated_public_sample

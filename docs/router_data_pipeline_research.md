@@ -68,7 +68,7 @@ From Semantic Router:
 
 From RouteLLM and routing benchmarks:
 
-- keep the strong/weak, here `deep`/`lite`, cost-quality tradeoff explicit;
+- keep the `deep`/`lite` cost-quality tradeoff explicit;
 - judge router changes by quality and `deep` call rate together;
 - compare every improvement against simple baselines;
 - slice-level metrics matter because global accuracy hides failures.

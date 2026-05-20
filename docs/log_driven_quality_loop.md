@@ -12,7 +12,7 @@ and baseline comparison. Generated `data/semantic_sets/eval_bank.yaml` is a
 local or production asset and remains git-ignored by default. Both can verify
 that route-bank samples enter the router, but neither is proof of general
 Chinese routing quality. `config/eval_cases.yaml` remains a smaller smoke suite
-for fast contract checks. Production quality reports should prefer current-day
+for quick contract checks. Production quality reports should prefer current-day
 logs or logs produced after the `lite` / `deep` migration; full-history reports
 may contain legacy `fast` / `strong` records and should be used only as
 background context.
@@ -134,7 +134,7 @@ private prompt text. Generic agent-like structure such as `tools`,
 `tool_history`, `tool_choice`, and long multi-turn context is audit evidence,
 not a hard route decision. Treat these records as review candidates when they
 cluster around `low_confidence`, high latency, or unexpected `deep` call-rate
-changes, but do not promote request structure alone into a stronger-tier route.
+changes, but do not promote request structure alone into a `deep` route.
 
 ## AI Review Packet
 
