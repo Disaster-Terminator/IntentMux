@@ -1,7 +1,7 @@
 # IntentMux
 
-> Lightweight OpenAI-compatible routing gateway for `lite` / `deep` model tiers.<br>
-> Runs independently and treats LiteLLM-first sidecar deployment as a first-class topology.
+> OpenAI-compatible intent router for `lite` / `deep` model tiers.
+> Cost-first by default, with escalation only when there is enough evidence.
 
 <p align="center">
   <img alt="runtime Python 3.11+" src="https://img.shields.io/badge/runtime-Python%203.11%2B-3776AB">
@@ -19,30 +19,35 @@
 
 [中文](README.md)
 
-## One Line
-
-IntentMux is a lightweight OpenAI-compatible routing gateway that routes requests between `lite` and `deep` model tiers. It can run as a standalone `base_url`, or as a LiteLLM-first sidecar behind an existing LiteLLM entry point.
-
 <table>
   <tr>
     <td><strong>Two-tier routing</strong><br>`auto` routes automatically; `lite` / `deep` are explicit model entries.</td>
     <td><strong>Clear boundary</strong><br>Keep LiteLLM responsible for provider routing, fallback, rate limits, keys, and budgets.</td>
   </tr>
   <tr>
-    <td><strong>Auditable logs</strong><br>Route audit logs are metadata-only by default; private local deployments can explicitly enable prompt review logs.</td>
-    <td><strong>Operational gates</strong><br>Ship with preflight, LiteLLM-entry E2E, log summaries, and route-error budget checks.</td>
+    <td><strong>Auditable logs</strong><br>Route audit logs are metadata-only by default; private deployments can enable prompt review logs.</td>
+    <td><strong>Verify first</strong><br>Use `/ready`, preflight, E2E, daily health, and Beads to check current state.</td>
   </tr>
 </table>
 
-## Project Boundary
+## What It Is
 
-IntentMux is not a model provider and does not require LiteLLM to start. It owns OpenAI-compatible gateway protocol, entry-model semantics, routing decisions, and audit logs. The upstream can be LiteLLM or any OpenAI-compatible service. If a deployment already has LiteLLM, LiteLLM remains the recommended layer for provider routing, provider fallback, provider credentials, virtual keys, budgets, and model pools.
+IntentMux is a lightweight routing sidecar. It accepts OpenAI-compatible chat
+completion requests and routes `model=auto` traffic to two product routes:
+
+- `lite`: lower-risk, lower-cost, lightweight tasks.
+- `deep`: code, debugging, architecture, risk analysis, and tasks that need a
+  stronger model.
+
+IntentMux is not a model provider and does not replace LiteLLM, OpenRouter, or
+another provider gateway. It owns entry-model semantics, route decisions,
+OpenAI-compatible proxying, and auditable route metadata.
 
 ```text
 model=auto -> route_id(lite/deep) -> target_model -> OpenAI-compatible upstream
 ```
 
-Both deployment topologies are first-class:
+Supported topologies:
 
 ```text
 Direct gateway:
@@ -52,357 +57,199 @@ client -> IntentMux :4001/v1, model=auto|lite|deep
 LiteLLM-first sidecar:
 client -> LiteLLM :4000, model=semantic-router
        -> IntentMux :4001
-       -> LiteLLM :4000 target model group
+       -> LiteLLM target model group
 ```
 
-Canonical entry models:
+If LiteLLM already manages provider routing, fallback, keys, budgets, and model
+pools, keep those responsibilities in LiteLLM. IntentMux only adds intent
+routing.
 
-- `auto`: default automatic routing entry.
-- `lite`: explicit lightweight, lower-cost, lower-risk tier.
-- `deep`: explicit deeper-reasoning, higher-capability tier.
+## Routing Standard
 
-| Requested model | Meaning | Behavior |
-| --- | --- | --- |
-| `auto` | Preferred routed entry | Runs IntentMux routing |
-| `semantic-router` | LiteLLM sidecar entry name | Same as `auto`; useful for LiteLLM-first topology |
-| `lite` | Explicit lightweight tier | Routes to configured `lite.target_model` |
-| `deep` | Explicit high-capability tier | Routes to configured `deep.target_model` |
-
-Entry boundaries:
-
-- `semantic-router`: LiteLLM sidecar entry name for the LiteLLM-first topology.
-- `auto`: canonical automatic routing entry for direct IntentMux gateway use.
-- `lite` / `deep`: IntentMux product route ids and explicit entries.
-
-`/v1/models` advertises only `auto`, `lite`, and `deep`. It does not advertise `semantic-router` or leak local LiteLLM model-group names. `target_model` values are deployment configuration, not product API names.
-
-IntentMux can run as a standalone gateway or as a LiteLLM sidecar. Keep provider secrets, tokens, `.env` files, and mounted LiteLLM data outside this repository.
-
-Current compatibility scope:
-
-- Supports `/health`, `/ready`, `/v1/models`, `/v1/chat/completions`, and `/v1/semantic-router/decision`.
-- Supports streaming and non-streaming chat completion pass-through.
-- Does not claim full OpenAI API compatibility and does not implement `/v1/responses`.
-- Does not manage provider pools; use LiteLLM or another OpenAI-compatible upstream for provider routing, keys, budgets, and fallback.
-- Keeps inbound IntentMux auth, upstream auth, and embedding auth as separate secrets.
-- Treats embedding degradation as route fallback; upstream transport or status failures return controlled, redacted gateway errors.
-
-The default router borrows the common strong/weak LLM-router shape and Semantic
-Router thresholding:
+Default decision order:
 
 ```text
-explicit override -> high-precision hard escalation -> agent structure signal -> semantic score + threshold -> fallback lite
+explicit route -> hard escalation -> semantic score + threshold -> fallback lite
 ```
 
-`hard_rules` are reserved for high-risk escalation signals such as security,
-secret leakage, production incidents, rollbacks, or data corruption. Ambiguous
-engineering words such as `PR`, `debug`, deployment, indexing, exceptions, and
-errors are handled by semantic examples and thresholds by default, so agent
-context accumulation does not permanently pin a conversation to `deep`.
+- `model=lite` / `model=deep` or `metadata.route_id` is an explicit route.
+- Hard rules are reserved for high-risk escalation such as security, credential
+  leakage, production incidents, or data corruption.
+- Generic engineering terms, tool-call structure, long context, and agent shape
+  are audit signals, not direct deep-routing triggers.
+- Embedding failures fail open to `fallback_route_id`, normally `lite`.
+- Upstream connection failures or 5xx return redacted `502`; upstream 4xx are
+  passed through and recorded as `upstream_non_200`.
 
-OpenAI-compatible requests with `tools` / legacy `functions`, tool-call history,
-`tool_choice`, or long multi-turn context record these structural signals in
-`format_signals` for audit and candidate review. Request structure alone does
-not escalate to `deep`; escalation still comes from explicit route overrides,
-high-precision hard rules, semantic examples, and thresholds. This avoids
-depending on local framework names such as OpenCode, Hermes, or Retinue.
+The default online router uses Aurelio Semantic Router. The built-in `basic`
+router is retained only as a fallback/debug baseline.
 
 ## Quick Start
+
+Local process:
 
 ```bash
 uv run python -m router.app
 ```
 
-Default endpoints:
-
-| Service | URL |
-| --- | --- |
-| IntentMux sidecar | `http://127.0.0.1:4001` |
-| LiteLLM upstream | `http://127.0.0.1:4000` |
-| Embedding upstream | `http://127.0.0.1:1234/v1/embeddings` |
-
-For container deployment, run IntentMux as a LiteLLM sidecar with its own mounted home. This is a generic layout, not a required host path:
-
-```text
-litellm/
-  docker-compose.yml
-  config.yaml
-  .env
-  intentmux/
-    config/routes.yaml
-    semantic_sets/route_bank.yaml
-    logs/routes/YYYY-MM-DD.jsonl
-    logs/prompts/YYYY-MM-DD.jsonl   # optional local-only prompt review log
-```
-
-Inside the container, `/app` is image code and `/data` is the user-mounted IntentMux home.
-
-The repository ships a generic compose example: [examples/docker-compose.yml](examples/docker-compose.yml).
+Compose example:
 
 ```bash
 uv run python scripts/init_runtime_home.py
 docker compose -f examples/docker-compose.yml up -d --build
 ```
 
-By default, local assets live under the repository-internal `.intentmux-home/`
-directory. It is ignored by git and suitable for local trials or dogfood. For
-production, copy [examples/intentmux-home](examples/intentmux-home) outside the
-source checkout and explicitly set `INTENTMUX_HOME=/path/to/intentmux-home`.
-`scripts/init_runtime_home.py` initializes the default home idempotently: it
-copies missing template files and creates runtime subdirectories without
-overwriting existing local config.
+Default endpoints:
 
-Common overrides:
+| Service | URL |
+| --- | --- |
+| IntentMux | `http://127.0.0.1:4001` |
+| LiteLLM upstream | `http://127.0.0.1:4000` |
+| Embedding upstream | `http://127.0.0.1:1234/v1/embeddings` |
 
-- `INTENTMUX_PORT`: host port, default `4001`; the example compose binds it to `127.0.0.1` by default.
-- `INTENTMUX_HOME`: host-side IntentMux home, default `../.intentmux-home` relative to `examples/docker-compose.yml`.
-- `ROUTER_CONFIG`: explicit `routes.yaml` path. When unset, local process runs use `$INTENTMUX_HOME/config/routes.yaml` if `INTENTMUX_HOME` is set, then `.intentmux-home/config/routes.yaml` if it exists, otherwise `config/routes.yaml`.
-- `ROUTER_LITELLM_BASE_URL`: LiteLLM upstream URL, default `http://host.docker.internal:4000`.
-- `ROUTER_LITELLM_API_KEY`: dedicated key used by IntentMux when calling upstream LiteLLM. When set, inbound `Authorization` is not forwarded upstream.
-- `ROUTER_INBOUND_API_KEY`: optional IntentMux inbound key for `/v1/chat/completions` and `/v1/semantic-router/decision`; `/health` and `/ready` remain unauthenticated.
-- `ROUTER_PROMPT_LOG_MODE`: optional prompt review log mode, default `off`; use `redacted` or `raw_local` only for private local review.
-- `ROUTER_PROMPT_LOG_DIR`: prompt review log directory. The compose example uses `/data/logs/prompts`.
-- `ROUTER_PROMPT_LOG_MAX_CHARS`: maximum latest-user-text characters per prompt review record, default `20000`.
-- `ROUTER_EMBEDDING_URL`: embedding upstream URL, default `http://host.docker.internal:1234/v1/embeddings`.
-- `ROUTER_EMBEDDING_MODEL`: embedding model name.
-- `ROUTER_ROUTE_EMBEDDING_CACHE_ENABLED`: persist static route-bank vectors, default `true`.
-- `ROUTER_ROUTE_EMBEDDING_CACHE_PATH`: route-bank vector cache file. When unset, IntentMux uses `$INTENTMUX_HOME/cache/route-embeddings.json`, or `.intentmux-home/cache/route-embeddings.json` without `INTENTMUX_HOME`.
+First deployment checklist:
 
-When explicit log directories are not set, IntentMux defaults route audit logs
-to `$INTENTMUX_HOME/logs/routes` or `.intentmux-home/logs/routes`, and prompt
-review logs to the matching `logs/prompts` directory. Scheduler wrappers can set
-only `INTENTMUX_HOME`; `scripts/intentmux_daily_health.py` will then use
-`$INTENTMUX_HOME/logs`. Without both `INTENTMUX_HOME` and `INTENTMUX_LOG_DIR`,
-the health script defaults to `.intentmux-home/logs`.
+1. Use IntentMux directly, or add a `semantic-router` model entry in LiteLLM.
+2. Copy `examples/intentmux-home/` to a persistent runtime home.
+3. Set `routes.lite.target_model` and `routes.deep.target_model` in runtime
+   `config/routes.yaml`.
+4. Check `/ready`, run preflight, and inspect one decision response.
 
-See [examples/litellm-model-entry.yaml](examples/litellm-model-entry.yaml) for a LiteLLM entry-model snippet. If IntentMux and LiteLLM share one compose network, `api_base` can be `http://intentmux:4001/v1`; otherwise, set it to the IntentMux URL reachable from LiteLLM.
+## Configuration Contract
 
-Auth boundaries:
+Core `routes.yaml` shape:
 
-- The LiteLLM model-entry `api_key` authenticates `LiteLLM -> IntentMux`.
-- `ROUTER_INBOUND_API_KEY` protects direct IntentMux sidecar requests.
-- `ROUTER_LITELLM_API_KEY` authenticates `IntentMux -> LiteLLM`; inbound `Authorization` is not reused upstream.
+```yaml
+route_model: auto
+fallback_route_id: lite
 
-Update rules:
+routes:
+  lite:
+    target_model: your-lite-model
+    description: low-risk lightweight tasks
+    utterances:
+      - explain this concept
 
-- Changes to `/data/config/routes.yaml`, `/data/semantic_sets/route_bank.yaml`, or environment variables require restarting the IntentMux sidecar so startup-loaded config and route vectors refresh. The route-bank vector cache invalidates automatically when route utterance source, order, text hash, or embedding model changes.
-- Changes to Python code, `Dockerfile`, built-in `config/`, or `examples/` require rebuilding the image and recreating the IntentMux sidecar.
-- README, test, and offline-script changes do not affect the running container, but should still be verified with the matching test or check command.
+  deep:
+    target_model: your-deep-model
+    description: code, debugging, architecture, risk analysis
+    utterances:
+      - why is this production bug intermittent
+```
 
-Common compose update flow:
+Production deployments should set:
+
+- `INTENTMUX_HOME`: runtime home for config, semantic assets, logs, and cache.
+- `ROUTER_CONFIG`: runtime `routes.yaml`.
+- `ROUTER_LITELLM_BASE_URL`: upstream OpenAI-compatible gateway.
+- `ROUTER_EMBEDDING_URL` / `ROUTER_EMBEDDING_MODEL`: embedding upstream.
+- `ROUTER_AUDIT_LOG_ENABLED=true` and `ROUTER_AUDIT_LOG_DIR`: persistent route
+  audit logs.
+- `ROUTER_REQUIRE_ROUTE_BANK=true`: fail startup when the runtime route bank is
+  missing.
+
+`/ready` reports config source, runtime home, logging state, route-bank load
+state, and route utterance counts. Do not trust docs or stale state files over
+live `/ready` and current logs.
+
+## API
+
+Supported endpoints:
+
+- `GET /health`
+- `GET /ready`
+- `GET /v1/models`
+- `POST /v1/chat/completions`
+- `POST /v1/semantic-router/decision`
+
+Entry models:
+
+| Model | Purpose |
+| --- | --- |
+| `auto` | default automatic routing |
+| `lite` | force the `lite` route |
+| `deep` | force the `deep` route |
+| `semantic-router` | LiteLLM sidecar compatibility entry, equivalent to `auto` |
+
+`/v1/models` advertises only `auto`, `lite`, and `deep`.
+
+Preview a route decision without forwarding upstream:
 
 ```bash
-docker compose -f examples/docker-compose.yml build intentmux
-docker compose -f examples/docker-compose.yml up -d intentmux
+curl http://127.0.0.1:4001/v1/semantic-router/decision \
+  -H "Content-Type: application/json" \
+  -d '{"model":"auto","messages":[{"role":"user","content":"Why is this production bug intermittent?"}]}'
 ```
 
-For a gated manual sidecar rollout, use
-`scripts/rollout_compose_intentmux.sh --yes`. It runs tests, route-contract
-verification, pre-rebuild `/ready`, legacy sidecar preflight, service-only
-rebuild/recreate, post-rebuild `/ready`, container health, canonical preflight,
-and a cost-first decision smoke. Keep site-specific compose paths in
-environment variables or untracked wrappers.
+The response includes route, target, policy, scores, thresholds, margins, and
+route-bank match provenance. Matched sample text is not returned or written to
+route audit logs.
 
-IntentMux does not hot-reload yet; production updates follow the rule: restart for config, rebuild for code.
+## Verify First
 
-`examples/intentmux-home/` is a copyable runtime template. Keep LiteLLM `.env`, provider tokens, and databases outside the IntentMux home. If `ROUTER_PROMPT_LOG_MODE=raw_local` is enabled, `/data/logs/prompts` stores prompt review logs for private local review only; do not commit, upload, or attach that directory to public issues.
+IntentMux changes quickly. Treat docs as intent, then verify the live system.
 
-Tracked examples use generic paths and generic model names. Local runtime logs,
-prompt review logs, generated route banks, production compose overrides, and
-site-specific rollout wrappers remain outside git. Public deployment
-instructions should not hardcode workstation paths; keep those in local
-environment variables or untracked wrapper scripts.
-
-## Entry Models
-
-The new default path is to use IntentMux directly as an OpenAI-compatible `base_url` and request the canonical entry models:
-
-```text
-client -> IntentMux :4001/v1, model=auto|lite|deep
-       -> route_id(lite/deep)
-       -> target_model
-       -> OpenAI-compatible upstream
-```
-
-- `model=auto`: run normal routing.
-- `model=lite` / `model=deep`: force the corresponding route id and skip semantic routing.
-- `/v1/models`: list only `auto`, `lite`, and `deep`.
-
-The LiteLLM sidecar path remains supported. Clients can keep using LiteLLM `:4000` and change only the model name to the `semantic-router` entry.
-
-```text
-client -> LiteLLM :4000, model=semantic-router
-       -> IntentMux :4001
-       -> route_id
-       -> target_model
-       -> LiteLLM model group
-```
-
-Configure `semantic-router` in LiteLLM as a model entry that points to the IntentMux sidecar. Requests that use that model name run automatic routing. `semantic-router` is a LiteLLM sidecar entry and is not listed by IntentMux `/v1/models` for direct gateway use.
-
-## Verification
+Common checks:
 
 ```bash
-uv run python -m pytest -q
-uv run python scripts/eval_routes.py --cases examples/eval_bank.sample.yaml --mock-embeddings
+uv run pytest -n auto -q
+uv run ruff check .
 uv run python scripts/verify_route_contract.py
-```
-
-Production preflight:
-
-```bash
 uv run python scripts/preflight.py --router-base-url http://127.0.0.1:4001
-# If ROUTER_INBOUND_API_KEY is configured:
-uv run python scripts/preflight.py \
-  --router-base-url http://127.0.0.1:4001 \
-  --intentmux-api-key "$ROUTER_INBOUND_API_KEY"
+curl -fsS http://127.0.0.1:4001/ready
 ```
 
-LiteLLM-entry E2E:
+Production/private deployments should also run daily health:
 
 ```bash
-uv run python scripts/e2e_litellm_entry.py --litellm-base-url http://127.0.0.1:4000
+uv run python scripts/intentmux_daily_health.py \
+  --log-dir /path/to/intentmux-home/logs \
+  --timezone Asia/Shanghai \
+  --min-route-records 1 \
+  --run-e2e
 ```
 
-Local production can keep using the LiteLLM sidecar entry so clients do not
-bypass existing LiteLLM provider routing, fallback, keys, and budgets. Development
-and CI should still cover both direct gateway mode and sidecar mode:
+Code/image changes require rebuilding and recreating the IntentMux sidecar.
+Config, route-bank, or environment changes require a restart. See
+[docs/production_rollout_gate.md](docs/production_rollout_gate.md).
 
-| Scenario | Entry | Primary checks |
-| --- | --- | --- |
-| Local production | LiteLLM `:4000`, `model=semantic-router` | `e2e_litellm_entry.py` and rollout-helper legacy preflight |
-| Direct gateway | IntentMux `:4001/v1`, `model=auto|lite|deep` | `preflight.py --model auto`, `/v1/models`, and protocol tests |
-| Sidecar compatibility | LiteLLM model entry -> IntentMux | `tests/test_e2e_litellm_entry.py` |
-| Protocol regression | IntentMux -> OpenAI-compatible upstream | `tests/test_protocol_gateway.py` |
+## Logs And Quality Loop
 
-## Log Review
+Route audit logs are metadata-only by default: route, target, reason, status,
+duration, request id, decision scores, and match provenance. They do not record
+prompts, completions, token usage, or bearer tokens.
 
-```bash
-docker logs --since 12h intentmux 2>&1 \
-  | uv run python scripts/router_log_summary.py --slow-request-limit 10
+Optional prompt review logs are for private deployments only. Public deployments
+should keep them disabled.
 
-uv run python scripts/router_log_summary.py /data/logs/routes/*.jsonl \
-  --slow-request-limit 10
+Quality changes should follow this loop:
 
-docker logs --since 12h intentmux 2>&1 \
-  | uv run python scripts/check_route_error_budget.py \
-      --min-total 1 \
-      --max-error-rate 0 \
-      --max-target-error-rate 0 \
-      --max-route-error-rate 0 \
-      --max-not-ok-rate 0 \
-      --max-embedding-error-rate 0 \
-      --max-upstream-status-rate 400=0
-```
+1. Find low-confidence, failed, slow, or drifting traffic in route audit logs.
+2. Use bounded replay, eval, and quality reports for before/after evidence.
+3. Promote only accepted, redacted, reviewable samples into eval or route banks.
+4. Ship route-bank, threshold, margin, or hard-rule changes only with a report.
 
-Summary output includes route/target/reason distributions, `ok/outcome`, upstream status codes, `max_duration_ms`, `p50/p90/p95/p99` duration percentiles, and the slowest request samples. Slow request samples include only audit metadata: timestamp, `request_id`, `route_id`, `target_model`, `reason`, `upstream_status`, and duration.
+Useful docs:
 
-Structured route audit logs count `route_id`, `target_model`, `policy_id`, `reason`, `request_id`, `request_id_source`, `stream`, `upstream_status`, `ok`, `outcome`, `decision_ms`, and `upstream_ms`, while avoiding prompts, completions, token usage, and bearer tokens. Streaming requests also include `upstream_headers_ms` and `upstream_body_ms`. `event` is lifecycle; `ok/outcome` is route health. Upstream non-2xx responses record `ok=false` and `outcome=upstream_non_200`. `embedding_error` has a dedicated budget shortcut because it can fail open to the configured fallback route, whose default product meaning is `lite`, without making the user request fail.
+- [docs/PROJECT_CONTROL.md](docs/PROJECT_CONTROL.md): current control surface.
+- [docs/PATROL_HANDOFF.md](docs/PATROL_HANDOFF.md): runtime patrol handoff.
+- [docs/log_driven_quality_loop.md](docs/log_driven_quality_loop.md): log-driven quality loop.
+- [docs/router_data_pipeline_research.md](docs/router_data_pipeline_research.md): semantic asset pipeline.
+- [docs/production_rollout_gate.md](docs/production_rollout_gate.md): production rollout gate.
 
-Private local deployments can explicitly enable a separate prompt review log:
+## Current State
 
-```bash
-ROUTER_PROMPT_LOG_MODE=redacted   # mask common bearer/sk/base64 credentials
-ROUTER_PROMPT_LOG_MODE=raw_local  # record latest user text as-is for local review
-```
+IntentMux has working two-tier routing, LiteLLM sidecar compatibility,
+metadata-only audit logs, route-bank provenance, preflight, E2E, daily health,
+and quality-report scripts.
 
-Prompt review logs are written to `ROUTER_PROMPT_LOG_DIR/YYYY-MM-DD.jsonl`; they do not go to stdout, route audit JSONL, or daily health reports. Keep this mode off in public or untrusted environments.
+Infrastructure hardening still in progress:
 
-The log-driven quality loop is documented in [docs/log_driven_quality_loop.md](docs/log_driven_quality_loop.md). Route audit logs identify low confidence, upstream failures, slow requests, and route distribution drift; prompt review logs are explicit local-only supplemental evidence. Generate metadata-only review candidates with:
+- bounded historical replay;
+- bounded health/eval output and runtime artifact retention;
+- accepted-finding import gates for redacted regression cases;
+- cleaner route/eval/calibration asset separation;
+- more representative threshold and margin calibration evidence.
 
-```bash
-uv run python scripts/select_review_candidates.py /data/logs/routes/*.jsonl \
-  --routes /data/config/routes.yaml \
-  --json-output /tmp/intentmux-review-candidates.json \
-  --markdown-output /tmp/intentmux-review-candidates.md
-```
-
-Only human-reviewed samples with `redacted: true` should be promoted into eval cases or route banks. See [data/source_samples/production_review.example.jsonl](data/source_samples/production_review.example.jsonl) for the public sample format.
-Real production review JSONL files are ignored by git by default; commit only curated public examples.
-
-## Decision Preview
-
-```bash
-curl http://127.0.0.1:4001/v1/semantic-router/decision \
-  -H "Content-Type: application/json" \
-  -d '{"model":"auto","messages":[{"role":"user","content":"Why is this production bug intermittent?"}]}'
-```
-
-If `ROUTER_INBOUND_API_KEY` is enabled, include the inbound auth header:
-
-```bash
-curl http://127.0.0.1:4001/v1/semantic-router/decision \
-  -H "Authorization: Bearer $ROUTER_INBOUND_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"model":"auto","messages":[{"role":"user","content":"Why is this production bug intermittent?"}]}'
-```
-
-This returns the selected `route_id`, resolved `target_model`, `policy_id`, reason, rewrite flag, `score`, `second_score`, `score_margin`, `threshold`, `margin`, `top_route_id`, and `second_route_id` without forwarding to LiteLLM. Embedding and `low_confidence` decisions also include `match_source`, `match_index`, `match_text_sha256`, `match_score`, and `match_provenance` so operators can audit which route-bank source won and why it passed or failed the threshold, without logging the matched sample text. For `low_confidence`, `route_id` is the fallback route and `top_route_id` is the highest-scoring candidate.
-
-## Semantic Assets
-
-Runtime dependencies stay small. Larger route banks are built offline from the
-sources declared in `config/route_sources.yaml`; Hugging Face and dataset tools
-are not runtime dependencies.
-
-IntentMux caches static route-bank embeddings in
-`cache/route-embeddings.json` under the runtime home by default. The cache only
-covers route-bank utterances; each live request is still embedded once and then
-scored against cached route vectors. The manifest includes the embedding model
-and route-bank fingerprint, so text, source, or order changes rebuild the cache.
-Cache read/write failures do not fail live requests; they only fall back to
-re-embedding the route bank.
-
-The repository includes a small tracked example at
-[examples/route_bank.sample.yaml](examples/route_bank.sample.yaml). It is for
-showing source/license metadata, route-bank shape, and `utterance.source`
-provenance. The tracked eval example is
-[examples/eval_bank.sample.yaml](examples/eval_bank.sample.yaml). Real
-deployments should generate or maintain their own
-`/data/semantic_sets/route_bank.yaml` and `data/semantic_sets/eval_bank.yaml`,
-which are local assets and ignored by git.
-
-Recommended quality-report flow:
-
-```bash
-uv run python scripts/eval_routes.py \
-  --cases examples/eval_bank.sample.yaml \
-  --mock-embeddings \
-  > /tmp/intentmux-eval.txt
-uv run python scripts/router_log_summary.py /data/logs/routes/*.jsonl --json > /tmp/intentmux-routes.json
-uv run python scripts/route_quality_report.py \
-  --eval-output /tmp/intentmux-eval.txt \
-  --route-summary-json /tmp/intentmux-routes.json \
-  --route-bank examples/route_bank.sample.yaml \
-  --json-output /tmp/intentmux-quality.json \
-  --markdown-output /tmp/intentmux-quality.md
-```
-
-Route-bank, threshold, margin, and hard-rule changes should include this quality
-report before production rollout.
-
-For agent frameworks, see
-[docs/agent_framework_integration.md](docs/agent_framework_integration.md).
-Code-editing agents, tool-call loops, PR review, production incidents, and
-security analysis should usually send `model=deep` or `metadata.route_id=deep` explicitly
-instead of relying only on low-confidence fallback.
-
-## Runtime Behavior
-
-Run IntentMux as a sidecar in the same deployment boundary as LiteLLM.
-
-- Docker health uses `/health` to avoid readiness flapping restart loops.
-- `/ready` checks router, LiteLLM, and embedding availability. The router detail
-  reports `config_source`, `config_path`, `runtime_home`,
-  `runtime_config_exists`, logging state, `route_bank_loaded`, and route
-  utterance counts. Startup logs record the same config source and logging
-  state. When IntentMux starts from repository default config without a runtime
-  config, or route targets still use `your-*` placeholder model names, the
-  router detail includes `warnings`.
-- When embeddings are unavailable, chat requests fail open to `fallback_route_id` and log `reason=embedding_error`.
-- LiteLLM/upstream `5xx` responses or connection errors fail closed as redacted `502` responses and log `route_error`.
-- LiteLLM/upstream `4xx` responses are passed through by proxy semantics, but audit logs mark them as `ok=false` / `outcome=upstream_non_200`.
-
-## Current Capabilities
-
-IntentMux includes basic routing, preflight checks, LiteLLM-entry E2E, structured logs, and route-error budget gates for lightweight intent-routing validation in local or private gateway deployments.
+Use live tests, `/ready`, health reports, and current Beads tasks as the source
+of truth, not README alone.
