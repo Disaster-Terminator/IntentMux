@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import json
 import sys
 from dataclasses import dataclass
@@ -129,6 +130,10 @@ def case_id(case: EvalCase, index: int) -> str:
     return case.id or f"case_{index:04d}"
 
 
+def text_sha256(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
 async def run_eval(
     cases_path: Path,
     routes_path: Path,
@@ -137,6 +142,8 @@ async def run_eval(
     baseline: str = "current-router",
     threshold: float | None = None,
     margin: float | None = None,
+    include_text: bool = False,
+    stdout_limit: int = 50,
 ) -> int:
     if baseline not in BASELINES:
         raise ValueError(f"baseline must be one of {sorted(BASELINES)}")
@@ -163,6 +170,7 @@ async def run_eval(
     decision_router = router_for_baseline(router, baseline)
     failures: list[str] = []
     results: list[dict[str, Any]] = []
+    suppressed_stdout_rows = 0
 
     cases = load_cases(cases_path)
     validate_case_route_ids(cases, set(settings.routes))
@@ -179,7 +187,8 @@ async def run_eval(
             "id": case_id(case, index),
             "baseline": baseline,
             "slice": case.slice,
-            "text": case.text,
+            "text_sha256": text_sha256(case.text),
+            "text_chars": len(case.text),
             "expect": case.expect,
             "actual_route": actual_route,
             "target_model": decision.target_model,
@@ -202,13 +211,26 @@ async def run_eval(
             value = getattr(case, key)
             if value is not None:
                 result[key] = value
+        if include_text:
+            result["text"] = case.text
         results.append(result)
-        print(
-            f"{status}\t{case.expect}\t{actual_route}\t{decision.target_model}\t"
-            f"{decision.reason}\t{case.text}"
-        )
+        if index < stdout_limit:
+            columns = [
+                status,
+                case.expect,
+                actual_route,
+                decision.target_model,
+                decision.reason or "",
+                case.text if include_text else case_id(case, index),
+            ]
+            print("\t".join(str(column) for column in columns))
+        else:
+            suppressed_stdout_rows += 1
         if status == "FAIL":
-            failures.append(case.text)
+            failures.append(case_id(case, index))
+
+    if suppressed_stdout_rows:
+        print(f"... suppressed {suppressed_stdout_rows} eval row(s); use --json-output for full details.")
 
     if json_output is not None:
         json_output.write_text(
@@ -289,6 +311,17 @@ def main() -> None:
     parser.add_argument("--threshold", type=float)
     parser.add_argument("--margin", type=float)
     parser.add_argument(
+        "--include-text",
+        action="store_true",
+        help="Print eval case text to stdout. Default stdout is metadata-only.",
+    )
+    parser.add_argument(
+        "--stdout-limit",
+        type=int,
+        default=50,
+        help="Maximum eval rows to print to stdout. Use --json-output for full details.",
+    )
+    parser.add_argument(
         "--baseline",
         default="current-router",
         choices=sorted(BASELINES),
@@ -304,6 +337,8 @@ def main() -> None:
                 baseline=args.baseline,
                 threshold=args.threshold,
                 margin=args.margin,
+                include_text=args.include_text,
+                stdout_limit=args.stdout_limit,
             )
         )
     )

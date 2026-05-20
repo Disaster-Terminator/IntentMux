@@ -288,6 +288,21 @@ def format_counts(counts: Any) -> str:
     return ", ".join(f"{key}={value}" for key, value in sorted(counts.items()))
 
 
+def compact_stdout_summary(report: dict[str, Any]) -> dict[str, Any]:
+    summary = report["summary"]
+    return {
+        "schema": "intentmux-route-replay-summary-v1",
+        "case_count": summary["case_count"],
+        "raw_text_included": summary["raw_text_included"],
+        "remote_embeddings_allowed": summary["remote_embeddings_allowed"],
+        "reference_routes": summary["reference_routes"],
+        "reference_route_sources": summary["reference_route_sources"],
+        "baseline_routes": summary["baseline_routes"],
+        "baseline_reference_agreement": summary["baseline_reference_agreement"],
+        "note": "Full replay cases are written only with --json-output or --markdown-output.",
+    }
+
+
 def markdown_cell(value: Any) -> str:
     if value is None:
         return ""
@@ -342,6 +357,9 @@ def main() -> None:
     parser.add_argument("--markdown-output")
     args = parser.parse_args()
 
+    if args.include_text and not (args.json_output or args.markdown_output):
+        parser.error("--include-text requires --json-output or --markdown-output")
+
     input_paths = expand_log_paths(args.paths)
     report = asyncio.run(
         replay_routes(
@@ -363,7 +381,7 @@ def main() -> None:
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text(render_markdown(report), encoding="utf-8")
     if not args.json_output and not args.markdown_output:
-        print(json.dumps(report, ensure_ascii=False, indent=2))
+        print(json.dumps(compact_stdout_summary(report), ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

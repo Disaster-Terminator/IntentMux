@@ -121,7 +121,7 @@ def build_quality_report_from_eval_json(
             "actual": str(case.get("actual_route") or ""),
             "target_model": str(case.get("target_model") or ""),
             "reason": str(case.get("reason") or ""),
-            "text": str(case.get("text") or ""),
+            "text": str(case.get("text") or case.get("id") or ""),
         }
         for case in cases
         if case.get("passed") is False

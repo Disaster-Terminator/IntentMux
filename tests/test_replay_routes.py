@@ -281,3 +281,81 @@ def test_replay_routes_blocks_remote_embeddings_by_default(tmp_path: Path):
 
     assert result.returncode != 0
     assert "non-local embedding endpoint" in result.stderr
+
+
+def test_replay_routes_stdout_is_compact_and_redacted_by_default(tmp_path: Path):
+    routes = tmp_path / "routes.yaml"
+    prompts = tmp_path / "prompts.jsonl"
+    write_routes(routes)
+    prompts.write_text(
+        json.dumps(
+            {
+                "event": "prompt_review",
+                "request_id": "req-private",
+                "latest_user_text": "PRIVATE PROMPT MUST NOT HIT STDOUT",
+                "route_id": "lite",
+            },
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/replay_routes.py",
+            str(prompts),
+            "--routes",
+            str(routes),
+            "--mock-embeddings",
+        ],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["schema"] == "intentmux-route-replay-summary-v1"
+    assert payload["case_count"] == 1
+    assert payload["raw_text_included"] is False
+    assert "cases" not in payload
+    assert "PRIVATE PROMPT" not in result.stdout
+
+
+def test_replay_routes_include_text_requires_explicit_output_file(tmp_path: Path):
+    routes = tmp_path / "routes.yaml"
+    prompts = tmp_path / "prompts.jsonl"
+    write_routes(routes)
+    prompts.write_text(
+        json.dumps(
+            {
+                "event": "prompt_review",
+                "request_id": "req-private",
+                "latest_user_text": "PRIVATE PROMPT MUST NOT HIT STDERR",
+                "route_id": "lite",
+            },
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/replay_routes.py",
+            str(prompts),
+            "--routes",
+            str(routes),
+            "--mock-embeddings",
+            "--include-text",
+        ],
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode != 0
+    assert "--include-text requires --json-output or --markdown-output" in result.stderr
+    assert "PRIVATE PROMPT" not in result.stdout
+    assert "PRIVATE PROMPT" not in result.stderr

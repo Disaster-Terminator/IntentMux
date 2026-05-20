@@ -66,6 +66,14 @@ health/intentmux-health-latest.json
 health/intentmux-health-latest.md
 ```
 
+Runtime logs and review artifacts are local operational data. Keep
+`.intentmux-home/` and external `INTENTMUX_HOME` trees out of git, rotate them
+with the host's normal retention tooling, and keep optional prompt review logs
+on the shortest useful retention because they may contain private prompt text.
+Repository scripts do not delete runtime artifacts automatically; scheduled
+deployments should own pruning for `routes/`, `prompts/`, `health/`, and
+`quality/`.
+
 The LiteLLM env file is optional. Use it only when E2E needs to source
 `LITELLM_MASTER_KEY` or equivalent credentials.
 

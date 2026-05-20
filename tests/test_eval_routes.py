@@ -113,6 +113,9 @@ cases:
     assert payload["cases"][0]["expect"] == "deep"
     assert payload["cases"][0]["actual_route"] == "deep"
     assert payload["cases"][0]["passed"] is True
+    assert "text" not in payload["cases"][0]
+    assert payload["cases"][0]["text_sha256"]
+    assert payload["cases"][0]["text_chars"] == len("这个 PR 会不会引入回归")
     assert "score" in payload["cases"][0]
     assert "second_score" in payload["cases"][0]
     assert "score_margin" in payload["cases"][0]
@@ -386,6 +389,132 @@ cases:
     payload = json.loads(output.read_text(encoding="utf-8"))
     assert payload["threshold"] == 0.42
     assert payload["margin"] == 0.07
+
+
+def test_eval_routes_stdout_redacts_case_text_by_default(tmp_path: Path):
+    cases = tmp_path / "cases.yaml"
+    cases.write_text(
+        """
+cases:
+  - id: private_001
+    text: PRIVATE EVAL PROMPT MUST NOT HIT STDOUT
+    expect: lite
+""",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/eval_routes.py",
+            "--cases",
+            str(cases),
+            "--mock-embeddings",
+        ],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+
+    assert "private_001" in result.stdout
+    assert "PRIVATE EVAL PROMPT" not in result.stdout
+
+
+def test_eval_routes_include_text_is_explicit(tmp_path: Path):
+    cases = tmp_path / "cases.yaml"
+    cases.write_text(
+        """
+cases:
+  - id: private_001
+    text: PRIVATE EVAL PROMPT MAY HIT STDOUT EXPLICITLY
+    expect: lite
+""",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/eval_routes.py",
+            "--cases",
+            str(cases),
+            "--mock-embeddings",
+            "--include-text",
+        ],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+
+    assert "PRIVATE EVAL PROMPT MAY HIT STDOUT EXPLICITLY" in result.stdout
+
+
+def test_eval_routes_json_include_text_is_explicit(tmp_path: Path):
+    cases = tmp_path / "cases.yaml"
+    output = tmp_path / "eval.json"
+    cases.write_text(
+        """
+cases:
+  - id: private_001
+    text: PRIVATE EVAL PROMPT MAY HIT JSON EXPLICITLY
+    expect: lite
+""",
+        encoding="utf-8",
+    )
+
+    subprocess.run(
+        [
+            sys.executable,
+            "scripts/eval_routes.py",
+            "--cases",
+            str(cases),
+            "--mock-embeddings",
+            "--json-output",
+            str(output),
+            "--include-text",
+        ],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+
+    case = json.loads(output.read_text(encoding="utf-8"))["cases"][0]
+    assert case["text"] == "PRIVATE EVAL PROMPT MAY HIT JSON EXPLICITLY"
+
+
+def test_eval_routes_stdout_limit_bounds_terminal_rows(tmp_path: Path):
+    cases = tmp_path / "cases.yaml"
+    cases.write_text(
+        """
+cases:
+  - id: case_1
+    text: first text
+    expect: lite
+  - id: case_2
+    text: second text
+    expect: lite
+""",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/eval_routes.py",
+            "--cases",
+            str(cases),
+            "--mock-embeddings",
+            "--stdout-limit",
+            "1",
+        ],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+
+    assert "case_1" in result.stdout
+    assert "case_2" not in result.stdout
+    assert "suppressed 1 eval row" in result.stdout
 
 
 @pytest.mark.asyncio

@@ -43,6 +43,32 @@ def test_parse_eval_output_counts_routes_and_reasons():
     ]
 
 
+def test_parse_eval_output_accepts_redacted_case_id_column():
+    output = "\n".join(
+        [
+            "PASS\tlite\tlite\tyour-lite-model\tlow_confidence\tcase_1",
+            "FAIL\tdeep\tlite\tyour-lite-model\tlow_confidence\tcase_2",
+            "",
+            "1 eval case(s) failed.",
+        ]
+    )
+
+    result = parse_eval_output(output)
+
+    assert result.total == 2
+    assert result.expected_routes == {"lite": 1, "deep": 1}
+    assert result.actual_routes == {"lite": 2}
+    assert result.failures == [
+        {
+            "expect": "deep",
+            "actual": "lite",
+            "target_model": "your-lite-model",
+            "reason": "low_confidence",
+            "text": "case_2",
+        }
+    ]
+
+
 def test_build_quality_report_combines_eval_and_route_summary():
     eval_output = "\n".join(
         [
@@ -144,6 +170,7 @@ def test_quality_report_reads_eval_json_and_reports_slice_metrics():
     assert report["product_metrics"]["near_margin_rate"] == 1.0
     assert report["product_metrics"]["near_margin_measured_count"] == 1
     assert report["product_metrics"]["near_margin_total_count"] == 5
+    assert report["eval"]["failures"][0]["text"] == "code1"
 
 
 def test_quality_report_counts_long_context_metadata_states():
