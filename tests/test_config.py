@@ -742,6 +742,64 @@ def test_router_config_env_takes_precedence_over_intentmux_home(
     assert default_config_path() == explicit_config
 
 
+def test_load_settings_records_runtime_config_diagnostics(tmp_path: Path, monkeypatch):
+    runtime_home = tmp_path / "intentmux-home"
+    routes_path = runtime_home / "config" / "routes.yaml"
+    routes_path.parent.mkdir(parents=True)
+    routes_path.write_text(
+        """
+route_model: auto
+fallback_route_id: lite
+routes:
+  lite:
+    target_model: lite-upstream
+    description: low risk
+    utterances:
+      - hi
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("INTENTMUX_HOME", str(runtime_home))
+    monkeypatch.setenv("ROUTER_CONFIG", str(routes_path))
+
+    settings = load_settings()
+
+    assert settings.config_path == str(routes_path)
+    assert settings.config_source == "ROUTER_CONFIG"
+    assert settings.runtime_home == str(runtime_home)
+    assert settings.runtime_config_exists is True
+
+
+def test_load_settings_marks_repo_default_when_runtime_config_is_absent(
+    tmp_path: Path, monkeypatch
+):
+    repo_config = tmp_path / "config" / "routes.yaml"
+    repo_config.parent.mkdir(parents=True)
+    repo_config.write_text(
+        """
+route_model: auto
+fallback_route_id: lite
+routes:
+  lite:
+    target_model: your-lite-model
+    description: low risk
+    utterances:
+      - hi
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("INTENTMUX_HOME", raising=False)
+    monkeypatch.delenv("ROUTER_CONFIG", raising=False)
+
+    settings = load_settings()
+
+    assert settings.config_source == "repo_default"
+    assert settings.runtime_home == str(DEFAULT_RUNTIME_HOME)
+    assert settings.runtime_config_exists is False
+    assert settings.placeholder_target_models == ["lite:your-lite-model"]
+
+
 def test_load_settings_uses_intentmux_home_defaults_for_runtime_paths(
     tmp_path: Path, monkeypatch
 ):

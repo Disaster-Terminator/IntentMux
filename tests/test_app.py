@@ -274,6 +274,41 @@ def test_main_disables_uvicorn_access_log_by_default(monkeypatch):
     assert captured["access_log"] is False
 
 
+def test_main_logs_runtime_config_diagnostics(tmp_path: Path, monkeypatch, caplog):
+    runtime_home = tmp_path / "intentmux-home"
+    config_path = runtime_home / "config" / "routes.yaml"
+    audit_dir = runtime_home / "logs" / "routes"
+    monkeypatch.setattr(
+        "router.app.load_settings",
+        lambda: RouterSettings(
+            config_path=str(config_path),
+            config_source="ROUTER_CONFIG",
+            runtime_home=str(runtime_home),
+            runtime_config_exists=True,
+            audit_log_enabled=True,
+            audit_log_dir=str(audit_dir),
+            access_log=False,
+            routes={
+                "lite": RouteSpec(
+                    description="cheap",
+                    utterances=["hello"],
+                )
+            },
+        ),
+    )
+    monkeypatch.setattr("router.app.uvicorn.run", lambda *args, **kwargs: None)
+
+    with caplog.at_level("INFO", logger="intentmux"):
+        main()
+
+    assert "config_source=ROUTER_CONFIG" in caplog.text
+    assert f"config_path={config_path}" in caplog.text
+    assert f"runtime_home={runtime_home}" in caplog.text
+    assert "runtime_config_exists=true" in caplog.text
+    assert "audit_log_enabled=true" in caplog.text
+    assert "access_log=false" in caplog.text
+
+
 def test_chat_completion_rewrites_smart_router_before_forwarding():
     proxy = FakeProxy()
     app = create_app(

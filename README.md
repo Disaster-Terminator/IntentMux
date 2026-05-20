@@ -337,8 +337,11 @@ git commit、生成时间、source manifest hash 和每个 source 的原始行�
 生产环境如果把 route bank 视为路由质量资产，应在 `routes.yaml` 中设置
 `require_route_bank: true`，或通过 `ROUTER_REQUIRE_ROUTE_BANK=true` 开启。
 这样可以避免 route bank 路径写错时服务静默回退到 seed utterances，导致灰度验证误判。
-`/ready` 的 `components.router.detail` 会暴露 `route_bank_loaded` 和每个 route 的
-utterance 数量，用来快速确认运行时实际加载的路由资产规模。
+`/ready` 的 `components.router.detail` 会暴露 `config_source`、`config_path`、
+`runtime_home`、`runtime_config_exists`、日志开关、`route_bank_loaded` 和每个 route 的
+utterance 数量，用来快速确认运行时实际加载的配置和路由资产规模。启动日志也会记录同一组
+配置来源和日志状态字段。若服务从仓库内置 `config/routes.yaml` 启动且没有运行时配置，
+或 route target 仍是 `your-*` 占位模型，router detail 会带 `warnings`，避免把开发默认值误判为生产状态。
 
 IntentMux 默认把静态 route bank 的 embedding 向量缓存到运行时目录的
 `cache/route-embeddings.json`。缓存只覆盖 route bank utterances；每条真实请求仍会实时

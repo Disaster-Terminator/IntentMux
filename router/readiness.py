@@ -53,9 +53,40 @@ class ReadinessChecker:
             for route_id, route in sorted(self.settings.routes.items())
         )
         route_bank_loaded = "true" if self.settings.route_bank_loaded else "false"
+        runtime_config_exists = (
+            "true" if self.settings.runtime_config_exists else "false"
+        )
+        warnings = []
+        if self.settings.config_source == "repo_default" and not self.settings.runtime_config_exists:
+            warnings.append("runtime_config_missing")
+        if self.settings.placeholder_target_models:
+            warnings.append("placeholder_targets")
+        detail_parts = [
+            f"config_source={self.settings.config_source}",
+            f"config_path={self.settings.config_path}",
+            f"runtime_home={self.settings.runtime_home}",
+            f"runtime_config_exists={runtime_config_exists}",
+            f"audit_log_enabled={str(self.settings.audit_log_enabled).lower()}",
+            f"audit_log_dir={self.settings.audit_log_dir}",
+            f"access_log={str(self.settings.access_log).lower()}",
+            f"prompt_log_mode={self.settings.prompt_log_mode}",
+        ]
+        if warnings:
+            detail_parts.append(f"warnings={','.join(warnings)}")
+        if self.settings.placeholder_target_models:
+            detail_parts.append(
+                "placeholder_target_models="
+                + ",".join(self.settings.placeholder_target_models)
+            )
+        detail_parts.extend(
+            [
+                f"route_bank_loaded={route_bank_loaded}",
+                f"route_utterances={route_counts}",
+            ]
+        )
         return ComponentStatus(
             ok=True,
-            detail=f"route_bank_loaded={route_bank_loaded} route_utterances={route_counts}",
+            detail=" ".join(detail_parts),
         )
 
     async def check_litellm(self) -> ComponentStatus:

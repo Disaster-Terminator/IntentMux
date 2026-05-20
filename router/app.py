@@ -456,6 +456,19 @@ def is_upstream_failure(status_code: int) -> bool:
 def main() -> None:
     configure_logging()
     settings = load_settings()
+    logger.info(
+        "startup config_source=%s config_path=%s runtime_home=%s "
+        "runtime_config_exists=%s audit_log_enabled=%s audit_log_dir=%s "
+        "access_log=%s prompt_log_mode=%s",
+        settings.config_source,
+        settings.config_path,
+        settings.runtime_home,
+        str(settings.runtime_config_exists).lower(),
+        str(settings.audit_log_enabled).lower(),
+        settings.audit_log_dir,
+        str(settings.access_log).lower(),
+        settings.prompt_log_mode,
+    )
     uvicorn.run(
         create_app(settings=settings),
         host=settings.listen_host,

@@ -177,6 +177,12 @@ uv --directory "$INTENTMUX_REPO" run python scripts/router_log_summary.py \
   --slow-request-limit 10
 ```
 
+The `/ready` router detail is the first runtime config sanity check. Confirm
+`config_source`, `config_path`, `runtime_home`, `runtime_config_exists`, logging
+state, `route_bank_loaded`, and route utterance counts match the deployment. A
+`warnings` field means IntentMux is using repository defaults without runtime
+config or still has `your-*` placeholder route targets.
+
 For today's strict budget:
 
 ```bash

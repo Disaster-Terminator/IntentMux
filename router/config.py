@@ -54,6 +54,11 @@ class HardRuleSpec(BaseModel):
 
 
 class RouterSettings(BaseModel):
+    config_path: str | None = None
+    config_source: str | None = None
+    runtime_home: str | None = None
+    runtime_config_exists: bool = False
+    placeholder_target_models: list[str] = Field(default_factory=list)
     # entry_model is the product-facing alias; route_model remains supported for
     # backward compatibility with existing routes.yaml deployments.
     # When both keys are present, route_model takes precedence via AliasChoices
@@ -275,7 +280,46 @@ def load_settings(path: str | Path | None = None) -> RouterSettings:
         "listen_host": os.getenv("ROUTER_HOST", settings.listen_host),
         "listen_port": int(os.getenv("ROUTER_PORT", str(settings.listen_port))),
     }
-    return RouterSettings.model_validate(settings.model_dump() | overrides)
+    return RouterSettings.model_validate(
+        settings.model_dump() | overrides | config_diagnostics(config_path, path=path)
+    )
+
+
+def config_diagnostics(config_path: Path, *, path: str | Path | None = None) -> dict[str, Any]:
+    runtime_home = default_runtime_home()
+    return {
+        "config_path": str(config_path),
+        "config_source": config_source(config_path, path=path),
+        "runtime_home": str(runtime_home),
+        "runtime_config_exists": (runtime_home / "config" / "routes.yaml").exists(),
+        "placeholder_target_models": placeholder_target_models(config_path),
+    }
+
+
+def config_source(config_path: Path, *, path: str | Path | None = None) -> str:
+    if path is not None:
+        return "argument"
+    if os.getenv("ROUTER_CONFIG"):
+        return "ROUTER_CONFIG"
+    if runtime_home_from_env() is not None:
+        return "INTENTMUX_HOME"
+    runtime_config = DEFAULT_RUNTIME_HOME / "config" / "routes.yaml"
+    if config_path == runtime_config:
+        return "default_runtime_home"
+    return "repo_default"
+
+
+def placeholder_target_models(config_path: Path) -> list[str]:
+    raw = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+    routes = raw.get("routes") or {}
+    placeholders: list[str] = []
+    for route_id, route in routes.items():
+        if not isinstance(route, dict):
+            continue
+        target_model = route.get("target_model")
+        if isinstance(target_model, str) and target_model.startswith("your-"):
+            placeholders.append(f"{route_id}:{target_model}")
+    return placeholders
 
 
 def apply_runtime_home_defaults(raw: dict[str, Any]) -> None:

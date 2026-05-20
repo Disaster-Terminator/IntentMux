@@ -392,7 +392,13 @@ instead of relying only on low-confidence fallback.
 Run IntentMux as a sidecar in the same deployment boundary as LiteLLM.
 
 - Docker health uses `/health` to avoid readiness flapping restart loops.
-- `/ready` checks router, LiteLLM, and embedding availability.
+- `/ready` checks router, LiteLLM, and embedding availability. The router detail
+  reports `config_source`, `config_path`, `runtime_home`,
+  `runtime_config_exists`, logging state, `route_bank_loaded`, and route
+  utterance counts. Startup logs record the same config source and logging
+  state. When IntentMux starts from repository default config without a runtime
+  config, or route targets still use `your-*` placeholder model names, the
+  router detail includes `warnings`.
 - When embeddings are unavailable, chat requests fail open to `fallback_route_id` and log `reason=embedding_error`.
 - LiteLLM/upstream `5xx` responses or connection errors fail closed as redacted `502` responses and log `route_error`.
 - LiteLLM/upstream `4xx` responses are passed through by proxy semantics, but audit logs mark them as `ok=false` / `outcome=upstream_non_200`.

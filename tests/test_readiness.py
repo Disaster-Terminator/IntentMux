@@ -116,6 +116,15 @@ def test_litellm_status_rejects_non_auth_client_errors():
 
 def test_router_readiness_reports_route_bank_and_utterance_counts():
     settings = RouterSettings(
+        config_path="/data/config/routes.yaml",
+        config_source="ROUTER_CONFIG",
+        runtime_home="/data",
+        runtime_config_exists=True,
+        audit_log_enabled=True,
+        audit_log_dir="/data/logs/routes",
+        access_log=False,
+        prompt_log_mode="raw_local",
+        prompt_log_dir="/data/logs/prompts",
         routes={
             "lite": RouteSpec(description="low risk", utterances=["a", "b"]),
             "deep": RouteSpec(description="high risk", utterances=["c"]),
@@ -127,8 +136,36 @@ def test_router_readiness_reports_route_bank_and_utterance_counts():
 
     assert status == ComponentStatus(
         ok=True,
-        detail="route_bank_loaded=true route_utterances=deep:1,lite:2",
+        detail=(
+            "config_source=ROUTER_CONFIG config_path=/data/config/routes.yaml "
+            "runtime_home=/data runtime_config_exists=true "
+            "audit_log_enabled=true audit_log_dir=/data/logs/routes "
+            "access_log=false prompt_log_mode=raw_local "
+            "route_bank_loaded=true route_utterances=deep:1,lite:2"
+        ),
     )
+
+
+def test_router_readiness_warns_when_using_repo_default_and_placeholder_targets():
+    settings = RouterSettings(
+        config_path="config/routes.yaml",
+        config_source="repo_default",
+        runtime_home=".intentmux-home",
+        runtime_config_exists=False,
+        placeholder_target_models=["lite:your-lite-model", "deep:your-deep-model"],
+        routes={
+            "lite": RouteSpec(description="low risk", utterances=["a"]),
+            "deep": RouteSpec(description="high risk", utterances=["b"]),
+        },
+    )
+
+    status = ReadinessChecker(settings).check_router()
+
+    assert status.ok is True
+    assert "config_source=repo_default" in status.detail
+    assert "runtime_config_exists=false" in status.detail
+    assert "warnings=runtime_config_missing,placeholder_targets" in status.detail
+    assert "placeholder_target_models=lite:your-lite-model,deep:your-deep-model" in status.detail
 
 
 @pytest.mark.asyncio
