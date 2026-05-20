@@ -130,6 +130,19 @@ sources:
     intended_use: route
     limit: 100
 
+  - name: curated_en_deep_debug_gap
+    kind: curated_yaml
+    path: data/source_samples/default_en_deep_debug_gap.example.yaml
+    homepage: https://github.com/Disaster-Terminator/IntentMux
+    license: Apache-2.0
+    license_url: https://www.apache.org/licenses/LICENSE-2.0
+    route: deep
+    text_field: text
+    language: en
+    slice: deep_debug_issue
+    intended_use: route
+    limit: 100
+
   - name: swebench_issue_resolution
     kind: huggingface
     dataset: princeton-nlp/SWE-bench

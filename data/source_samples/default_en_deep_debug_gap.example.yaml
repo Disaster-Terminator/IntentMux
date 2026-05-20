@@ -1,0 +1,131 @@
+# Public, redacted English seed prompts for deep debug routing.
+# These are generic issue patterns derived from route-quality gaps, not
+# production logs or verbatim private prompts.
+samples:
+  - text: SQLFluff reports indentation errors when a query contains a do statement
+    route_id: deep
+    language: en
+    slice: deep_debug_issue
+    proposed_use: route
+    license: Apache-2.0
+    redacted: true
+
+  - text: marshmallow Nested many=True drops the first generated item while dumping a schema
+    route_id: deep
+    language: en
+    slice: deep_debug_issue
+    proposed_use: route
+    license: Apache-2.0
+    redacted: true
+
+  - text: marshmallow ISO8601 datetime ending with Z is rejected during load validation
+    route_id: deep
+    language: en
+    slice: deep_debug_issue
+    proposed_use: route
+    license: Apache-2.0
+    redacted: true
+
+  - text: pvlib ModelChain ignores modules_per_string and strings_per_inverter for pvwatts
+    route_id: deep
+    language: en
+    slice: deep_debug_issue
+    proposed_use: route
+    license: Apache-2.0
+    redacted: true
+
+  - text: pvlib tracker backtracking behaves incorrectly when the sun is below the tracker
+    route_id: deep
+    language: en
+    slice: deep_debug_issue
+    proposed_use: route
+    license: Apache-2.0
+    redacted: true
+
+  - text: pvlib ModelChain raises ValueError with weather temperature and wind speed inputs
+    route_id: deep
+    language: en
+    slice: deep_debug_issue
+    proposed_use: route
+    license: Apache-2.0
+    redacted: true
+
+  - text: pvlib ModelChain prepare_inputs succeeds even when the weather dataframe is missing dhi
+    route_id: deep
+    language: en
+    slice: deep_debug_issue
+    proposed_use: route
+    license: Apache-2.0
+    redacted: true
+
+  - text: pvlib should accept albedo values in the weather dataframe for ModelChain
+    route_id: deep
+    language: en
+    slice: deep_debug_issue
+    proposed_use: route
+    license: Apache-2.0
+    redacted: true
+
+  - text: pvlib should expose temperature model helpers through PVSystem and ModelChain
+    route_id: deep
+    language: en
+    slice: deep_debug_issue
+    proposed_use: route
+    license: Apache-2.0
+    redacted: true
+
+  - text: pvlib PVGIS hourly radiation API getter parser is missing or inconsistent
+    route_id: deep
+    language: en
+    slice: deep_debug_issue
+    proposed_use: route
+    license: Apache-2.0
+    redacted: true
+
+  - text: pyvista to_tetrahedra loses active scalars or cell data metadata
+    route_id: deep
+    language: en
+    slice: deep_debug_issue
+    proposed_use: route
+    license: Apache-2.0
+    redacted: true
+
+  - text: pyvista vtkVolume needs a wrapper like vtkActor for volume rendering lookup table updates
+    route_id: deep
+    language: en
+    slice: deep_debug_issue
+    proposed_use: route
+    license: Apache-2.0
+    redacted: true
+
+  - text: pydicom DT pickling and unpickling loses timezone offset information
+    route_id: deep
+    language: en
+    slice: deep_debug_issue
+    proposed_use: route
+    license: Apache-2.0
+    redacted: true
+
+  - text: library bug report with traceback, repro code, expected behavior, and failing validation
+    route_id: deep
+    language: en
+    slice: deep_debug_issue
+    proposed_use: route
+    license: Apache-2.0
+    redacted: true
+
+  - text: debug an open source Python package issue involving schema serialization and edge case input
+    route_id: deep
+    language: en
+    slice: deep_debug_issue
+    proposed_use: route
+    license: Apache-2.0
+    redacted: true
+
+  - text: investigate a scientific Python library bug in model chain irradiance weather dataframe behavior
+    route_id: deep
+    language: en
+    slice: deep_debug_issue
+    proposed_use: route
+    license: Apache-2.0
+    redacted: true

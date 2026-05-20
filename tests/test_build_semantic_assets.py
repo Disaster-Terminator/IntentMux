@@ -477,11 +477,16 @@ def test_route_sources_manifest_declares_bilingual_v2_metadata():
     curated_rows = load_rows(curated, Path("."))
     curated_slices = {row["slice"] for row in curated_rows}
     curated_uses = {row["proposed_use"] for row in curated_rows}
+    curated_en = next(
+        source for source in sources if source.name == "curated_en_deep_debug_gap"
+    )
+    curated_en_rows = load_rows(curated_en, Path("."))
 
     assert {"zh-CN", "en"}.issubset(languages)
     assert "zh-TW" not in languages
     assert "massive_zh_tw_general" not in names
     assert "curated_zh_cn_deep" in names
+    assert "curated_en_deep_debug_gap" in names
     assert "massive_zh_cn_train" in names
     assert "massive_en_us_train" in names
     assert "massive_zh_cn_dev_eval" in names
@@ -501,6 +506,8 @@ def test_route_sources_manifest_declares_bilingual_v2_metadata():
     assert {"deep_debug_zh", "deep_security_zh", "deep_long_context_zh"}.issubset(
         curated_slices
     )
+    assert {row["slice"] for row in curated_en_rows} == {"deep_debug_issue"}
+    assert {row["proposed_use"] for row in curated_en_rows} == {"route"}
     assert {"route", "eval", "calibration"}.issubset(curated_uses)
     assert uses == {"route", "eval", "calibration"}
 
