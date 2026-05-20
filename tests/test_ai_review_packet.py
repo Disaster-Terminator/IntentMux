@@ -23,6 +23,18 @@ def test_build_ai_review_packet_groups_candidates_without_prompt_text():
                 "target_model": "cheap",
                 "reason": "low_confidence",
                 "review_reasons": ["low_confidence", "near_margin"],
+                "score": 0.51,
+                "second_score": 0.49,
+                "score_margin": 0.02,
+                "threshold": 0.4,
+                "margin": 0.04,
+                "top_route_id": "deep",
+                "second_route_id": "lite",
+                "match_source": "swebench_dev_eval",
+                "match_index": 12,
+                "match_text_sha256": "abc123",
+                "match_score": 0.51,
+                "match_provenance": "aurelio_hybrid_exact",
                 "prompt_review": {"matched": True, "truncated": False, "text_chars": 30},
             },
             {
@@ -59,6 +71,17 @@ def test_build_ai_review_packet_groups_candidates_without_prompt_text():
         "watch_only",
         "privacy_blocked",
     ]
+    low_candidate = packet["candidates"][1]
+    assert low_candidate["score_margin"] == 0.02
+    assert low_candidate["threshold"] == 0.4
+    assert low_candidate["margin"] == 0.04
+    assert low_candidate["top_route_id"] == "deep"
+    assert low_candidate["second_route_id"] == "lite"
+    assert low_candidate["match_source"] == "swebench_dev_eval"
+    assert low_candidate["match_index"] == 12
+    assert low_candidate["match_text_sha256"] == "abc123"
+    assert low_candidate["match_score"] == 0.51
+    assert low_candidate["match_provenance"] == "aurelio_hybrid_exact"
     assert "latest_user_text" not in str(packet)
     assert all(item["prompt_excerpt"] is None for item in packet["candidates"])
 

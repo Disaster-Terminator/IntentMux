@@ -337,7 +337,7 @@ curl http://127.0.0.1:4001/v1/semantic-router/decision \
   -d '{"model":"auto","messages":[{"role":"user","content":"Why is this production bug intermittent?"}]}'
 ```
 
-This returns the selected `route_id`, resolved `target_model`, `policy_id`, reason, rewrite flag, and scores without forwarding to LiteLLM. Embedding decisions also include `match_source`, `match_index`, and `match_text_sha256` so operators can audit which route-bank source won without logging the matched sample text.
+This returns the selected `route_id`, resolved `target_model`, `policy_id`, reason, rewrite flag, `score`, `second_score`, `score_margin`, `threshold`, `margin`, `top_route_id`, and `second_route_id` without forwarding to LiteLLM. Embedding and `low_confidence` decisions also include `match_source`, `match_index`, `match_text_sha256`, `match_score`, and `match_provenance` so operators can audit which route-bank source won and why it passed or failed the threshold, without logging the matched sample text. For `low_confidence`, `route_id` is the fallback route and `top_route_id` is the highest-scoring candidate.
 
 ## Semantic Assets
 

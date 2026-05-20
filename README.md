@@ -635,12 +635,15 @@ curl http://127.0.0.1:4001/v1/semantic-router/decision \
   -d '{"model":"auto","messages":[{"role":"user","content":"这个线上 bug 为什么偶发？"}]}'
 ```
 
-返回内容包含 `route_id`、`target_model`、`policy_id`、`reason`、`rewrite` 和分数。
-当请求通过 embedding 命中 route bank 路由时，还会返回 `match_source`、
-`match_index` 和 `match_text_sha256`，用于审计“命中了哪类上游样本”。这些字段只记录
-加载后的 route utterance 来源、索引和文本 hash，不返回匹配样本文本；hard rule、
-显式 route、低置信 fallback 或 passthrough 会返回 `null`。
-route bank YAML 里的 `source` 字段决定了这些审计字段能追到哪个上游来源。
+返回内容包含 `route_id`、`target_model`、`policy_id`、`reason`、`rewrite`、`score`、
+`second_score`、`score_margin`、`threshold`、`margin`、`top_route_id` 和
+`second_route_id`。当请求通过 embedding 命中 route bank 或因为分数不足进入
+`low_confidence` fallback 时，还会返回 `match_source`、`match_index`、
+`match_text_sha256`、`match_score` 和 `match_provenance`，用于审计“最像哪条样本，
+以及为什么通过/没通过阈值”。这些字段只记录加载后的 route utterance 来源、索引和文本
+hash，不返回匹配样本文本；hard rule、显式 route 或 passthrough 不声明语义样本命中，
+相关字段会返回 `null`。route bank YAML 里的 `source` 字段决定了这些审计字段能追到
+哪个上游来源。
 
 审计一条 `deep` 请求时，先看 `/v1/semantic-router/decision` 返回：
 
@@ -649,15 +652,26 @@ route bank YAML 里的 `source` 字段决定了这些审计字段能追到哪个
   "route_id": "deep",
   "policy_id": "embedding",
   "reason": "embedding",
+  "score": 0.72,
+  "second_score": 0.31,
+  "score_margin": 0.41,
+  "threshold": 0.4,
+  "margin": 0.04,
+  "top_route_id": "deep",
+  "second_route_id": "lite",
   "match_source": "swebench_issue_resolution",
   "match_index": 12,
   "match_text_sha256": "..."
 }
 ```
 
-含义是：这条请求不是因为 hard rule 升级，而是 embedding 路由命中了已加载 route
-utterances 中第 12 条、来源为 `swebench_issue_resolution` 的样本；`match_text_sha256`
-可用于在本地 route bank 中定位具体文本，同时避免在审计日志里直接写出匹配样本文本。
+含义是：这条请求不是因为 hard rule 升级，而是 embedding 路由把 `deep` 判为最高分，
+且 `score >= threshold`、`score_margin >= margin`，所以最终进入 `deep`。它命中了已加载
+route utterances 中第 12 条、来源为 `swebench_issue_resolution` 的样本；
+`match_text_sha256` 可用于在本地 route bank 中定位具体文本，同时避免在审计日志里直接写出
+匹配样本文本。审计 `low_confidence` 时也看同一组字段：`route_id` 是 fallback 后的最终路由，
+`top_route_id` 是最高分候选，`score`、`threshold`、`score_margin` 和 `margin` 解释为什么没有
+采用最高分候选。
 
 ## 语义资产
 

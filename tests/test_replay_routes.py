@@ -136,9 +136,20 @@ def test_replay_routes_cli_compares_baselines_and_redacts_text_by_default(tmp_pa
     assert payload["summary"]["baseline_reference_agreement_by_source"]["current-router"] == {
         "historical_route_id": 2
     }
+    deep_decision = payload["cases"][1]["decisions"]["current-router"]
+    assert deep_decision["top_route_id"] == "deep"
+    assert deep_decision["second_route_id"] == "lite"
+    assert deep_decision["threshold"] == 0.5
+    assert deep_decision["margin"] == 0.05
+    assert deep_decision["match_source"] == "inline_config"
+    assert deep_decision["match_text_sha256"]
     assert "text" not in payload["cases"][0]
     assert payload["cases"][0]["text_sha256"]
-    assert "翻译成中文" not in markdown.read_text(encoding="utf-8")
+    markdown_text = markdown.read_text(encoding="utf-8")
+    assert "top_route" in markdown_text
+    assert "match_text_sha256" in markdown_text
+    assert "inline_config" in markdown_text
+    assert "翻译成中文" not in markdown_text
 
 
 def test_render_markdown_warns_historical_routes_are_not_ground_truth():
@@ -168,6 +179,13 @@ def test_render_markdown_warns_historical_routes_are_not_ground_truth():
                             "route_id": "lite",
                             "reason": "embedding",
                             "score": 0.8,
+                            "threshold": 0.5,
+                            "margin": 0.05,
+                            "top_route_id": "lite",
+                            "second_route_id": "deep",
+                            "match_source": "inline_config",
+                            "match_index": 0,
+                            "match_text_sha256": "match-sha",
                         }
                     },
                 }

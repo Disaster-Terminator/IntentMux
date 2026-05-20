@@ -97,6 +97,7 @@ class PromptReviewLogger:
             "truncated": len(latest_user_text) > self.max_chars,
             "ts": datetime.now(UTC).isoformat(),
         }
+        add_decision_explainability(record, decision)
         add_match_provenance(record, decision)
         path = self.log_dir / f"{audit_log_day(timezone_name=self.timezone_name)}.jsonl"
         with path.open("a", encoding="utf-8") as handle:
@@ -411,6 +412,7 @@ def route_record(
     }
     if upstream_status is not None:
         record["upstream_status"] = upstream_status
+    add_decision_explainability(record, decision)
     add_match_provenance(record, decision)
     if format_signals:
         record["format_signals"] = format_signals
@@ -418,6 +420,19 @@ def route_record(
         for name, duration_ms in timings_ms.items():
             record[name] = round(duration_ms, 2)
     return record
+
+
+def add_decision_explainability(record: dict[str, Any], decision: RoutingDecision) -> None:
+    if decision.score_margin is not None:
+        record["score_margin"] = decision.score_margin
+    if decision.threshold is not None:
+        record["threshold"] = decision.threshold
+    if decision.margin is not None:
+        record["margin"] = decision.margin
+    if decision.top_route_id is not None:
+        record["top_route_id"] = decision.top_route_id
+    if decision.second_route_id is not None:
+        record["second_route_id"] = decision.second_route_id
 
 
 def add_match_provenance(record: dict[str, Any], decision: RoutingDecision) -> None:

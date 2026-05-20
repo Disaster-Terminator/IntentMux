@@ -115,6 +115,13 @@ cases:
     assert payload["cases"][0]["passed"] is True
     assert "score" in payload["cases"][0]
     assert "second_score" in payload["cases"][0]
+    assert "score_margin" in payload["cases"][0]
+    assert payload["cases"][0]["threshold"] == 0.4
+    assert payload["cases"][0]["margin"] == 0.04
+    assert payload["cases"][0]["top_route_id"] == "deep"
+    assert "second_route_id" in payload["cases"][0]
+    assert payload["cases"][0]["match_source"] is not None
+    assert payload["cases"][0]["match_text_sha256"] is not None
 
 
 def test_eval_routes_json_output_preserves_long_context_metadata(tmp_path: Path):

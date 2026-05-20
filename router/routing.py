@@ -33,6 +33,11 @@ class RoutingDecision:
     source_model: str | None = None
     score: float | None = None
     second_score: float | None = None
+    score_margin: float | None = None
+    threshold: float | None = None
+    margin: float | None = None
+    top_route_id: str | None = None
+    second_route_id: str | None = None
     match_source: str | None = None
     match_index: int | None = None
     match_text_sha256: str | None = None
@@ -139,10 +144,12 @@ class Router:
         ranked = sorted(route_matches.items(), key=lambda item: item[1].score, reverse=True)
         best_route, best_match = ranked[0]
         best_score = best_match.score
+        second_route = ranked[1][0] if len(ranked) > 1 else None
         second_score = ranked[1][1].score if len(ranked) > 1 else 0.0
+        score_margin = best_score - second_score
         if (
             best_score < self.settings.threshold
-            or best_score - second_score < self.settings.margin
+            or score_margin < self.settings.margin
         ):
             return RoutingDecision(
                 route_id=self.settings.fallback_route_id,
@@ -153,6 +160,20 @@ class Router:
                 rewrite=True,
                 score=round(best_score, 6),
                 second_score=round(second_score, 6),
+                score_margin=round(score_margin, 6),
+                threshold=self.settings.threshold,
+                margin=self.settings.margin,
+                top_route_id=best_route,
+                second_route_id=second_route,
+                match_source=best_match.source,
+                match_index=best_match.index,
+                match_text_sha256=best_match.text_sha256,
+                match_score=(
+                    round(best_match.utterance_score, 6)
+                    if best_match.utterance_score is not None
+                    else None
+                ),
+                match_provenance=best_match.provenance,
             )
 
         return RoutingDecision(
@@ -164,6 +185,11 @@ class Router:
             rewrite=True,
             score=round(best_score, 6),
             second_score=round(second_score, 6),
+            score_margin=round(score_margin, 6),
+            threshold=self.settings.threshold,
+            margin=self.settings.margin,
+            top_route_id=best_route,
+            second_route_id=second_route,
             match_source=best_match.source,
             match_index=best_match.index,
             match_text_sha256=best_match.text_sha256,

@@ -151,6 +151,11 @@ async def test_embedding_decision_reports_matched_route_bank_provenance():
     assert decision.match_source == "swebench_issue_resolution"
     assert decision.match_index == 0
     assert decision.match_text_sha256
+    assert decision.top_route_id == "deep"
+    assert decision.second_route_id == "lite"
+    assert decision.threshold == 0.5
+    assert decision.margin == 0.05
+    assert decision.score_margin == decision.score - decision.second_score
 
 
 @pytest.mark.asyncio
@@ -834,6 +839,13 @@ async def test_low_confidence_embedding_falls_back_to_default_route():
     assert decision.target_model == "lite-upstream"
     assert decision.policy_id == "low_confidence"
     assert decision.reason == "low_confidence"
+    assert decision.top_route_id == "lite"
+    assert decision.second_route_id == "deep"
+    assert decision.threshold == 0.5
+    assert decision.margin == 0.05
+    assert decision.score_margin == 0.0
+    assert decision.match_source == "inline_config"
+    assert decision.match_text_sha256
 
 
 @pytest.mark.asyncio

@@ -146,7 +146,15 @@ async def replay_routes(
                 "reason": decision.reason,
                 "score": decision.score,
                 "second_score": decision.second_score,
+                "score_margin": decision.score_margin,
+                "threshold": decision.threshold,
+                "margin": decision.margin,
+                "top_route_id": decision.top_route_id,
+                "second_route_id": decision.second_route_id,
                 "match_source": decision.match_source,
+                "match_index": decision.match_index,
+                "match_text_sha256": decision.match_text_sha256,
+                "match_score": decision.match_score,
                 "match_provenance": decision.match_provenance,
             }
         row = {
@@ -229,8 +237,8 @@ def render_markdown(report: dict[str, Any]) -> str:
             "",
             "## Cases",
             "",
-        "| id | reference | reference_source | current | current_reason | current_score | text_sha256 | text_chars |",
-            "| --- | --- | --- | --- | --- | ---: | --- | ---: |",
+        "| id | reference | reference_source | current | current_reason | top_route | second_route | current_score | threshold | margin | match_source | match_index | match_text_sha256 | text_sha256 | text_chars |",
+            "| --- | --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | --- | ---: | --- | --- | ---: |",
         ]
     )
     for case in report.get("cases", []):
@@ -249,7 +257,14 @@ def render_markdown(report: dict[str, Any]) -> str:
                     markdown_cell(case.get("reference_route_source")),
                     markdown_cell(current.get("route_id")),
                     markdown_cell(current.get("reason")),
+                    markdown_cell(current.get("top_route_id")),
+                    markdown_cell(current.get("second_route_id")),
                     markdown_cell(current.get("score")),
+                    markdown_cell(current.get("threshold")),
+                    markdown_cell(current.get("margin")),
+                    markdown_cell(current.get("match_source")),
+                    markdown_cell(current.get("match_index")),
+                    markdown_cell(current.get("match_text_sha256")),
                     markdown_cell(case.get("text_sha256")),
                     markdown_cell(case.get("text_chars")),
                 ]

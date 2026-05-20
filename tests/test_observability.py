@@ -156,6 +156,13 @@ def test_route_record_includes_match_provenance_only_when_available():
             rewrite=True,
             route_id="deep",
             policy_id="embedding",
+            score=0.92,
+            second_score=0.31,
+            score_margin=0.61,
+            threshold=0.4,
+            margin=0.04,
+            top_route_id="deep",
+            second_route_id="lite",
             match_source="swebench_issue_resolution",
             match_index=3,
             match_text_sha256="abc123",
@@ -175,6 +182,13 @@ def test_route_record_includes_match_provenance_only_when_available():
     assert with_match["match_text_sha256"] == "abc123"
     assert with_match["match_score"] == 0.91
     assert with_match["match_provenance"] == "aurelio_hybrid_exact"
+    assert with_match["score"] == 0.92
+    assert with_match["second_score"] == 0.31
+    assert with_match["score_margin"] == 0.61
+    assert with_match["threshold"] == 0.4
+    assert with_match["margin"] == 0.04
+    assert with_match["top_route_id"] == "deep"
+    assert with_match["second_route_id"] == "lite"
 
 
 def test_error_class_for_stable_upstream_statuses_and_timeouts():

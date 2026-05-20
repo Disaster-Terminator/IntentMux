@@ -24,6 +24,16 @@ def test_select_review_candidates_prioritizes_reviewable_metadata_only():
             "reason": "low_confidence",
             "score": 0.51,
             "second_score": 0.49,
+            "score_margin": 0.02,
+            "threshold": 0.4,
+            "margin": 0.04,
+            "top_route_id": "deep",
+            "second_route_id": "lite",
+            "match_source": "swebench_dev_eval",
+            "match_index": 12,
+            "match_text_sha256": "abc123",
+            "match_score": 0.51,
+            "match_provenance": "aurelio_hybrid_exact",
             "duration_ms": 1000,
             "prompt": "must not leak",
             "authorization": "Bearer secret",
@@ -127,6 +137,16 @@ def test_select_review_candidates_prioritizes_reviewable_metadata_only():
     ]
     assert candidates[0]["review_reasons"] == ["hard_rule"]
     assert candidates[1]["review_reasons"] == ["low_confidence", "near_margin"]
+    assert candidates[1]["score_margin"] == 0.02
+    assert candidates[1]["threshold"] == 0.4
+    assert candidates[1]["margin"] == 0.04
+    assert candidates[1]["top_route_id"] == "deep"
+    assert candidates[1]["second_route_id"] == "lite"
+    assert candidates[1]["match_source"] == "swebench_dev_eval"
+    assert candidates[1]["match_index"] == 12
+    assert candidates[1]["match_text_sha256"] == "abc123"
+    assert candidates[1]["match_score"] == 0.51
+    assert candidates[1]["match_provenance"] == "aurelio_hybrid_exact"
     assert candidates[2]["review_reasons"] == ["embedding_error"]
     assert candidates[3]["review_reasons"] == ["upstream_non_2xx"]
     assert candidates[4]["review_reasons"] == ["slow_request"]
@@ -307,6 +327,14 @@ def test_render_markdown_is_audit_friendly():
                     "reason": "low_confidence",
                     "score": None,
                     "second_score": None,
+                    "score_margin": 0.02,
+                    "threshold": 0.4,
+                    "margin": 0.04,
+                    "top_route_id": "deep",
+                    "second_route_id": "lite",
+                    "match_source": "swebench_dev_eval",
+                    "match_index": 12,
+                    "match_text_sha256": "abc123",
                     "duration_ms": 100.0,
                     "upstream_status": None,
                     "review_reasons": ["low_confidence"],
@@ -318,6 +346,10 @@ def test_render_markdown_is_audit_friendly():
     assert "# IntentMux Review Candidates" in markdown
     assert "- candidate_count: 1" in markdown
     assert "| req-low | lite | lite-upstream | low_confidence |" in markdown
+    assert "top_route" in markdown
+    assert "match_text_sha256" in markdown
+    assert "swebench_dev_eval" in markdown
+    assert "abc123" in markdown
 
 
 def test_main_writes_json_and_markdown(tmp_path: Path):

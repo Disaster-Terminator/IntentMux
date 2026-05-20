@@ -187,6 +187,16 @@ async def run_eval(
             "passed": actual_route == case.expect,
             "score": decision.score,
             "second_score": decision.second_score,
+            "score_margin": decision.score_margin,
+            "threshold": decision.threshold,
+            "margin": decision.margin,
+            "top_route_id": decision.top_route_id,
+            "second_route_id": decision.second_route_id,
+            "match_source": decision.match_source,
+            "match_index": decision.match_index,
+            "match_text_sha256": decision.match_text_sha256,
+            "match_score": decision.match_score,
+            "match_provenance": decision.match_provenance,
         }
         for key in ("input_chars", "message_count", "context_policy"):
             value = getattr(case, key)
