@@ -136,6 +136,14 @@ def test_replay_routes_cli_compares_baselines_and_redacts_text_by_default(tmp_pa
     assert payload["summary"]["baseline_reference_agreement_by_source"]["current-router"] == {
         "historical_route_id": 2
     }
+    assert payload["summary"]["current_router_deltas"] == {
+        "compared": 2,
+        "route_changed": 0,
+        "reason_changed": 0,
+        "score_delta_measured": 0,
+        "target_model_changed": 0,
+        "match_source_changed": 0,
+    }
     deep_decision = payload["cases"][1]["decisions"]["current-router"]
     assert deep_decision["top_route_id"] == "deep"
     assert deep_decision["second_route_id"] == "lite"
@@ -150,6 +158,80 @@ def test_replay_routes_cli_compares_baselines_and_redacts_text_by_default(tmp_pa
     assert "match_text_sha256" in markdown_text
     assert "inline_config" in markdown_text
     assert "翻译成中文" not in markdown_text
+
+
+def test_replay_routes_reports_old_vs_current_deltas(tmp_path: Path):
+    routes = tmp_path / "routes.yaml"
+    prompts = tmp_path / "prompts.jsonl"
+    output = tmp_path / "replay.json"
+    markdown = tmp_path / "replay.md"
+    write_routes(routes)
+    prompts.write_text(
+        json.dumps(
+            {
+                "event": "prompt_review",
+                "request_id": "req-drift",
+                "latest_user_text": "分析这个线上 bug",
+                "route_id": "lite",
+                "reason": "low_confidence",
+                "score": 0.25,
+                "target_model": "local-lite",
+                "match_source": "legacy_source",
+            },
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    subprocess.run(
+        [
+            sys.executable,
+            "scripts/replay_routes.py",
+            str(prompts),
+            "--routes",
+            str(routes),
+            "--mock-embeddings",
+            "--json-output",
+            str(output),
+            "--markdown-output",
+            str(markdown),
+        ],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["summary"]["current_router_deltas"] == {
+        "compared": 1,
+        "route_changed": 1,
+        "reason_changed": 1,
+        "score_delta_measured": 1,
+        "target_model_changed": 1,
+        "match_source_changed": 1,
+    }
+    assert payload["cases"][0]["current_router_delta"] == {
+        "route_changed": True,
+        "reason_changed": True,
+        "target_model_changed": True,
+        "match_source_changed": True,
+        "historical_route_id": "lite",
+        "current_route_id": "deep",
+        "historical_reason": "low_confidence",
+        "current_reason": "embedding",
+        "historical_score": 0.25,
+        "current_score": 1.0,
+        "score_delta": 0.75,
+        "historical_target_model": "local-lite",
+        "current_target_model": "local-deep",
+        "historical_match_source": "legacy_source",
+        "current_match_source": "inline_config",
+    }
+    markdown_text = markdown.read_text(encoding="utf-8")
+    assert "route_changed" in markdown_text
+    assert "legacy_source" in markdown_text
+    assert "分析这个线上 bug" not in markdown_text
 
 
 def test_render_markdown_warns_historical_routes_are_not_ground_truth():
@@ -321,6 +403,45 @@ def test_replay_routes_stdout_is_compact_and_redacted_by_default(tmp_path: Path)
     assert payload["raw_text_included"] is False
     assert "cases" not in payload
     assert "PRIVATE PROMPT" not in result.stdout
+
+
+def test_replay_routes_cli_has_bounded_default_limit(tmp_path: Path):
+    routes = tmp_path / "routes.yaml"
+    prompts = tmp_path / "prompts.jsonl"
+    write_routes(routes)
+    prompts.write_text(
+        "\n".join(
+            json.dumps(
+                {
+                    "event": "prompt_review",
+                    "request_id": f"req-{index}",
+                    "latest_user_text": "翻译成中文",
+                    "route_id": "lite",
+                },
+                ensure_ascii=False,
+            )
+            for index in range(101)
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/replay_routes.py",
+            str(prompts),
+            "--routes",
+            str(routes),
+            "--mock-embeddings",
+        ],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["case_count"] == 100
 
 
 def test_replay_routes_include_text_requires_explicit_output_file(tmp_path: Path):

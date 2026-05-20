@@ -172,6 +172,7 @@ route-bank or threshold changes:
 ```bash
 uv run python scripts/replay_routes.py /data/logs/prompts/*.jsonl \
   --routes /data/config/routes.yaml \
+  --limit 100 \
   --json-output /data/reports/replay/intentmux-replay-YYYY-MM-DD.json \
   --markdown-output /data/reports/replay/intentmux-replay-YYYY-MM-DD.md
 ```
@@ -182,12 +183,15 @@ benchmark lesson: judge routing changes by quality evidence, cost-tier
 distribution, and simple baselines together. Historical route ids in prompt
 review logs are drift evidence, not ground truth labels unless the replay input
 was explicitly labeled. By default replay reports include text hashes and
-character counts, not raw prompt text. Default terminal output is a compact
-summary; write `--json-output` or `--markdown-output` for full cases. Use
-`--include-text` only with an explicit private local output file. Replay calls
-the configured embedding endpoint, so it only allows localhost, private
-addresses, or `host.docker.internal` by default; use
-`--allow-remote-embeddings` only for trusted private review runs.
+character counts, not raw prompt text. Replay also emits compact
+old-vs-current deltas for the current router: route, reason, target model, and
+match source changes. The CLI samples at most 100 cases by default; use
+`--limit N` for a smaller batch or `--limit 0` for an explicit unbounded local
+run. Default terminal output is a compact summary; write `--json-output` or
+`--markdown-output` for full cases. Use `--include-text` only with an explicit
+private local output file. Replay calls the configured embedding endpoint, so
+it only allows localhost, private addresses, or `host.docker.internal` by
+default; use `--allow-remote-embeddings` only for trusted private review runs.
 
 Route eval follows the same default: stdout and JSON output use case ids,
 hashes, and character counts. Use `eval_routes.py --include-text` only for a

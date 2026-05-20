@@ -28,6 +28,7 @@ from scripts.select_review_candidates import expand_log_paths
 
 
 DEFAULT_BASELINES = ("current-router", "always-lite", "always-deep", "hard-rule-only")
+DEFAULT_REPLAY_LIMIT = 100
 
 
 def iter_jsonl(paths: list[str]) -> Iterable[dict[str, Any]]:
@@ -56,7 +57,7 @@ def replay_case_from_record(record: dict[str, Any], index: int) -> dict[str, Any
     if not isinstance(label, str):
         label = record.get("route_id")
         label_source = "historical_route_id" if isinstance(label, str) else None
-    return {
+    case = {
         "id": case_id,
         "request_id": request_id if isinstance(request_id, str) else None,
         "text": text,
@@ -67,6 +68,11 @@ def replay_case_from_record(record: dict[str, Any], index: int) -> dict[str, Any
         "historical_target_model": record.get("target_model"),
         "truncated": bool(record.get("truncated")),
     }
+    if "score" in record:
+        case["historical_score"] = record.get("score")
+    if "match_source" in record:
+        case["historical_match_source"] = record.get("match_source")
+    return case
 
 
 def load_replay_cases(paths: list[str], *, limit: int | None = None) -> list[dict[str, Any]]:
@@ -118,6 +124,7 @@ async def replay_routes(
     }
     reference_counts: Counter[str] = Counter()
     reference_source_counts: Counter[str] = Counter()
+    current_delta_counts: Counter[str] = Counter()
 
     for case in cases:
         request_json = {
@@ -157,6 +164,22 @@ async def replay_routes(
                 "match_score": decision.match_score,
                 "match_provenance": decision.match_provenance,
             }
+        current_delta = build_current_router_delta(
+            case,
+            decisions.get("current-router"),
+        )
+        if current_delta is not None:
+            current_delta_counts["compared"] += 1
+            for key in (
+                "route_changed",
+                "reason_changed",
+                "target_model_changed",
+                "match_source_changed",
+            ):
+                if current_delta.get(key) is True:
+                    current_delta_counts[key] += 1
+            if current_delta.get("score_delta") is not None:
+                current_delta_counts["score_delta_measured"] += 1
         row = {
             "id": case["id"],
             "request_id": case.get("request_id"),
@@ -167,9 +190,13 @@ async def replay_routes(
             "source_event": case.get("source_event"),
             "historical_reason": case.get("historical_reason"),
             "historical_target_model": case.get("historical_target_model"),
+            "historical_score": case.get("historical_score"),
+            "historical_match_source": case.get("historical_match_source"),
             "truncated": case.get("truncated"),
             "decisions": decisions,
         }
+        if current_delta is not None:
+            row["current_router_delta"] = current_delta
         if include_text:
             row["text"] = case["text"]
         rows.append(row)
@@ -194,11 +221,75 @@ async def replay_routes(
                 baseline: dict(sorted(counts.items()))
                 for baseline, counts in baseline_agreement_by_source.items()
             },
+            "current_router_deltas": {
+                "compared": current_delta_counts.get("compared", 0),
+                "route_changed": current_delta_counts.get("route_changed", 0),
+                "reason_changed": current_delta_counts.get("reason_changed", 0),
+                "score_delta_measured": current_delta_counts.get(
+                    "score_delta_measured", 0
+                ),
+                "target_model_changed": current_delta_counts.get("target_model_changed", 0),
+                "match_source_changed": current_delta_counts.get("match_source_changed", 0),
+            },
             "raw_text_included": include_text,
             "remote_embeddings_allowed": allow_remote_embeddings,
         },
         "cases": rows,
     }
+
+
+def build_current_router_delta(
+    case: dict[str, Any],
+    current: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    historical_route_id = case.get("reference_route")
+    if not isinstance(historical_route_id, str) or not isinstance(current, dict):
+        return None
+    current_route_id = current.get("route_id")
+    historical_reason = case.get("historical_reason")
+    current_reason = current.get("reason")
+    historical_score = number_or_none(case.get("historical_score"))
+    current_score = number_or_none(current.get("score"))
+    historical_target_model = case.get("historical_target_model")
+    current_target_model = current.get("target_model")
+    historical_match_source = case.get("historical_match_source")
+    current_match_source = current.get("match_source")
+    return {
+        "route_changed": current_route_id != historical_route_id,
+        "reason_changed": (
+            isinstance(historical_reason, str) and current_reason != historical_reason
+        ),
+        "target_model_changed": (
+            isinstance(historical_target_model, str)
+            and current_target_model != historical_target_model
+        ),
+        "match_source_changed": (
+            isinstance(historical_match_source, str)
+            and current_match_source != historical_match_source
+        ),
+        "historical_route_id": historical_route_id,
+        "current_route_id": current_route_id,
+        "historical_reason": historical_reason,
+        "current_reason": current_reason,
+        "historical_score": historical_score,
+        "current_score": current_score,
+        "score_delta": (
+            round(current_score - historical_score, 6)
+            if historical_score is not None and current_score is not None
+            else None
+        ),
+        "historical_target_model": historical_target_model,
+        "current_target_model": current_target_model,
+        "historical_match_source": historical_match_source,
+        "current_match_source": current_match_source,
+    }
+
+
+def number_or_none(value: Any) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def render_markdown(report: dict[str, Any]) -> str:
@@ -210,6 +301,7 @@ def render_markdown(report: dict[str, Any]) -> str:
         f"- case_count: {summary.get('case_count', 0)}",
         f"- reference_routes: {format_counts(summary.get('reference_routes', {}))}",
         f"- reference_route_sources: {format_counts(summary.get('reference_route_sources', {}))}",
+        f"- current_router_deltas: {format_counts(summary.get('current_router_deltas', {}))}",
         f"- raw_text_included: {str(summary.get('raw_text_included', False)).lower()}",
         f"- remote_embeddings_allowed: {str(summary.get('remote_embeddings_allowed', False)).lower()}",
         "",
@@ -237,8 +329,8 @@ def render_markdown(report: dict[str, Any]) -> str:
             "",
             "## Cases",
             "",
-        "| id | reference | reference_source | current | current_reason | top_route | second_route | current_score | threshold | margin | match_source | match_index | match_text_sha256 | text_sha256 | text_chars |",
-            "| --- | --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | --- | ---: | --- | --- | ---: |",
+        "| id | reference | reference_source | current | route_delta | reason_delta | score_delta | target_delta | match_source_delta | old_reason | current_reason | old_score | current_score | old_match_source | current_match_source | top_route | second_route | threshold | margin | match_index | match_text_sha256 | text_sha256 | text_chars |",
+            "| --- | --- | --- | --- | --- | --- | ---: | --- | --- | --- | --- | ---: | ---: | --- | --- | --- | --- | ---: | ---: | ---: | --- | --- | ---: |",
         ]
     )
     for case in report.get("cases", []):
@@ -248,6 +340,9 @@ def render_markdown(report: dict[str, Any]) -> str:
         decisions = case.get("decisions")
         if isinstance(decisions, dict) and isinstance(decisions.get("current-router"), dict):
             current = decisions["current-router"]
+        delta = case.get("current_router_delta")
+        if not isinstance(delta, dict):
+            delta = {}
         lines.append(
             "| "
             + " | ".join(
@@ -256,13 +351,23 @@ def render_markdown(report: dict[str, Any]) -> str:
                     markdown_cell(case.get("reference_route")),
                     markdown_cell(case.get("reference_route_source")),
                     markdown_cell(current.get("route_id")),
+                    markdown_cell("route_changed" if delta.get("route_changed") else ""),
+                    markdown_cell("reason_changed" if delta.get("reason_changed") else ""),
+                    markdown_cell(delta.get("score_delta")),
+                    markdown_cell("target_changed" if delta.get("target_model_changed") else ""),
+                    markdown_cell(
+                        "match_source_changed" if delta.get("match_source_changed") else ""
+                    ),
+                    markdown_cell(case.get("historical_reason")),
                     markdown_cell(current.get("reason")),
+                    markdown_cell(delta.get("historical_score")),
+                    markdown_cell(delta.get("current_score")),
+                    markdown_cell(case.get("historical_match_source")),
+                    markdown_cell(current.get("match_source")),
                     markdown_cell(current.get("top_route_id")),
                     markdown_cell(current.get("second_route_id")),
-                    markdown_cell(current.get("score")),
                     markdown_cell(current.get("threshold")),
                     markdown_cell(current.get("margin")),
-                    markdown_cell(current.get("match_source")),
                     markdown_cell(current.get("match_index")),
                     markdown_cell(current.get("match_text_sha256")),
                     markdown_cell(case.get("text_sha256")),
@@ -299,6 +404,7 @@ def compact_stdout_summary(report: dict[str, Any]) -> dict[str, Any]:
         "reference_route_sources": summary["reference_route_sources"],
         "baseline_routes": summary["baseline_routes"],
         "baseline_reference_agreement": summary["baseline_reference_agreement"],
+        "current_router_deltas": summary["current_router_deltas"],
         "note": "Full replay cases are written only with --json-output or --markdown-output.",
     }
 
@@ -351,7 +457,12 @@ def main() -> None:
         action="store_true",
         help="Allow replay to send prompt text to a non-local embedding endpoint.",
     )
-    parser.add_argument("--limit", type=int)
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=DEFAULT_REPLAY_LIMIT,
+        help=f"Maximum replay cases to sample. Defaults to {DEFAULT_REPLAY_LIMIT}; use 0 for unlimited.",
+    )
     parser.add_argument("--include-text", action="store_true")
     parser.add_argument("--json-output")
     parser.add_argument("--markdown-output")
@@ -359,6 +470,9 @@ def main() -> None:
 
     if args.include_text and not (args.json_output or args.markdown_output):
         parser.error("--include-text requires --json-output or --markdown-output")
+    if args.limit < 0:
+        parser.error("--limit must be >= 0")
+    limit = None if args.limit == 0 else args.limit
 
     input_paths = expand_log_paths(args.paths)
     report = asyncio.run(
@@ -368,7 +482,7 @@ def main() -> None:
             baselines=args.baseline or list(DEFAULT_BASELINES),
             mock_embeddings=args.mock_embeddings,
             allow_remote_embeddings=args.allow_remote_embeddings,
-            limit=args.limit,
+            limit=limit,
             include_text=args.include_text,
         )
     )
