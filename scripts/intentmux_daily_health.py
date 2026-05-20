@@ -13,6 +13,8 @@ from typing import Any
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
+import yaml
+
 from router.observability import DEFAULT_AUDIT_LOG_TIMEZONE, zoneinfo_for
 
 try:
@@ -29,6 +31,8 @@ DEFAULT_EVAL_BANK = Path("data/semantic_sets/eval_bank.yaml")
 EXAMPLE_EVAL_BANK = Path("examples/eval_bank.sample.yaml")
 DEFAULT_ROUTE_BANK = Path("data/semantic_sets/route_bank.yaml")
 EXAMPLE_ROUTE_BANK = Path("examples/route_bank.sample.yaml")
+DEFAULT_RUNTIME_ROUTES = Path("config/routes.yaml")
+RUNTIME_ROUTES_ENV_NAMES = ("INTENTMUX_ROUTES", "ROUTER_CONFIG")
 
 
 def default_log_dir() -> Path:
@@ -42,13 +46,22 @@ def default_log_dir() -> Path:
 
 
 def run(cmd: str, *, cwd: Path, timeout: int = 120) -> dict[str, Any]:
-    proc = subprocess.run(
-        ["bash", "-lc", cmd],
-        cwd=cwd,
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-    )
+    try:
+        proc = subprocess.run(
+            ["bash", "-lc", cmd],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as exc:
+        return {
+            "ok": False,
+            "exit_code": 124,
+            "stdout": output_to_text(exc.output),
+            "stderr": f"timed out after {timeout}s",
+            "cmd": cmd,
+        }
     return {
         "ok": proc.returncode == 0,
         "exit_code": proc.returncode,
@@ -56,6 +69,14 @@ def run(cmd: str, *, cwd: Path, timeout: int = 120) -> dict[str, Any]:
         "stderr": (proc.stderr or "").strip(),
         "cmd": cmd,
     }
+
+
+def output_to_text(output: Any) -> str:
+    if output is None:
+        return ""
+    if isinstance(output, bytes):
+        return output.decode("utf-8", errors="replace").strip()
+    return str(output).strip()
 
 
 def http_get_json(url: str, timeout: int = 5) -> tuple[int | None, dict[str, Any] | None, str | None]:
@@ -349,6 +370,51 @@ def build_quality_artifact_paths(log_dir: Path, day: str) -> dict[str, Any]:
     }
 
 
+def quality_routes_path(repo: Path, log_dir: Path) -> Path:
+    for env_name in RUNTIME_ROUTES_ENV_NAMES:
+        configured = os.getenv(env_name)
+        if configured:
+            return Path(configured).expanduser()
+    runtime_routes = log_dir.parent / "config" / "routes.yaml"
+    if runtime_routes.exists():
+        return runtime_routes
+    return DEFAULT_RUNTIME_ROUTES
+
+
+def quality_eval_cases_path(repo: Path, log_dir: Path) -> Path:
+    runtime_eval_bank = log_dir.parent / "semantic_sets" / "eval_bank.yaml"
+    if runtime_eval_bank.exists():
+        return runtime_eval_bank
+    return DEFAULT_EVAL_BANK if (repo / DEFAULT_EVAL_BANK).exists() else EXAMPLE_EVAL_BANK
+
+
+def quality_route_bank_path(repo: Path, log_dir: Path, routes_path: Path) -> Path:
+    configured_bank = route_bank_path_from_routes_config(repo, routes_path)
+    if configured_bank is not None and configured_bank.exists():
+        return configured_bank
+    runtime_route_bank = log_dir.parent / "semantic_sets" / "route_bank.yaml"
+    if runtime_route_bank.exists():
+        return runtime_route_bank
+    return DEFAULT_ROUTE_BANK if (repo / DEFAULT_ROUTE_BANK).exists() else EXAMPLE_ROUTE_BANK
+
+
+def route_bank_path_from_routes_config(repo: Path, routes_path: Path) -> Path | None:
+    config_path = routes_path if routes_path.is_absolute() else repo / routes_path
+    try:
+        raw = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+    except OSError:
+        return None
+    if not isinstance(raw, dict) or not raw.get("route_bank_path"):
+        return None
+    configured = Path(str(raw["route_bank_path"])).expanduser()
+    if configured.is_absolute():
+        return configured
+    config_relative = config_path.parent / configured
+    if config_relative.exists():
+        return config_relative.resolve()
+    return repo / configured
+
+
 def run_quality_artifacts(
     *,
     repo: Path,
@@ -357,6 +423,7 @@ def run_quality_artifacts(
     day_log: Path,
     prompt_day_log: Path,
     slow_request_limit: int,
+    routes_path: Path | None = None,
     runner=run,
 ) -> dict[str, Any]:
     paths = build_quality_artifact_paths(log_dir, day)
@@ -383,19 +450,19 @@ def run_quality_artifacts(
         }
 
     evals: dict[str, dict[str, Any]] = {}
-    eval_cases_path = DEFAULT_EVAL_BANK if (repo / DEFAULT_EVAL_BANK).exists() else EXAMPLE_EVAL_BANK
-    route_bank_path = DEFAULT_ROUTE_BANK if (repo / DEFAULT_ROUTE_BANK).exists() else EXAMPLE_ROUTE_BANK
+    resolved_routes_path = routes_path or quality_routes_path(repo, log_dir)
+    eval_cases_path = quality_eval_cases_path(repo, log_dir)
+    route_bank_path = quality_route_bank_path(repo, log_dir, resolved_routes_path)
     for baseline in QUALITY_BASELINES:
         eval_path = Path(paths["eval_json"][baseline])
         eval_cmd = (
             "uv run python scripts/eval_routes.py "
             f"--cases {shlex.quote(str(eval_cases_path))} "
-            "--routes config/routes.yaml "
-            "--mock-embeddings "
+            f"--routes {shlex.quote(str(resolved_routes_path))} "
             f"--baseline {baseline} "
             f"--json-output {shlex.quote(str(eval_path))}"
         )
-        eval_result = runner(eval_cmd, cwd=repo, timeout=120)
+        eval_result = runner(eval_cmd, cwd=repo, timeout=600)
         evals[baseline] = {
             "exit_code": eval_result["exit_code"],
             "json": str(eval_path),
@@ -434,7 +501,7 @@ def run_quality_artifacts(
         review_cmd = (
             "uv run python scripts/select_review_candidates.py "
             f"{shlex.quote(str(day_log))} "
-            "--routes config/routes.yaml"
+            f"--routes {shlex.quote(str(resolved_routes_path))}"
             f"{prompt_arg} "
             f"--json-output {shlex.quote(paths['review_candidates_json'])} "
             f"--markdown-output {shlex.quote(paths['review_candidates_md'])}"

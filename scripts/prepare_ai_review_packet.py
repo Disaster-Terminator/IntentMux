@@ -2,11 +2,16 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from collections import Counter
 from pathlib import Path
 from typing import Any, Iterable
 
-from scripts.select_review_candidates import expand_log_paths, load_prompt_review_records
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from scripts.select_review_candidates import expand_log_paths, load_prompt_review_records  # noqa: E402
 
 SCHEMA_VERSION = "intentmux.ai_review_packet.v1"
 ALLOWED_PROMPT_TEXT_MODES = {"off", "raw_local"}

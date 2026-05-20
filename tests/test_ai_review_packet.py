@@ -1,4 +1,5 @@
 import json
+import subprocess
 import sys
 
 from scripts import prepare_ai_review_packet
@@ -158,6 +159,48 @@ def test_prepare_ai_review_packet_cli_writes_json_and_markdown(tmp_path, monkeyp
     )
 
     prepare_ai_review_packet.main()
+
+    assert json.loads(json_output.read_text(encoding="utf-8"))["schema_version"] == "intentmux.ai_review_packet.v1"
+    assert "AI Review Packet" in md_output.read_text(encoding="utf-8")
+
+
+def test_prepare_ai_review_packet_script_entrypoint_bootstraps_repo_imports(tmp_path):
+    input_path = tmp_path / "candidates.json"
+    json_output = tmp_path / "packet.json"
+    md_output = tmp_path / "packet.md"
+    input_path.write_text(
+        json.dumps(
+            {
+                "summary": {"candidate_count": 1},
+                "candidates": [
+                    {
+                        "request_id": "req-1",
+                        "route_id": "lite",
+                        "target_model": "cheap",
+                        "reason": "low_confidence",
+                        "review_reasons": ["low_confidence"],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    subprocess.run(
+        [
+            sys.executable,
+            "scripts/prepare_ai_review_packet.py",
+            "--input",
+            str(input_path),
+            "--json-output",
+            str(json_output),
+            "--markdown-output",
+            str(md_output),
+        ],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
 
     assert json.loads(json_output.read_text(encoding="utf-8"))["schema_version"] == "intentmux.ai_review_packet.v1"
     assert "AI Review Packet" in md_output.read_text(encoding="utf-8")

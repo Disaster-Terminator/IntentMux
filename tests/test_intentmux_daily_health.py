@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
+import subprocess
 
 from scripts.intentmux_daily_health import (
     build_e2e_cmd,
@@ -15,6 +16,7 @@ from scripts.intentmux_daily_health import (
     path_from_arg_or_env,
     render_md,
     report_now_and_day,
+    run,
 )
 
 
@@ -46,6 +48,21 @@ def test_parse_ready_reads_components_contract():
         "litellm_detail": "status=401 auth_required",
         "error": None,
     }
+
+
+def test_run_returns_timeout_result_without_crashing(monkeypatch):
+    def fake_run(*args, **kwargs):
+        raise subprocess.TimeoutExpired(cmd=args[0], timeout=kwargs["timeout"], output="partial")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    result = run("slow command", cwd=Path("."), timeout=3)
+
+    assert result["ok"] is False
+    assert result["exit_code"] == 124
+    assert result["stdout"] == "partial"
+    assert "timed out after 3s" in result["stderr"]
+    assert result["cmd"] == "slow command"
 
 
 def test_keep_preserves_slow_request_rows_without_truncating():
@@ -507,3 +524,69 @@ def test_run_quality_artifacts_writes_generic_outputs_without_raw_prompt_mode(tm
     assert any("scripts/select_review_candidates.py" in cmd and "--prompt-path" in cmd for cmd in commands)
     assert any("scripts/prepare_ai_review_packet.py" in cmd for cmd in commands)
     assert not any("--include-prompt-text raw_local" in cmd for cmd in commands)
+    assert not any("--mock-embeddings" in cmd for cmd in commands)
+
+
+def test_run_quality_artifacts_prefers_runtime_config_and_route_bank(tmp_path: Path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    runtime_home = tmp_path / "intentmux-home"
+    log_dir = runtime_home / "logs"
+    routes_dir = log_dir / "routes"
+    prompts_dir = log_dir / "prompts"
+    runtime_config_dir = runtime_home / "config"
+    runtime_semantic_dir = runtime_home / "semantic_sets"
+    routes_dir.mkdir(parents=True)
+    prompts_dir.mkdir(parents=True)
+    runtime_config_dir.mkdir(parents=True)
+    runtime_semantic_dir.mkdir(parents=True)
+    runtime_routes = runtime_config_dir / "routes.yaml"
+    runtime_route_bank = runtime_semantic_dir / "route_bank.yaml"
+    runtime_eval_bank = runtime_semantic_dir / "eval_bank.yaml"
+    runtime_routes.write_text("route_bank_path: ../semantic_sets/route_bank.yaml\n", encoding="utf-8")
+    runtime_route_bank.write_text("routes: {}\n", encoding="utf-8")
+    runtime_eval_bank.write_text("cases: []\n", encoding="utf-8")
+    day_log = routes_dir / "2026-05-18.jsonl"
+    prompt_log = prompts_dir / "2026-05-18.jsonl"
+    day_log.write_text('{"event":"route_complete","request_id":"req-1"}\n', encoding="utf-8")
+    prompt_log.write_text("", encoding="utf-8")
+    commands: list[str] = []
+
+    def fake_runner(cmd: str, *, cwd: Path, timeout: int = 120):
+        commands.append(cmd)
+        parts = cmd.split()
+        if "router_log_summary.py" in cmd and "--json" in parts:
+            return {"ok": True, "exit_code": 0, "stdout": '{"total": 1}', "stderr": "", "cmd": cmd}
+        for option in ("--json-output", "--markdown-output"):
+            if option in parts:
+                output = Path(parts[parts.index(option) + 1])
+                output.parent.mkdir(parents=True, exist_ok=True)
+                output.write_text("{}\n", encoding="utf-8")
+        return {"ok": True, "exit_code": 0, "stdout": "", "stderr": "", "cmd": cmd}
+
+    run_quality_artifacts(
+        repo=repo,
+        log_dir=log_dir,
+        day="2026-05-18",
+        day_log=day_log,
+        prompt_day_log=prompt_log,
+        slow_request_limit=10,
+        runner=fake_runner,
+    )
+
+    assert any(
+        "scripts/eval_routes.py" in cmd
+        and f"--routes {runtime_routes}" in cmd
+        and f"--cases {runtime_eval_bank}" in cmd
+        for cmd in commands
+    )
+    assert any(
+        "scripts/route_quality_report.py" in cmd
+        and f"--route-bank {runtime_route_bank}" in cmd
+        for cmd in commands
+    )
+    assert any(
+        "scripts/select_review_candidates.py" in cmd
+        and f"--routes {runtime_routes}" in cmd
+        for cmd in commands
+    )
