@@ -331,6 +331,59 @@ def test_asset_builders_keep_route_eval_and_calibration_separate():
     ]
 
 
+def test_held_out_deep_eval_and_calibration_stay_out_of_route_bank():
+    records = [
+        {
+            "id": "deep_route_001",
+            "text": "定位这个偶发竞态 bug 的根因",
+            "source": "swebench_issue_resolution",
+            "route_id": "deep",
+            "language": "en",
+            "slice": "deep_debug_issue",
+            "proposed_use": "route",
+            "license": "MIT",
+        },
+        {
+            "id": "deep_eval_001",
+            "text": "审查这个补丁是否修复了异常恢复流程",
+            "source": "swebench_dev_eval",
+            "route_id": "deep",
+            "language": "en",
+            "slice": "deep_debug_issue",
+            "proposed_use": "eval",
+            "license": "MIT",
+        },
+        {
+            "id": "deep_calibration_001",
+            "text": "判断这个失败测试需要怎样的代码修复",
+            "source": "swebench_train_calibration",
+            "route_id": "deep",
+            "language": "en",
+            "slice": "deep_debug_issue",
+            "proposed_use": "calibration",
+            "license": "MIT",
+        },
+    ]
+
+    route_bank = build_route_bank_from_records(records)
+    eval_bank = build_eval_bank_from_records(records)
+    calibration_bank = build_calibration_bank(records)
+    route_ids = {
+        utterance["id"]
+        for route in route_bank["routes"].values()
+        for utterance in route["utterances"]
+    }
+    eval_ids = {case["id"] for case in eval_bank["cases"]}
+    calibration_ids = {case["id"] for case in calibration_bank["cases"]}
+
+    assert route_ids == {"deep_route_001"}
+    assert eval_ids == {"deep_eval_001"}
+    assert calibration_ids == {"deep_calibration_001"}
+    assert route_ids.isdisjoint(eval_ids)
+    assert route_ids.isdisjoint(calibration_ids)
+    assert eval_ids.isdisjoint(calibration_ids)
+
+
 def test_build_semantic_assets_cli_writes_normalized_and_split_assets(tmp_path: Path):
     sources = tmp_path / "sources.yaml"
     local_rows = tmp_path / "rows.jsonl"
@@ -433,6 +486,10 @@ def test_route_sources_manifest_declares_bilingual_v2_metadata():
     assert "massive_en_us_train" in names
     assert "massive_zh_cn_dev_eval" in names
     assert "massive_en_us_test_calibration" in names
+    assert "swebench_dev_eval" in names
+    assert "swebench_train_calibration" in names
+    assert "mbpp_validation_eval" in names
+    assert "mbpp_train_calibration" in names
     assert all(source.ingest_all for source in sources if source.kind in {"remote_tar_jsonl", "huggingface"})
     assert {
         "lite_general_zh",
@@ -446,6 +503,39 @@ def test_route_sources_manifest_declares_bilingual_v2_metadata():
     )
     assert {"route", "eval", "calibration"}.issubset(curated_uses)
     assert uses == {"route", "eval", "calibration"}
+
+
+def test_deep_huggingface_eval_uses_held_out_splits():
+    sources = load_sources(Path("config/route_sources.yaml"))
+    deep_hf_sources = [
+        source
+        for source in sources
+        if source.kind == "huggingface" and source.route == "deep"
+    ]
+    route_splits = {
+        (source.dataset, source.split)
+        for source in deep_hf_sources
+        if source.intended_use == "route"
+    }
+    eval_splits = {
+        (source.dataset, source.split)
+        for source in deep_hf_sources
+        if source.intended_use == "eval"
+    }
+    calibration_splits = {
+        (source.dataset, source.split)
+        for source in deep_hf_sources
+        if source.intended_use == "calibration"
+    }
+
+    assert eval_splits
+    assert calibration_splits
+    assert route_splits.isdisjoint(eval_splits)
+    assert route_splits.isdisjoint(calibration_splits)
+    assert ("princeton-nlp/SWE-bench", "dev") in eval_splits
+    assert ("mbpp", "validation") in eval_splits
+    assert ("princeton-nlp/SWE-bench", "train") in calibration_splits
+    assert ("mbpp", "train") in calibration_splits
 
 
 def test_route_sources_default_limits_are_not_toy_sized():

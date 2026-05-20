@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts.eval_routes import EvalCase, load_cases, validate_case_route_ids
+from scripts.eval_routes import EvalCase, load_cases, run_eval, validate_case_route_ids
 
 
 def test_validate_case_route_ids_accepts_known_route_id():
@@ -379,3 +379,72 @@ cases:
     payload = json.loads(output.read_text(encoding="utf-8"))
     assert payload["threshold"] == 0.42
     assert payload["margin"] == 0.07
+
+
+@pytest.mark.asyncio
+async def test_eval_routes_passes_configured_embedding_batch_size(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    captured: dict[str, int] = {}
+
+    class FakeOpenAIEmbeddingClient:
+        def __init__(
+            self,
+            url: str,
+            model: str,
+            timeout: float = 20.0,
+            batch_size: int = 128,
+            api_key: str | None = None,
+            headers: dict[str, str] | None = None,
+        ):
+            captured["batch_size"] = batch_size
+
+        async def embed(self, texts: list[str]) -> list[list[float]]:
+            return [
+                [1.0, 0.0] if "simple" in text else [0.0, 1.0]
+                for text in texts
+            ]
+
+    monkeypatch.setattr(
+        "scripts.eval_routes.OpenAIEmbeddingClient", FakeOpenAIEmbeddingClient
+    )
+    routes = tmp_path / "routes.yaml"
+    routes.write_text(
+        """
+route_model: auto
+fallback_route_id: lite
+route_kernel: basic
+threshold: 0.1
+margin: 0.0
+embedding_url: http://127.0.0.1:1234/v1/embeddings
+embedding_model: local-embedding
+embedding_batch_size: 7
+routes:
+  lite:
+    target_model: cheap-router
+    description: simple requests
+    utterances:
+      - simple request
+  deep:
+    target_model: pro-router
+    description: hard requests
+    utterances:
+      - hard request
+""",
+        encoding="utf-8",
+    )
+    cases = tmp_path / "cases.yaml"
+    cases.write_text(
+        """
+cases:
+  - id: simple_001
+    text: simple request
+    expect: lite
+""",
+        encoding="utf-8",
+    )
+
+    exit_code = await run_eval(cases, routes, mock_embeddings=False)
+
+    assert exit_code == 0
+    assert captured["batch_size"] == 7

@@ -154,6 +154,7 @@ async def run_eval(
         else OpenAIEmbeddingClient(
             settings.embedding_url,
             settings.embedding_model,
+            batch_size=settings.embedding_batch_size,
             api_key=settings.embedding_api_key,
             headers=settings.embedding_headers,
         )

@@ -145,6 +145,36 @@ sources:
     ingest_all: true
     limit: 1200
 
+  - name: swebench_dev_eval
+    kind: huggingface
+    dataset: princeton-nlp/SWE-bench
+    homepage: https://github.com/SWE-bench/SWE-bench
+    license: MIT
+    license_url: https://github.com/SWE-bench/SWE-bench/blob/main/LICENSE.md
+    split: dev
+    route: deep
+    text_field: problem_statement
+    language: en
+    slice: deep_debug_issue
+    intended_use: eval
+    ingest_all: true
+    limit: 200
+
+  - name: swebench_train_calibration
+    kind: huggingface
+    dataset: princeton-nlp/SWE-bench
+    homepage: https://github.com/SWE-bench/SWE-bench
+    license: MIT
+    license_url: https://github.com/SWE-bench/SWE-bench/blob/main/LICENSE.md
+    split: train
+    route: deep
+    text_field: problem_statement
+    language: en
+    slice: deep_debug_issue
+    intended_use: calibration
+    ingest_all: true
+    limit: 200
+
   - name: mbpp_codegen
     kind: huggingface
     dataset: mbpp
@@ -159,6 +189,36 @@ sources:
     intended_use: route
     ingest_all: true
     limit: 500
+
+  - name: mbpp_validation_eval
+    kind: huggingface
+    dataset: mbpp
+    homepage: https://github.com/google-research/google-research/tree/master/mbpp
+    license: CC BY 4.0
+    license_url: https://creativecommons.org/licenses/by/4.0/
+    split: validation
+    route: deep
+    text_field: text
+    language: en
+    slice: deep_code_generation
+    intended_use: eval
+    ingest_all: true
+    limit: 90
+
+  - name: mbpp_train_calibration
+    kind: huggingface
+    dataset: mbpp
+    homepage: https://github.com/google-research/google-research/tree/master/mbpp
+    license: CC BY 4.0
+    license_url: https://creativecommons.org/licenses/by/4.0/
+    split: train
+    route: deep
+    text_field: text
+    language: en
+    slice: deep_code_generation
+    intended_use: calibration
+    ingest_all: true
+    limit: 100
 
   - name: humaneval_codegen
     kind: huggingface

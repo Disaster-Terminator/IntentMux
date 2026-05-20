@@ -151,6 +151,13 @@ Use this distinction in reports:
 - `prompt/review logs`: local feedback evidence, not redistributable upstream
   corpus unless explicitly redacted and promoted.
 
+For public datasets with official splits, prefer split-level separation over
+manual sampling from the same split. The default deep baseline uses SWE-bench
+and MBPP `test` for the runtime route bank, SWE-bench `dev` and MBPP
+`validation` for eval, and bounded `train` slices for calibration. HumanEval
+only provides `test`, so it is route-bank seed material rather than held-out
+evidence in the default manifest.
+
 | source family | default use | route bank | eval/calibration | notes |
 | --- | --- | --- | --- | --- |
 | Chinese general utterances | `lite` bootstrap | yes | limited | useful for short low-risk requests |

@@ -668,7 +668,9 @@ utterances 中第 12 条、来源为 `swebench_issue_resolution` 的样本；`ma
 `config/route_sources.yaml` 的默认策略是“权威数据集尽量全量规范化，运行时索引分层限量”：
 `ingest_all: true` 的来源会进入本地 ignored normalized records，`limit` 只控制该来源最终进入
 route/eval/calibration 产物的数量。MASSIVE 这类带官方 split 的数据集按 split 接入：
-train 作为 route 候选，dev/test 作为 eval/calibration 候选。少量 `curated_yaml`
+train 作为 route 候选，dev/test 作为 eval/calibration 候选。SWE-bench 和 MBPP
+也按官方 split 隔离：`test` 进入 runtime route bank，`dev` / `validation`
+进入 eval，`train` 的小样本进入 calibration。少量 `curated_yaml`
 只作为公开、脱敏的简体中文复杂意图 seed/overlay，不是长期替代权威数据集的手工流程。
 
 仓库默认只跟踪 example 基线：
