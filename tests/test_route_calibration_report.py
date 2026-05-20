@@ -13,6 +13,7 @@ from scripts.route_calibration_report import (
     infer_language,
     parse_thresholds,
     render_markdown,
+    simulate_threshold_payload,
     summarize_eval,
 )
 
@@ -96,6 +97,60 @@ def test_build_report_selects_best_threshold_by_quality_then_cost():
     assert report["recommendation"]["status"] == "evidence_ready"
     assert report["recommendation"]["best_threshold_label"] == "threshold:0.55"
     assert len(report["threshold_curve"]) == 2
+
+
+def test_simulate_threshold_payload_reuses_probe_scores_without_rerunning_eval():
+    scoring_payload = {
+        "schema": "intentmux-route-eval-v1",
+        "cases": [
+            {
+                "id": "deep-near",
+                "expect": "deep",
+                "actual_route": "deep",
+                "target_model": "deep-upstream",
+                "reason": "embedding",
+                "score": 0.42,
+                "second_score": 0.1,
+                "passed": True,
+            },
+            {
+                "id": "lite",
+                "expect": "lite",
+                "actual_route": "lite",
+                "target_model": "lite-upstream",
+                "reason": "embedding",
+                "score": 0.82,
+                "second_score": 0.1,
+                "passed": True,
+            },
+            {
+                "id": "hard-rule",
+                "expect": "deep",
+                "actual_route": "deep",
+                "target_model": "deep-upstream",
+                "reason": "hard_rule:死锁",
+                "passed": True,
+            },
+        ],
+    }
+
+    payload = simulate_threshold_payload(
+        scoring_payload=scoring_payload,
+        threshold=0.55,
+        margin=0.04,
+        fallback_route_id="lite",
+        label="threshold:0.55",
+    )
+
+    assert payload["baseline"] == "threshold:0.55"
+    assert payload["threshold"] == 0.55
+    assert payload["cases"][0]["actual_route"] == "lite"
+    assert payload["cases"][0]["reason"] == "low_confidence"
+    assert payload["cases"][0]["passed"] is False
+    assert payload["cases"][1]["actual_route"] == "lite"
+    assert payload["cases"][1]["passed"] is True
+    assert payload["cases"][2]["reason"] == "hard_rule:死锁"
+    assert payload["cases"][2]["passed"] is True
 
 
 def test_coverage_counts_languages_and_slices():

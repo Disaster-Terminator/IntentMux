@@ -77,7 +77,7 @@ class RouterSettings(BaseModel):
     route_kernel: Literal["aurelio", "basic"] = "aurelio"
     aurelio_router: Literal["hybrid", "semantic"] = "hybrid"
     aurelio_hybrid_alpha: float = 0.3
-    threshold: float = 0.55
+    threshold: float = 0.4
     margin: float = 0.04
     routes: dict[str, RouteSpec]
     route_bank_path: str | None = None

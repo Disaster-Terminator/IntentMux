@@ -18,6 +18,7 @@ from scripts.route_quality_report import (  # noqa: E402
     product_metrics,
     slice_metrics,
 )
+from router.config import load_settings  # noqa: E402
 
 DEFAULT_BASELINES = (
     "current-router",
@@ -26,7 +27,7 @@ DEFAULT_BASELINES = (
     "hard-rule-only",
     "embedding-only",
 )
-DEFAULT_THRESHOLDS = (0.35, 0.45, 0.55, 0.65, 0.75)
+DEFAULT_THRESHOLDS = (0.3, 0.35, 0.4, 0.45, 0.5, 0.55)
 
 
 def parse_thresholds(value: str) -> list[float]:
@@ -108,6 +109,46 @@ def summarize_eval(label: str, payload: dict[str, Any], exit_code: int | None = 
         margin=payload.get("margin") if isinstance(payload.get("margin"), int | float) else None,
     )
     return summary
+
+
+def simulated_exit_code(payload: dict[str, Any]) -> int:
+    cases = [case for case in payload.get("cases", []) if isinstance(case, dict)]
+    return 0 if all(case.get("passed") is True for case in cases) else 1
+
+
+def simulate_threshold_payload(
+    *,
+    scoring_payload: dict[str, Any],
+    threshold: float,
+    margin: float,
+    fallback_route_id: str,
+    label: str,
+) -> dict[str, Any]:
+    cases: list[dict[str, Any]] = []
+    for raw_case in scoring_payload.get("cases", []):
+        if not isinstance(raw_case, dict):
+            continue
+        case = dict(raw_case)
+        reason = str(case.get("reason") or "")
+        score = case.get("score")
+        second_score = case.get("second_score")
+        if reason == "embedding" and isinstance(score, int | float):
+            measured_second_score = (
+                float(second_score) if isinstance(second_score, int | float) else 0.0
+            )
+            if float(score) < threshold or float(score) - measured_second_score < margin:
+                case["actual_route"] = fallback_route_id
+                case["reason"] = "low_confidence"
+                case["target_model"] = fallback_route_id
+            case["passed"] = case.get("actual_route") == case.get("expect")
+        cases.append(case)
+    return {
+        "schema": scoring_payload.get("schema", "intentmux-route-eval-v1"),
+        "baseline": label,
+        "threshold": threshold,
+        "margin": margin,
+        "cases": cases,
+    }
 
 
 def summarize_slices(cases: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
@@ -333,6 +374,8 @@ def main() -> None:
 
     eval_payloads: dict[str, dict[str, Any]] = {}
     run_results: dict[str, dict[str, Any]] = {}
+    settings = load_settings(routes)
+    margin = settings.margin if args.margin is None else args.margin
     for baseline in DEFAULT_BASELINES:
         output = work_dir / f"eval-{safe_label(baseline)}.json"
         run_results[baseline] = run_eval_json(
@@ -341,29 +384,51 @@ def main() -> None:
             baseline=baseline,
             output=output,
             mock_embeddings=args.mock_embeddings,
-            margin=args.margin,
+            margin=margin,
         )
         if output.exists():
             eval_payloads[baseline] = json.loads(output.read_text(encoding="utf-8"))
+
+    scoring_probe_label = "threshold-scoring-probe"
+    scoring_probe_output = work_dir / f"eval-{safe_label(scoring_probe_label)}.json"
+    run_results[scoring_probe_label] = run_eval_json(
+        cases=cases,
+        routes=routes,
+        baseline="current-router",
+        output=scoring_probe_output,
+        mock_embeddings=args.mock_embeddings,
+        threshold=0.0,
+        margin=0.0,
+    )
+    scoring_payload = (
+        json.loads(scoring_probe_output.read_text(encoding="utf-8"))
+        if scoring_probe_output.exists()
+        else {"cases": []}
+    )
 
     threshold_labels: list[str] = []
     for threshold in parse_thresholds(args.thresholds):
         label = f"threshold:{threshold:g}"
         threshold_labels.append(label)
         output = work_dir / f"eval-{safe_label(label)}.json"
-        run_results[label] = run_eval_json(
-            cases=cases,
-            routes=routes,
-            baseline="current-router",
-            output=output,
-            mock_embeddings=args.mock_embeddings,
+        payload = simulate_threshold_payload(
+            scoring_payload=scoring_payload,
             threshold=threshold,
-            margin=args.margin,
+            margin=margin,
+            fallback_route_id=settings.fallback_route_id,
+            label=label,
         )
-        if output.exists():
-            payload = json.loads(output.read_text(encoding="utf-8"))
-            payload["baseline"] = label
-            eval_payloads[label] = payload
+        output.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        run_results[label] = {
+            "mode": "simulated_from_threshold_scoring_probe",
+            "probe_json": str(scoring_probe_output),
+            "exit_code": simulated_exit_code(payload),
+            "json": str(output),
+        }
+        eval_payloads[label] = payload
 
     report = build_report(
         eval_payloads=eval_payloads,

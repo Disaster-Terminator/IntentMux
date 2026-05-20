@@ -372,7 +372,7 @@ def test_main_uses_default_routes_threshold(tmp_path: Path):
                 "route_id": "lite",
                 "target_model": "lite-upstream",
                 "reason": "embedding",
-                "score": 0.535,
+                "score": 0.395,
                 "duration_ms": 100,
             }
         )

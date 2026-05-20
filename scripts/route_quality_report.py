@@ -9,6 +9,10 @@ from pathlib import Path
 from typing import Any
 
 
+MAX_MARKDOWN_FAILURES = 20
+MAX_MARKDOWN_FAILURE_TEXT_CHARS = 180
+
+
 @dataclass(frozen=True)
 class EvalResult:
     total: int
@@ -239,17 +243,27 @@ def product_metrics(
     margin: float | None,
 ) -> dict[str, float | int | None]:
     total = len(cases)
-    lite_general = [case for case in cases if case.get("slice") == "lite_general_zh"]
+    lite_general_zh = [case for case in cases if case.get("slice") == "lite_general_zh"]
+    lite_general_en = [case for case in cases if case.get("slice") == "lite_general_en"]
+    lite_general = lite_general_zh + lite_general_en
     actual_lite = [case for case in cases if case.get("actual_route") == "lite"]
     high_risk = [case for case in cases if case.get("slice") == "high_risk_zh"]
-    code = [case for case in cases if case.get("slice") == "deep_code_zh"]
+    code = [
+        case
+        for case in cases
+        if case.get("slice") in {"deep_code_zh", "deep_code_generation"}
+    ]
+    debug_issue = [case for case in cases if case.get("slice") == "deep_debug_issue"]
     near_margin = near_margin_metrics(cases, margin)
     long_context = long_context_metrics(cases)
     return {
         "lite_general_keep_rate": route_rate(lite_general, "lite"),
+        "lite_general_zh_keep_rate": route_rate(lite_general_zh, "lite"),
+        "lite_general_en_keep_rate": route_rate(lite_general_en, "lite"),
         "lite_precision": expected_rate(actual_lite, "lite"),
         "deep_recall_high_risk": route_rate(high_risk, "deep"),
         "deep_recall_code": route_rate(code, "deep"),
+        "deep_recall_debug_issue": route_rate(debug_issue, "deep"),
         "low_confidence_rate": reason_rate(cases, "low_confidence"),
         "hard_rule_hit_rate": hard_rule_rate(cases),
         "deep_call_rate": route_rate(cases, "deep"),
@@ -474,16 +488,30 @@ def render_markdown(report: dict[str, Any]) -> str:
             )
     failures = eval_section.get("failures", [])
     if failures:
-        lines.extend(["", "## Eval Failures"])
-        for failure in failures:
+        shown_failures = failures[:MAX_MARKDOWN_FAILURES]
+        lines.extend(
+            [
+                "",
+                "## Eval Failures",
+                f"- showing: {len(shown_failures)} of {len(failures)}",
+            ]
+        )
+        for failure in shown_failures:
             lines.append(
                 "- "
                 f"expect={failure['expect']} actual={failure['actual']} "
                 f"target={failure['target_model']} reason={failure['reason']} "
-                f"text={failure['text']}"
+                f"text={truncate_text(str(failure['text']))}"
             )
     lines.append("")
     return "\n".join(lines)
+
+
+def truncate_text(text: str, max_chars: int = MAX_MARKDOWN_FAILURE_TEXT_CHARS) -> str:
+    normalized = " ".join(text.split())
+    if len(normalized) <= max_chars:
+        return normalized
+    return normalized[: max_chars - 3] + "..."
 
 
 def format_counts(counts: dict[str, Any]) -> str:

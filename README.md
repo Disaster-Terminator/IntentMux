@@ -773,7 +773,7 @@ uv run python scripts/route_calibration_report.py \
   --json-output /tmp/intentmux-route-calibration.json \
   --markdown-output /tmp/intentmux-route-calibration.md \
   --mock-embeddings \
-  --thresholds 0.35,0.45,0.55,0.65,0.75
+  --thresholds 0.30,0.35,0.40,0.45,0.50,0.55
 ```
 
 输出包含 baseline comparison、threshold curve、slice metrics、coverage 和

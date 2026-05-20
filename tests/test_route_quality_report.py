@@ -105,6 +105,22 @@ def test_quality_report_reads_eval_json_and_reports_slice_metrics():
                 "score": 0.54,
                 "second_score": 0.52,
             },
+            {
+                "id": "lite-en1",
+                "slice": "lite_general_en",
+                "expect": "lite",
+                "actual_route": "lite",
+                "reason": "embedding",
+                "passed": True,
+            },
+            {
+                "id": "debug1",
+                "slice": "deep_debug_issue",
+                "expect": "deep",
+                "actual_route": "deep",
+                "reason": "embedding",
+                "passed": True,
+            },
         ],
     }
 
@@ -116,15 +132,18 @@ def test_quality_report_reads_eval_json_and_reports_slice_metrics():
     )
 
     assert report["product_metrics"]["lite_general_keep_rate"] == 1.0
-    assert report["product_metrics"]["lite_precision"] == 0.5
+    assert report["product_metrics"]["lite_general_zh_keep_rate"] == 1.0
+    assert report["product_metrics"]["lite_general_en_keep_rate"] == 1.0
+    assert report["product_metrics"]["lite_precision"] == 2 / 3
     assert report["product_metrics"]["deep_recall_high_risk"] == 1.0
     assert report["product_metrics"]["deep_recall_code"] == 0.0
-    assert report["product_metrics"]["low_confidence_rate"] == 1 / 3
-    assert report["product_metrics"]["hard_rule_hit_rate"] == 1 / 3
-    assert report["product_metrics"]["deep_call_rate"] == 1 / 3
+    assert report["product_metrics"]["deep_recall_debug_issue"] == 1.0
+    assert report["product_metrics"]["low_confidence_rate"] == 1 / 5
+    assert report["product_metrics"]["hard_rule_hit_rate"] == 1 / 5
+    assert report["product_metrics"]["deep_call_rate"] == 2 / 5
     assert report["product_metrics"]["near_margin_rate"] == 1.0
     assert report["product_metrics"]["near_margin_measured_count"] == 1
-    assert report["product_metrics"]["near_margin_total_count"] == 3
+    assert report["product_metrics"]["near_margin_total_count"] == 5
 
 
 def test_quality_report_counts_long_context_metadata_states():
@@ -216,6 +235,43 @@ def test_render_markdown_includes_actionable_quality_signals():
     assert "- near_margin_measured_count: 3" in markdown
     assert "- near_margin_total_count: 4" in markdown
     assert "分析这个 PR" in markdown
+
+
+def test_render_markdown_bounds_failure_details():
+    report = {
+        "route_bank_path": "examples/route_bank.sample.yaml",
+        "eval": {
+            "total": 25,
+            "passed": 0,
+            "failed": 25,
+            "pass_rate": 0.0,
+            "reasons": {"low_confidence": 25},
+            "failures": [
+                {
+                    "expect": "deep",
+                    "actual": "lite",
+                    "target_model": "lite-upstream",
+                    "reason": "low_confidence",
+                    "text": f"failure {index} " + ("x" * 300),
+                }
+                for index in range(25)
+            ],
+        },
+        "traffic": {
+            "total": 0,
+            "routes": {},
+            "reasons": {},
+            "low_confidence_rate": 0.0,
+            "not_ok_rate": 0.0,
+        },
+    }
+
+    markdown = render_markdown(report)
+
+    assert "- showing: 20 of 25" in markdown
+    assert "failure 19" in markdown
+    assert "failure 20" not in markdown
+    assert "x" * 300 not in markdown
 
 
 def test_main_writes_json_and_markdown(tmp_path: Path):

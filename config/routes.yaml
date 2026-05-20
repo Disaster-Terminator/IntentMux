@@ -10,7 +10,7 @@ agent_signal_min_message_count: 6
 route_kernel: aurelio
 aurelio_router: hybrid
 aurelio_hybrid_alpha: 0.3
-threshold: 0.55
+threshold: 0.4
 margin: 0.04
 route_bank_path: examples/route_bank.sample.yaml
 embedding_url: http://127.0.0.1:1234/v1/embeddings
