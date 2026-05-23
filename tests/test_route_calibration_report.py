@@ -158,6 +158,7 @@ def test_coverage_counts_languages_and_slices():
         "cases": [
             {"text": "帮我总结", "slice": "lite_general_zh"},
             {"text": "Fix this bug", "slice": "deep_debug_en"},
+            {"slice": "deep_code_zh"},
             {"text": "123", "slice": ""},
         ]
     }
@@ -166,10 +167,15 @@ def test_coverage_counts_languages_and_slices():
     assert infer_language("Fix this bug") == "en"
     assert infer_language("123") == "unknown"
     assert coverage(payload) == {
-        "total": 3,
-        "languages": {"zh": 1, "en": 1, "unknown": 1},
-        "slices": {"lite_general_zh": 1, "deep_debug_en": 1, "unknown": 1},
-        "bilingual_sample_count": 2,
+        "total": 4,
+        "languages": {"zh": 2, "en": 1, "unknown": 1},
+        "slices": {
+            "lite_general_zh": 1,
+            "deep_debug_en": 1,
+            "deep_code_zh": 1,
+            "unknown": 1,
+        },
+        "bilingual_sample_count": 3,
     }
 
 

@@ -333,6 +333,50 @@ async def test_aurelio_hybrid_provenance_tracks_hybrid_match_not_dense_fallback(
 
 
 @pytest.mark.asyncio
+async def test_aurelio_hybrid_provenance_index_is_reused_between_decisions():
+    pytest.importorskip("semantic_router")
+    route_settings = RouterSettings(
+        route_model="auto",
+        fallback_route_id="lite",
+        route_kernel="aurelio",
+        aurelio_router="hybrid",
+        aurelio_hybrid_alpha=0.001,
+        threshold=0.2,
+        margin=0.01,
+        routes={
+            "lite": RouteSpec(
+                target_model="local-lite-model",
+                description="low risk",
+                utterances=["翻译成中文"],
+            ),
+            "deep": RouteSpec(
+                target_model="local-deep-model",
+                description="high risk",
+                utterances=["线上事故分析"],
+            ),
+        },
+    )
+    vectors = {
+        "翻译成中文": [0.0, 0.0, 1.0],
+        "线上事故分析": [0.0, 1.0, 0.0],
+        "线上事故怎么处理": [0.001, 0.0, 0.0],
+        "帮我翻译一下": [0.0, 0.0, 1.0],
+    }
+    router = Router(route_settings, FakeEmbeddingClient(vectors))
+
+    await router.decide(
+        {"model": "auto", "messages": [{"role": "user", "content": "线上事故怎么处理"}]}
+    )
+    first_index = router._hybrid_provenance_index
+
+    await router.decide(
+        {"model": "auto", "messages": [{"role": "user", "content": "帮我翻译一下"}]}
+    )
+
+    assert router._hybrid_provenance_index is first_index
+
+
+@pytest.mark.asyncio
 async def test_route_embedding_cache_reuses_persisted_vectors_between_router_instances(
     tmp_path: Path,
 ):

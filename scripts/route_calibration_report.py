@@ -226,10 +226,13 @@ def coverage(payload: dict[str, Any]) -> dict[str, Any]:
     slices: Counter[str] = Counter()
     for case in cases:
         text = str(case.get("text") or "")
-        languages[infer_language(text)] += 1
         slice_name = case.get("slice")
         if not isinstance(slice_name, str) or not slice_name:
             slice_name = "unknown"
+        language = infer_language(text)
+        if language == "unknown":
+            language = infer_language_from_slice(slice_name)
+        languages[language] += 1
         slices[slice_name] += 1
     return {
         "total": len(cases),
@@ -247,6 +250,14 @@ def infer_language(text: str) -> str:
     ascii_letters = sum(1 for char in text if char.isascii() and char.isalpha())
     if ascii_letters:
         return "en"
+    return "unknown"
+
+
+def infer_language_from_slice(slice_name: str) -> str:
+    parts = slice_name.split("_")
+    for part in reversed(parts):
+        if part in {"zh", "en"}:
+            return part
     return "unknown"
 
 

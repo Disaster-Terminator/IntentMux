@@ -51,6 +51,7 @@ class Router:
         self.embedding_client = embedding_client
         self._route_vectors: dict[str, list[RouteVector]] | None = None
         self._aurelio_router: Any | None = None
+        self._hybrid_provenance_index: HybridProvenanceIndex | None = None
 
     async def decide(
         self,
@@ -467,26 +468,63 @@ class Router:
     ) -> dict[str, "RouteMatch"]:
         if self._route_vectors is None:
             return {}
+        index = self._ensure_hybrid_provenance_index()
         query_sparse = sparse_embedding_to_dict(scaled_sparse_embedding)
+        query_array = np.asarray(query_vector, dtype=np.float32)
+        query_norm = float(np.linalg.norm(query_array))
+        if query_norm == 0.0:
+            normalized_query = np.zeros_like(query_array)
+        else:
+            normalized_query = query_array / query_norm
         matches: dict[str, RouteMatch] = {}
-        for route_id, vectors in self._route_vectors.items():
-            best_match: RouteMatch | None = None
-            for item in vectors:
-                dense_score = cosine_similarity(query_vector, item.vector)
-                score = dense_score + sparse_dot_product(query_sparse, item.sparse)
-                candidate = RouteMatch(
-                    score=score,
-                    source=item.source,
-                    index=item.index,
-                    text_sha256=item.text_sha256,
-                    utterance_score=score,
-                    provenance="aurelio_hybrid_exact",
+        for route_index in index.routes:
+            dense_scores = route_index.normalized_dense @ normalized_query
+            best_score: float | None = None
+            best_position = 0
+            for position, item in enumerate(route_index.vectors):
+                score = float(dense_scores[position]) + sparse_dot_product(
+                    query_sparse,
+                    route_index.sparse[position],
                 )
-                if best_match is None or candidate.score > best_match.score:
-                    best_match = candidate
-            if best_match is not None:
-                matches[route_id] = best_match
+                if best_score is None or score > best_score:
+                    best_score = score
+                    best_position = position
+            if best_score is None:
+                continue
+            item = route_index.vectors[best_position]
+            matches[route_index.route_id] = RouteMatch(
+                score=best_score,
+                source=item.source,
+                index=item.index,
+                text_sha256=item.text_sha256,
+                utterance_score=best_score,
+                provenance="aurelio_hybrid_exact",
+            )
         return matches
+
+    def _ensure_hybrid_provenance_index(self) -> "HybridProvenanceIndex":
+        if self._hybrid_provenance_index is not None:
+            return self._hybrid_provenance_index
+        if self._route_vectors is None:
+            raise RuntimeError("route vectors are not initialized")
+
+        routes: list[RouteProvenanceIndex] = []
+        for route_id, vectors in self._route_vectors.items():
+            if not vectors:
+                continue
+            dense = np.asarray([item.vector for item in vectors], dtype=np.float32)
+            norms = np.linalg.norm(dense, axis=1)
+            safe_norms = np.where(norms == 0.0, 1.0, norms)
+            routes.append(
+                RouteProvenanceIndex(
+                    route_id=route_id,
+                    vectors=vectors,
+                    normalized_dense=dense / safe_norms[:, np.newaxis],
+                    sparse=[item.sparse for item in vectors],
+                )
+            )
+        self._hybrid_provenance_index = HybridProvenanceIndex(routes=routes)
+        return self._hybrid_provenance_index
 
     def _ensure_aurelio_router(self) -> Any:
         if self._aurelio_router is not None:
@@ -677,6 +715,19 @@ class RouteMatch:
 class HybridKernel:
     router: Any
     sparse_encoder: Any
+
+
+@dataclass(frozen=True)
+class RouteProvenanceIndex:
+    route_id: str
+    vectors: list[RouteVector]
+    normalized_dense: np.ndarray
+    sparse: list[dict[int, float]]
+
+
+@dataclass(frozen=True)
+class HybridProvenanceIndex:
+    routes: list[RouteProvenanceIndex]
 
 
 def sha256_text(text: str) -> str:
