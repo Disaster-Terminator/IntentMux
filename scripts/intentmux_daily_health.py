@@ -430,6 +430,10 @@ def run_quality_artifacts(
     quality_dir = Path(paths["dir"])
     quality_dir.mkdir(parents=True, exist_ok=True)
 
+    def remove_stale_outputs(*output_paths: str) -> None:
+        for output_path in output_paths:
+            Path(output_path).unlink(missing_ok=True)
+
     route_summary_path = Path(paths["route_summary_today_json"])
     if day_log.exists() and day_log.stat().st_size > 0:
         route_summary_cmd = (
@@ -448,6 +452,7 @@ def run_quality_artifacts(
             "stderr": "",
             "cmd": "skipped:no_samples",
         }
+        route_summary_path.unlink(missing_ok=True)
 
     evals: dict[str, dict[str, Any]] = {}
     resolved_routes_path = routes_path or quality_routes_path(repo, log_dir)
@@ -491,6 +496,7 @@ def run_quality_artifacts(
             "stderr": "",
             "cmd": "skipped:no_eval_or_route_summary",
         }
+        remove_stale_outputs(paths["route_quality_json"], paths["route_quality_md"])
 
     if day_log.exists() and day_log.stat().st_size > 0:
         prompt_arg = (
@@ -515,8 +521,12 @@ def run_quality_artifacts(
             "stderr": "",
             "cmd": "skipped:no_samples",
         }
+        remove_stale_outputs(paths["review_candidates_json"], paths["review_candidates_md"])
 
-    if Path(paths["review_candidates_json"]).exists():
+    if (
+        review_candidates.get("cmd") != "skipped:no_samples"
+        and Path(paths["review_candidates_json"]).exists()
+    ):
         packet_cmd = (
             "uv run python scripts/prepare_ai_review_packet.py "
             f"--input {shlex.quote(paths['review_candidates_json'])} "
@@ -532,28 +542,42 @@ def run_quality_artifacts(
             "stderr": "",
             "cmd": "skipped:no_review_candidates",
         }
+        remove_stale_outputs(paths["ai_review_packet_json"], paths["ai_review_packet_md"])
+
+    def existing_path(output_path: str) -> str | None:
+        return output_path if Path(output_path).exists() else None
 
     return {
         "dir": str(quality_dir),
         "route_summary_today_json": {
             "exit_code": route_summary["exit_code"],
-            "path": str(route_summary_path),
+            "path": str(route_summary_path) if route_summary_path.exists() else None,
+            "status": route_summary.get("stdout") if not route_summary_path.exists() else "written",
         },
         "evals": evals,
         "route_quality_report": {
             "exit_code": route_quality["exit_code"],
-            "json": paths["route_quality_json"],
-            "md": paths["route_quality_md"],
+            "json": existing_path(paths["route_quality_json"]),
+            "md": existing_path(paths["route_quality_md"]),
+            "status": route_quality.get("stdout")
+            if not Path(paths["route_quality_json"]).exists()
+            else "written",
         },
         "review_candidates": {
             "exit_code": review_candidates["exit_code"],
-            "json": paths["review_candidates_json"],
-            "md": paths["review_candidates_md"],
+            "json": existing_path(paths["review_candidates_json"]),
+            "md": existing_path(paths["review_candidates_md"]),
+            "status": review_candidates.get("stdout")
+            if not Path(paths["review_candidates_json"]).exists()
+            else "written",
         },
         "ai_review_packet": {
             "exit_code": ai_review_packet["exit_code"],
-            "json": paths["ai_review_packet_json"],
-            "md": paths["ai_review_packet_md"],
+            "json": existing_path(paths["ai_review_packet_json"]),
+            "md": existing_path(paths["ai_review_packet_md"]),
+            "status": ai_review_packet.get("stdout")
+            if not Path(paths["ai_review_packet_json"]).exists()
+            else "written",
         },
     }
 
@@ -653,16 +677,20 @@ def render_md(report: dict[str, Any]) -> str:
             (
                 "- route_summary_today_json: "
                 f"exit_code={quality_artifacts['route_summary_today_json']['exit_code']} "
-                f"path={quality_artifacts['route_summary_today_json']['path']}"
+                f"path={quality_artifacts['route_summary_today_json'].get('path') or 'none'} "
+                f"status={quality_artifacts['route_summary_today_json'].get('status', '')}"
             ),
         ]
         for baseline, result in sorted(quality_artifacts.get("evals", {}).items()):
             lines.append(f"- {baseline}: exit_code={result['exit_code']} json={result['json']}")
         for key in ("route_quality_report", "review_candidates", "ai_review_packet"):
             result = quality_artifacts[key]
+            json_path = result.get("json") or "none"
+            md_path = result.get("md") or "none"
+            status = result.get("status", "")
             lines.append(
                 f"- {key}: exit_code={result['exit_code']} "
-                f"json={result['json']} md={result['md']}"
+                f"json={json_path} md={md_path} status={status}"
             )
 
     lines += [

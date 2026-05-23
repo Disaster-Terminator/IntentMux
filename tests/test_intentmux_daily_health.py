@@ -527,6 +527,67 @@ def test_run_quality_artifacts_writes_generic_outputs_without_raw_prompt_mode(tm
     assert not any("--mock-embeddings" in cmd for cmd in commands)
 
 
+def test_run_quality_artifacts_no_samples_skips_today_outputs_and_removes_stale_files(
+    tmp_path: Path,
+):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    log_dir = tmp_path / "logs"
+    routes_dir = log_dir / "routes"
+    prompts_dir = log_dir / "prompts"
+    routes_dir.mkdir(parents=True)
+    prompts_dir.mkdir(parents=True)
+    day_log = routes_dir / "2026-05-23.jsonl"
+    prompt_log = prompts_dir / "2026-05-23.jsonl"
+    quality_dir = log_dir / "quality" / "2026-05-23"
+    quality_dir.mkdir(parents=True)
+    stale_outputs = [
+        quality_dir / "route-summary-today.json",
+        quality_dir / "route-quality.json",
+        quality_dir / "route-quality.md",
+        quality_dir / "review-candidates.json",
+        quality_dir / "review-candidates.md",
+        quality_dir / "ai-review-packet.json",
+        quality_dir / "ai-review-packet.md",
+    ]
+    for path in stale_outputs:
+        path.write_text("{}\n", encoding="utf-8")
+    commands: list[str] = []
+
+    def fake_runner(cmd: str, *, cwd: Path, timeout: int = 120):
+        commands.append(cmd)
+        parts = cmd.split()
+        if "scripts/eval_routes.py" in cmd and "--json-output" in parts:
+            output = Path(parts[parts.index("--json-output") + 1])
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_text("{}\n", encoding="utf-8")
+        return {"ok": True, "exit_code": 0, "stdout": "", "stderr": "", "cmd": cmd}
+
+    artifacts = run_quality_artifacts(
+        repo=repo,
+        log_dir=log_dir,
+        day="2026-05-23",
+        day_log=day_log,
+        prompt_day_log=prompt_log,
+        slow_request_limit=10,
+        runner=fake_runner,
+    )
+
+    assert artifacts["route_summary_today_json"]["path"] is None
+    assert artifacts["route_summary_today_json"]["status"] == "no_samples"
+    assert artifacts["route_quality_report"]["json"] is None
+    assert artifacts["route_quality_report"]["md"] is None
+    assert artifacts["review_candidates"]["json"] is None
+    assert artifacts["review_candidates"]["md"] is None
+    assert artifacts["ai_review_packet"]["json"] is None
+    assert artifacts["ai_review_packet"]["md"] is None
+    assert not any("scripts/route_quality_report.py" in cmd for cmd in commands)
+    assert not any("scripts/select_review_candidates.py" in cmd for cmd in commands)
+    assert not any("scripts/prepare_ai_review_packet.py" in cmd for cmd in commands)
+    for path in stale_outputs:
+        assert not path.exists()
+
+
 def test_run_quality_artifacts_prefers_runtime_config_and_route_bank(tmp_path: Path):
     repo = tmp_path / "repo"
     repo.mkdir()
