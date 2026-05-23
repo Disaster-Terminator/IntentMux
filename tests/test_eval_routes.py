@@ -7,7 +7,14 @@ from pathlib import Path
 
 import pytest
 
-from scripts.eval_routes import EvalCase, load_cases, run_eval, validate_case_route_ids
+from scripts.eval_routes import (
+    EvalCase,
+    EvalQueryEmbeddingCache,
+    load_cases,
+    run_eval,
+    text_sha256,
+    validate_case_route_ids,
+)
 
 
 def test_validate_case_route_ids_accepts_known_route_id():
@@ -515,6 +522,147 @@ cases:
     assert "case_1" in result.stdout
     assert "case_2" not in result.stdout
     assert "suppressed 1 eval row" in result.stdout
+
+
+@pytest.mark.asyncio
+async def test_eval_routes_reuses_persisted_eval_query_embeddings(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    calls: list[list[str]] = []
+
+    class FakeOpenAIEmbeddingClient:
+        def __init__(
+            self,
+            url: str,
+            model: str,
+            timeout: float = 20.0,
+            batch_size: int = 128,
+            api_key: str | None = None,
+            headers: dict[str, str] | None = None,
+        ):
+            pass
+
+        async def embed(self, texts: list[str]) -> list[list[float]]:
+            calls.append(list(texts))
+            return [
+                [1.0, 0.0] if "simple" in text else [0.0, 1.0]
+                for text in texts
+            ]
+
+    monkeypatch.setattr(
+        "scripts.eval_routes.OpenAIEmbeddingClient", FakeOpenAIEmbeddingClient
+    )
+    routes = tmp_path / "routes.yaml"
+    route_cache = tmp_path / "route-embeddings.json"
+    routes.write_text(
+        f"""
+route_model: auto
+fallback_route_id: lite
+route_kernel: basic
+threshold: 0.1
+margin: 0.0
+embedding_url: http://127.0.0.1:1234/v1/embeddings
+embedding_model: local-embedding
+route_embedding_cache_path: {route_cache}
+routes:
+  lite:
+    target_model: cheap-router
+    description: simple requests
+    utterances:
+      - simple request
+  deep:
+    target_model: pro-router
+    description: hard requests
+    utterances:
+      - hard request
+""",
+        encoding="utf-8",
+    )
+    cases = tmp_path / "cases.yaml"
+    cases.write_text(
+        """
+cases:
+  - id: simple_001
+    text: simple request
+    expect: lite
+""",
+        encoding="utf-8",
+    )
+
+    query_cache = tmp_path / "eval-query-embeddings.json"
+
+    assert (
+        await run_eval(
+            cases,
+            routes,
+            mock_embeddings=False,
+            eval_query_cache_path=query_cache,
+        )
+        == 0
+    )
+    assert query_cache.exists()
+    cache_text = query_cache.read_text(encoding="utf-8")
+    assert "simple request" not in cache_text
+    assert "hard request" not in cache_text
+    calls.clear()
+
+    assert (
+        await run_eval(
+            cases,
+            routes,
+            mock_embeddings=False,
+            eval_query_cache_path=query_cache,
+        )
+        == 0
+    )
+
+    assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_eval_query_embedding_cache_invalidates_on_model_change(tmp_path: Path):
+    cache_path = tmp_path / "eval-query-embeddings.json"
+    cache_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "embedding_model": "old-model",
+                "items": {text_sha256("simple request"): [9.0, 9.0]},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    class FakeEmbeddingClient:
+        async def embed(self, texts: list[str]) -> list[list[float]]:
+            return [[1.0, 0.0] for _ in texts]
+
+    cache = EvalQueryEmbeddingCache(FakeEmbeddingClient(), cache_path, "new-model")
+
+    assert await cache.embed(["simple request"]) == [[1.0, 0.0]]
+
+    payload = json.loads(cache_path.read_text(encoding="utf-8"))
+    assert payload["embedding_model"] == "new-model"
+    assert payload["items"] == {text_sha256("simple request"): [1.0, 0.0]}
+
+
+@pytest.mark.asyncio
+async def test_eval_query_embedding_cache_rejects_partial_embedding_response(
+    tmp_path: Path,
+):
+    class PartialEmbeddingClient:
+        async def embed(self, texts: list[str]) -> list[list[float]]:
+            return []
+
+    cache = EvalQueryEmbeddingCache(
+        PartialEmbeddingClient(),
+        tmp_path / "eval-query-embeddings.json",
+        "local-embedding",
+    )
+
+    with pytest.raises(RuntimeError, match="response length"):
+        await cache.embed(["simple request"])
 
 
 @pytest.mark.asyncio

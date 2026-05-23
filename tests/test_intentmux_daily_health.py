@@ -514,6 +514,7 @@ def test_run_quality_artifacts_writes_generic_outputs_without_raw_prompt_mode(tm
         "scripts/eval_routes.py" in cmd
         and "--cases examples/eval_bank.sample.yaml" in cmd
         and "--baseline current-router" in cmd
+        and "--eval-query-cache" in cmd
         for cmd in commands
     )
     assert any(
@@ -639,6 +640,7 @@ def test_run_quality_artifacts_prefers_runtime_config_and_route_bank(tmp_path: P
         "scripts/eval_routes.py" in cmd
         and f"--routes {runtime_routes}" in cmd
         and f"--cases {runtime_eval_bank}" in cmd
+        and f"--eval-query-cache {log_dir / 'quality' / 'eval-query-embeddings.json'}" in cmd
         for cmd in commands
     )
     assert any(

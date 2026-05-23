@@ -363,6 +363,7 @@ def build_quality_artifact_paths(log_dir: Path, day: str) -> dict[str, Any]:
         "eval_json": eval_json,
         "route_quality_json": str(quality_dir / "route-quality.json"),
         "route_quality_md": str(quality_dir / "route-quality.md"),
+        "eval_query_cache": str(log_dir / "quality" / "eval-query-embeddings.json"),
         "review_candidates_json": str(quality_dir / "review-candidates.json"),
         "review_candidates_md": str(quality_dir / "review-candidates.md"),
         "ai_review_packet_json": str(quality_dir / "ai-review-packet.json"),
@@ -465,6 +466,7 @@ def run_quality_artifacts(
             f"--cases {shlex.quote(str(eval_cases_path))} "
             f"--routes {shlex.quote(str(resolved_routes_path))} "
             f"--baseline {baseline} "
+            f"--eval-query-cache {shlex.quote(paths['eval_query_cache'])} "
             f"--json-output {shlex.quote(str(eval_path))}"
         )
         eval_result = runner(eval_cmd, cwd=repo, timeout=600)

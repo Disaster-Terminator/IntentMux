@@ -466,6 +466,35 @@ routes:
     )
 
 
+def test_route_embedding_cache_infers_runtime_home_from_explicit_runtime_config(
+    monkeypatch, tmp_path: Path
+):
+    runtime_home = tmp_path / "intentmux-home"
+    routes_path = runtime_home / "config" / "routes.yaml"
+    routes_path.parent.mkdir(parents=True)
+    routes_path.write_text(
+        """
+route_model: semantic-router
+default_route: lite-upstream
+routes:
+  lite-upstream:
+    description: seed cheap
+    utterances:
+      - seed cheap utterance
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.delenv("INTENTMUX_HOME", raising=False)
+    monkeypatch.delenv("ROUTER_ROUTE_EMBEDDING_CACHE_PATH", raising=False)
+
+    settings = load_settings(routes_path)
+
+    assert settings.runtime_home == str(runtime_home)
+    assert settings.route_embedding_cache_path == str(
+        runtime_home / "cache" / "route-embeddings.json"
+    )
+
+
 def test_route_embedding_cache_path_can_come_from_environment(
     monkeypatch, tmp_path: Path
 ):

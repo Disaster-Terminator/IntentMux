@@ -24,8 +24,26 @@ def default_runtime_home() -> Path:
     return runtime_home_from_env() or DEFAULT_RUNTIME_HOME
 
 
-def runtime_path_from_home(*parts: str) -> str | None:
-    return str(default_runtime_home().joinpath(*parts))
+def runtime_home_for_config(
+    config_path: Path | None = None,
+    *,
+    infer_from_config_path: bool = True,
+) -> Path:
+    explicit = runtime_home_from_env()
+    if explicit is not None:
+        return explicit
+    if (
+        infer_from_config_path
+        and config_path is not None
+        and config_path.parent.name == "config"
+    ):
+        return config_path.parent.parent
+    return DEFAULT_RUNTIME_HOME
+
+
+def runtime_path_from_home(*parts: str, runtime_home: Path | None = None) -> str | None:
+    base = runtime_home or default_runtime_home()
+    return str(base.joinpath(*parts))
 
 
 def default_config_path() -> Path:
@@ -193,7 +211,16 @@ def load_settings(path: str | Path | None = None) -> RouterSettings:
     if not config_path.exists():
         raise FileNotFoundError(f"router config not found: {config_path}")
     raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-    apply_runtime_home_defaults(raw)
+    infer_runtime_home = (
+        path is not None
+        or os.getenv("ROUTER_CONFIG") is not None
+        or config_path == DEFAULT_RUNTIME_HOME / "config" / "routes.yaml"
+    )
+    runtime_home = runtime_home_for_config(
+        config_path,
+        infer_from_config_path=infer_runtime_home,
+    )
+    apply_runtime_home_defaults(raw, runtime_home=runtime_home)
     require_route_bank = bool_from_env(
         "ROUTER_REQUIRE_ROUTE_BANK",
         bool_from_value(raw.get("require_route_bank", raw.get("route_bank_required", False))),
@@ -220,7 +247,7 @@ def load_settings(path: str | Path | None = None) -> RouterSettings:
         "route_embedding_cache_path": os.getenv(
             "ROUTER_ROUTE_EMBEDDING_CACHE_PATH",
             settings.route_embedding_cache_path
-            or runtime_path_from_home("cache", "route-embeddings.json")
+            or runtime_path_from_home("cache", "route-embeddings.json", runtime_home=runtime_home)
             or "",
         ),
         "agent_signal_enabled": bool_from_env(
@@ -260,7 +287,9 @@ def load_settings(path: str | Path | None = None) -> RouterSettings:
         ),
         "audit_log_dir": os.getenv(
             "ROUTER_AUDIT_LOG_DIR",
-            settings.audit_log_dir or runtime_path_from_home("logs", "routes") or "",
+            settings.audit_log_dir
+            or runtime_path_from_home("logs", "routes", runtime_home=runtime_home)
+            or "",
         ),
         "audit_log_timezone": os.getenv(
             "ROUTER_AUDIT_LOG_TIMEZONE",
@@ -269,7 +298,9 @@ def load_settings(path: str | Path | None = None) -> RouterSettings:
         "prompt_log_mode": os.getenv("ROUTER_PROMPT_LOG_MODE", settings.prompt_log_mode),
         "prompt_log_dir": os.getenv(
             "ROUTER_PROMPT_LOG_DIR",
-            settings.prompt_log_dir or runtime_path_from_home("logs", "prompts") or "",
+            settings.prompt_log_dir
+            or runtime_path_from_home("logs", "prompts", runtime_home=runtime_home)
+            or "",
         ),
         "prompt_log_max_chars": int(
             os.getenv("ROUTER_PROMPT_LOG_MAX_CHARS", str(settings.prompt_log_max_chars))
@@ -281,12 +312,19 @@ def load_settings(path: str | Path | None = None) -> RouterSettings:
         "listen_port": int(os.getenv("ROUTER_PORT", str(settings.listen_port))),
     }
     return RouterSettings.model_validate(
-        settings.model_dump() | overrides | config_diagnostics(config_path, path=path)
+        settings.model_dump()
+        | overrides
+        | config_diagnostics(config_path, path=path, runtime_home=runtime_home)
     )
 
 
-def config_diagnostics(config_path: Path, *, path: str | Path | None = None) -> dict[str, Any]:
-    runtime_home = default_runtime_home()
+def config_diagnostics(
+    config_path: Path,
+    *,
+    path: str | Path | None = None,
+    runtime_home: Path | None = None,
+) -> dict[str, Any]:
+    runtime_home = runtime_home or runtime_home_for_config(config_path)
     return {
         "config_path": str(config_path),
         "config_source": config_source(config_path, path=path),
@@ -322,11 +360,17 @@ def placeholder_target_models(config_path: Path) -> list[str]:
     return placeholders
 
 
-def apply_runtime_home_defaults(raw: dict[str, Any]) -> None:
-    raw.setdefault("audit_log_dir", runtime_path_from_home("logs", "routes"))
+def apply_runtime_home_defaults(raw: dict[str, Any], *, runtime_home: Path | None = None) -> None:
+    raw.setdefault(
+        "audit_log_dir",
+        runtime_path_from_home("logs", "routes", runtime_home=runtime_home),
+    )
     prompt_mode = os.getenv("ROUTER_PROMPT_LOG_MODE", raw.get("prompt_log_mode", "off"))
     if prompt_mode != "off":
-        raw.setdefault("prompt_log_dir", runtime_path_from_home("logs", "prompts"))
+        raw.setdefault(
+            "prompt_log_dir",
+            runtime_path_from_home("logs", "prompts", runtime_home=runtime_home),
+        )
 
 
 def bool_from_value(value: Any) -> bool:

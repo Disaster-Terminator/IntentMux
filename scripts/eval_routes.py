@@ -99,6 +99,73 @@ class MockEmbeddingClient:
         return [1.0, 0.0, 0.0]
 
 
+class EvalQueryEmbeddingCache:
+    def __init__(self, inner: Any, cache_path: Path | None, embedding_model: str):
+        self.inner = inner
+        self.cache_path = cache_path
+        self.embedding_model = embedding_model
+        self.vectors = self._load()
+
+    async def embed(self, texts: list[str]) -> list[list[float]]:
+        misses: list[str] = []
+        seen_misses: set[str] = set()
+        for text in texts:
+            key = text_sha256(text)
+            if key not in self.vectors and key not in seen_misses:
+                misses.append(text)
+                seen_misses.add(key)
+
+        if misses:
+            vectors = await self.inner.embed(misses)
+            if len(vectors) != len(misses):
+                raise RuntimeError("embedding response length does not match input length")
+            for text, vector in zip(misses, vectors):
+                self.vectors[text_sha256(text)] = vector
+            self._write()
+
+        return [self.vectors[text_sha256(text)] for text in texts]
+
+    def _load(self) -> dict[str, list[float]]:
+        if self.cache_path is None:
+            return {}
+        try:
+            payload = json.loads(self.cache_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return {}
+        if (
+            payload.get("version") != 1
+            or payload.get("embedding_model") != self.embedding_model
+        ):
+            return {}
+        items = payload.get("items")
+        if not isinstance(items, dict):
+            return {}
+        return {
+            key: vector
+            for key, vector in items.items()
+            if isinstance(key, str) and isinstance(vector, list)
+        }
+
+    def _write(self) -> None:
+        if self.cache_path is None:
+            return
+        payload = {
+            "version": 1,
+            "embedding_model": self.embedding_model,
+            "items": self.vectors,
+        }
+        try:
+            self.cache_path.parent.mkdir(parents=True, exist_ok=True)
+            tmp_path = self.cache_path.with_name(f".{self.cache_path.name}.tmp")
+            tmp_path.write_text(
+                json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+                encoding="utf-8",
+            )
+            tmp_path.replace(self.cache_path)
+        except OSError:
+            return
+
+
 def load_cases(path: Path) -> list[EvalCase]:
     raw = yaml.safe_load(path.read_text(encoding="utf-8"))
     cases: list[EvalCase] = []
@@ -144,6 +211,7 @@ async def run_eval(
     margin: float | None = None,
     include_text: bool = False,
     stdout_limit: int = 50,
+    eval_query_cache_path: Path | None = None,
 ) -> int:
     if baseline not in BASELINES:
         raise ValueError(f"baseline must be one of {sorted(BASELINES)}")
@@ -155,17 +223,20 @@ async def run_eval(
         updates["margin"] = margin
     if updates:
         settings = settings.model_copy(update=updates)
-    embedding_client = (
-        MockEmbeddingClient.from_settings(settings)
-        if mock_embeddings
-        else OpenAIEmbeddingClient(
-            settings.embedding_url,
+    if mock_embeddings:
+        embedding_client = MockEmbeddingClient.from_settings(settings)
+    else:
+        embedding_client = EvalQueryEmbeddingCache(
+            OpenAIEmbeddingClient(
+                settings.embedding_url,
+                settings.embedding_model,
+                batch_size=settings.embedding_batch_size,
+                api_key=settings.embedding_api_key,
+                headers=settings.embedding_headers,
+            ),
+            eval_query_cache_path,
             settings.embedding_model,
-            batch_size=settings.embedding_batch_size,
-            api_key=settings.embedding_api_key,
-            headers=settings.embedding_headers,
         )
-    )
     router = Router(settings, embedding_client)
     decision_router = router_for_baseline(router, baseline)
     failures: list[str] = []
@@ -174,6 +245,9 @@ async def run_eval(
 
     cases = load_cases(cases_path)
     validate_case_route_ids(cases, set(settings.routes))
+
+    if not mock_embeddings and baseline in {"current-router", "embedding-only"}:
+        await embedding_client.embed([case.text for case in cases])
 
     for index, case in enumerate(cases):
         request_json = {
@@ -308,6 +382,10 @@ def main() -> None:
     parser.add_argument("--routes", default="config/routes.yaml")
     parser.add_argument("--mock-embeddings", action="store_true")
     parser.add_argument("--json-output")
+    parser.add_argument(
+        "--eval-query-cache",
+        help="Optional cache file for static eval query embeddings. Stores text hashes only.",
+    )
     parser.add_argument("--threshold", type=float)
     parser.add_argument("--margin", type=float)
     parser.add_argument(
@@ -339,6 +417,9 @@ def main() -> None:
                 margin=args.margin,
                 include_text=args.include_text,
                 stdout_limit=args.stdout_limit,
+                eval_query_cache_path=Path(args.eval_query_cache)
+                if args.eval_query_cache
+                else None,
             )
         )
     )
