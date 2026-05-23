@@ -204,12 +204,12 @@ def test_run_preflight_can_probe_legacy_sidecar_entry(monkeypatch):
         timeout=5,
         ready_attempts=1,
         ready_interval=0,
-        model="semantic-router",
+        model="intentmux",
     )
 
     assert [payload["model"] for payload in fake_client.post_payloads] == [
-        "semantic-router",
-        "semantic-router",
+        "intentmux",
+        "intentmux",
     ]
 
 

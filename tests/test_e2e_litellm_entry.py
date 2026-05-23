@@ -82,7 +82,7 @@ def test_find_matching_route_log_matches_recent_route_shape_once():
     logs = [
         {
             "event": "route_complete",
-            "source_model": "semantic-router",
+            "source_model": "intentmux",
                 "route_id": "deep",
             "target_model": "your-deep-model",
             "stream": False,
@@ -90,7 +90,7 @@ def test_find_matching_route_log_matches_recent_route_shape_once():
         },
         {
             "event": "route_complete",
-            "source_model": "semantic-router",
+            "source_model": "intentmux",
                 "route_id": "deep",
             "target_model": "your-deep-model",
             "stream": True,
@@ -125,7 +125,7 @@ def test_resolve_probe_expectations_uses_live_decision_contract(monkeypatch):
                 status_code=200,
                 payload={
                     "route_id": "deep",
-                    "target_model": "pro-router",
+                    "target_model": "deep",
                 },
             )
 
@@ -138,7 +138,7 @@ def test_resolve_probe_expectations_uses_live_decision_contract(monkeypatch):
         timeout=3.0,
     )
 
-    assert probes == [Probe("deep_nonstream", "prompt", "deep", "pro-router")]
+    assert probes == [Probe("deep_nonstream", "prompt", "deep", "deep")]
 
 
 def _log_line(record: dict) -> str:
@@ -154,7 +154,7 @@ def test_validate_route_logs_strict_request_id_match():
             "event": "route_complete",
             "request_id": "rid-1",
             "stream": False,
-            "source_model": "semantic-router",
+            "source_model": "intentmux",
                 "route_id": "deep",
             "target_model": "your-deep-model",
             "upstream_status": 200,
@@ -175,7 +175,7 @@ def test_validate_route_logs_fallback_route_shape_match():
             "event": "route_complete",
             "request_id": "other-id",
             "stream": False,
-            "source_model": "semantic-router",
+            "source_model": "intentmux",
                 "route_id": "deep",
             "target_model": "your-deep-model",
             "upstream_status": 200,
@@ -199,7 +199,7 @@ def test_validate_route_logs_duplicate_route_shape_records_are_not_reused():
             "event": "route_complete",
             "request_id": "other-id",
             "stream": False,
-            "source_model": "semantic-router",
+            "source_model": "intentmux",
                 "route_id": "deep",
             "target_model": "your-deep-model",
             "upstream_status": 200,
@@ -221,7 +221,7 @@ def test_validate_route_logs_require_request_id_match_fails_on_fallback():
             "event": "route_complete",
             "request_id": "other-id",
             "stream": False,
-            "source_model": "semantic-router",
+            "source_model": "intentmux",
                 "route_id": "deep",
             "target_model": "your-deep-model",
             "upstream_status": 200,
@@ -248,7 +248,7 @@ def test_validate_route_logs_redaction_detects_prompt_and_bearer_token_leaks():
                     "event": "route_complete",
                     "request_id": "rid-1",
                     "stream": False,
-                    "source_model": "semantic-router",
+                    "source_model": "intentmux",
                 "route_id": "deep",
                     "target_model": "your-deep-model",
                     "upstream_status": 200,
@@ -269,7 +269,7 @@ def test_validate_nonstream_probe_response_detects_missing_model_field():
     passed = FakeResponse(
         status_code=200,
         headers={"content-type": "application/json"},
-        payload={"model": "semantic-router"},
+        payload={"model": "intentmux"},
     )
     failed = FakeResponse(
         status_code=200,
@@ -299,7 +299,7 @@ def test_validate_nonstream_probe_response_extracts_provider_router_request_id()
             "content-type": "application/json",
             "llm_provider-x-router-request-id": "router-generated-1",
         },
-        payload={"model": "semantic-router"},
+        payload={"model": "intentmux"},
     )
 
     by_name = {
@@ -362,7 +362,7 @@ def test_run_e2e_uses_provider_router_request_id_for_strict_log_match(monkeypatc
                     "event": "route_complete",
                     "request_id": f"router-{probe.name}",
                     "stream": probe.stream,
-                    "source_model": "semantic-router",
+                    "source_model": "intentmux",
                     "route_id": probe.expected_route,
                     "target_model": probe.expected_target_model,
                     "upstream_status": 200,
@@ -466,7 +466,7 @@ def test_run_e2e_does_not_shape_match_logs_for_failed_probe(monkeypatch):
                 "event": "route_complete",
                 "request_id": "old-request",
                 "stream": False,
-                "source_model": "semantic-router",
+                "source_model": "intentmux",
                 "route_id": "deep",
                 "target_model": "your-deep-model",
                 "upstream_status": 200,

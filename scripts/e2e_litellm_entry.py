@@ -85,7 +85,7 @@ def find_matching_route_log(
         record = route_logs[index]
         if (
             record.get("event") == "route_complete"
-            and record.get("source_model") == "semantic-router"
+            and record.get("source_model") == "intentmux"
             and record.get("route_id") == probe.expected_route
             and record.get("target_model") == probe.expected_target_model
             and record.get("stream") is probe.stream
@@ -110,9 +110,9 @@ def resolve_probe_expectations(
     with httpx.Client(timeout=timeout) as client:
         for probe in probes:
             response = client.post(
-                f"{base_url}/v1/semantic-router/decision",
+                f"{base_url}/v1/intentmux/decision",
                 json={
-                    "model": "auto",
+                    "model": "intentmux",
                     "messages": [{"role": "user", "content": probe.prompt}],
                 },
                 headers=headers,
@@ -166,7 +166,7 @@ def validate_nonstream_probe_response(
         ),
         CheckResult(
             f"{probe.name}_outer_model",
-            model == "semantic-router",
+            model == "intentmux",
             f"model={model}",
         ),
         CheckResult(
@@ -221,7 +221,7 @@ def run_probe(
         "x-request-id": request_id,
     }
     payload = {
-        "model": "semantic-router",
+        "model": "intentmux",
         "metadata": {"semantic_router_request_id": request_id},
         "user": request_id,
         "messages": [{"role": "user", "content": probe.prompt}],
@@ -328,7 +328,7 @@ def validate_route_logs(
             [
                 CheckResult(
                     f"{probe.name}_source_model",
-                    record.get("source_model") == "semantic-router",
+                    record.get("source_model") == "intentmux",
                     f"source_model={record.get('source_model')}",
                 ),
                 CheckResult(
@@ -402,7 +402,7 @@ def run_e2e(
 ) -> list[CheckResult]:
     base_url = litellm_base_url.rstrip("/")
     probes_with_ids = [
-        (probe, f"semantic-e2e-{probe.name}-{uuid.uuid4().hex[:12]}")
+        (probe, f"intentmux-e2e-{probe.name}-{uuid.uuid4().hex[:12]}")
         for probe in probes
     ]
     results: list[CheckResult] = []
@@ -461,7 +461,7 @@ def main() -> None:
         default=os.getenv("INTENTMUX_ROUTER_BASE_URL"),
         help=(
             "Optional IntentMux base URL. When set, E2E first resolves expected "
-            "route_id and target_model from /v1/semantic-router/decision."
+            "route_id and target_model from /v1/intentmux/decision."
         ),
     )
     parser.add_argument(

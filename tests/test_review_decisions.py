@@ -126,7 +126,7 @@ def test_review_decisions_default_endpoint_matches_project_port(monkeypatch):
     monkeypatch.setattr(review_decisions, "run_review", fake_run_review)
 
     assert main(["--cases", "tests/samples/review_decisions.yaml"]) == 0
-    assert captured["endpoint"] == "http://127.0.0.1:4001/v1/semantic-router/decision"
+    assert captured["endpoint"] == "http://127.0.0.1:4001/v1/intentmux/decision"
 
 
 def test_review_decisions_cli_passes_intentmux_api_key(monkeypatch):

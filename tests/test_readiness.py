@@ -18,7 +18,7 @@ from router.routing import RoutingDecision
 
 class FakeRouter:
     async def decide(self, request_json):
-        return RoutingDecision("lite-upstream", "test", rewrite=True, source_model="semantic-router")
+        return RoutingDecision("lite-upstream", "test", rewrite=True, source_model="intentmux")
 
 
 class FakeProxy:

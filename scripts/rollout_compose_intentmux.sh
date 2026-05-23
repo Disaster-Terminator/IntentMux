@@ -211,7 +211,7 @@ preflight_cmd=(uv run python scripts/preflight.py --router-base-url "$base_url")
 if [[ -n "$api_key" ]]; then
   preflight_cmd+=(--intentmux-api-key "$api_key")
 fi
-legacy_preflight_cmd=("${preflight_cmd[@]}" --model semantic-router)
+legacy_preflight_cmd=("${preflight_cmd[@]}" --model intentmux)
 canonical_preflight_cmd=("${preflight_cmd[@]}" --model auto)
 
 log "repo: $repo_dir"
@@ -270,7 +270,7 @@ wait_for_container_healthy
 run "${canonical_preflight_cmd[@]}"
 
 cost_first_payload='{"model":"auto","messages":[{"role":"user","content":"summarize this tool schema"}],"tools":[{"type":"function","function":{"name":"read_file","description":"read a file","parameters":{"type":"object","properties":{}}}}],"tool_choice":"auto"}'
-cost_first_cmd=(uv run python -c 'import json, sys, urllib.request; url=sys.argv[1]+"/v1/semantic-router/decision"; payload=sys.argv[2].encode(); req=urllib.request.Request(url,data=payload,headers={"Content-Type":"application/json"}); data=json.loads(urllib.request.urlopen(req,timeout=30).read()); print(json.dumps(data,ensure_ascii=False)); assert data.get("policy_id")!="agent_signal"; assert data.get("route_id")=="lite"' "$base_url" "$cost_first_payload")
+cost_first_cmd=(uv run python -c 'import json, sys, urllib.request; url=sys.argv[1]+"/v1/intentmux/decision"; payload=sys.argv[2].encode(); req=urllib.request.Request(url,data=payload,headers={"Content-Type":"application/json"}); data=json.loads(urllib.request.urlopen(req,timeout=30).read()); print(json.dumps(data,ensure_ascii=False)); assert data.get("policy_id")!="agent_signal"; assert data.get("route_id")=="lite"' "$base_url" "$cost_first_payload")
 run_labeled "cost-first decision smoke" "${cost_first_cmd[@]}"
 
 if ((dry_run)); then

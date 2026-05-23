@@ -21,7 +21,7 @@
 
 <table>
   <tr>
-    <td><strong>双档路由</strong><br>`auto` 自动分流；`lite` / `deep` 可作为显式模型入口。</td>
+    <td><strong>双档路由</strong><br>`intentmux` 自动分流；`lite` / `deep` 可作为显式模型入口。</td>
     <td><strong>边界清晰</strong><br>LiteLLM 继续负责 provider routing、fallback、限流、key 和 budget。</td>
   </tr>
   <tr>
@@ -33,7 +33,7 @@
 ## 项目定位
 
 IntentMux 是一个轻量路由 sidecar。它接收 OpenAI-compatible chat
-completion 请求，把 `model=auto` 的请求路由到两个产品级 route：
+completion 请求，把 `model=intentmux` 的请求路由到两个产品级 route：
 
 - `lite`：低风险、低成本、普通问答和轻量任务。
 - `deep`：代码、debug、架构、高风险判断和需要更强模型的任务。
@@ -42,18 +42,18 @@ IntentMux 不提供模型，也不替代 LiteLLM、OpenRouter 或其他 provider
 它只负责入口模型语义、路由决策、协议代理和可审计日志。
 
 ```text
-model=auto -> route_id(lite/deep) -> target_model -> OpenAI-compatible upstream
+model=intentmux -> route_id(lite/deep) -> target_model -> OpenAI-compatible upstream
 ```
 
 两种部署形态都支持：
 
 ```text
 Direct gateway:
-client -> IntentMux :4001/v1, model=auto|lite|deep
+client -> IntentMux :4001/v1, model=intentmux|lite|deep
        -> OpenAI-compatible upstream
 
 LiteLLM-first sidecar:
-client -> LiteLLM :4000, model=semantic-router
+client -> LiteLLM :4000, model=intentmux
        -> IntentMux :4001
        -> LiteLLM target model group
 ```
@@ -103,7 +103,7 @@ docker compose -f examples/docker-compose.yml up -d --build
 
 首次接入先做四件事：
 
-1. 选择直连 IntentMux，或在 LiteLLM 中新增 `semantic-router` 模型入口。
+1. 选择直连 IntentMux，或在 LiteLLM 中新增 `intentmux` 模型入口。
 2. 复制 `examples/intentmux-home/` 到自己的运行时目录。
 3. 在运行时 `config/routes.yaml` 中配置 `routes.lite.target_model` 和
    `routes.deep.target_model`。
@@ -114,7 +114,7 @@ docker compose -f examples/docker-compose.yml up -d --build
 核心配置文件是 `routes.yaml`：
 
 ```yaml
-route_model: auto
+route_model: intentmux
 fallback_route_id: lite
 
 routes:
@@ -151,25 +151,24 @@ IntentMux 当前支持：
 - `GET /ready`
 - `GET /v1/models`
 - `POST /v1/chat/completions`
-- `POST /v1/semantic-router/decision`
+- `POST /v1/intentmux/decision`
 
 入口模型：
 
 | Model | 用途 |
 | --- | --- |
-| `auto` | 默认自动路由 |
+| `intentmux` | 默认自动路由 |
 | `lite` | 显式走 `lite` route |
 | `deep` | 显式走 `deep` route |
-| `semantic-router` | LiteLLM sidecar 兼容入口，等价于 `auto` |
 
-`/v1/models` 只广告 `auto`、`lite`、`deep`，不泄漏部署侧 `target_model`。
+`/v1/models` 只广告 `intentmux`、`lite`、`deep`，不泄漏部署侧 `target_model`。
 
 查看一次路由决策，不转发到上游：
 
 ```bash
-curl http://127.0.0.1:4001/v1/semantic-router/decision \
+curl http://127.0.0.1:4001/v1/intentmux/decision \
   -H "Content-Type: application/json" \
-  -d '{"model":"auto","messages":[{"role":"user","content":"这个线上 bug 为什么偶发？"}]}'
+  -d '{"model":"intentmux","messages":[{"role":"user","content":"这个线上 bug 为什么偶发？"}]}'
 ```
 
 decision response 会返回 `route_id`、`target_model`、`policy_id`、分数、阈值、

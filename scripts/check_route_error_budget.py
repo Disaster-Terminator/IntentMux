@@ -372,7 +372,7 @@ def parse_route_error_rate_budget(raw_budget: str) -> tuple[str | None, float]:
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Fail when structured semantic-router logs exceed route_error budgets.",
+        description="Fail when structured IntentMux route logs exceed route_error budgets.",
     )
     parser.add_argument("paths", nargs="*", help="JSONL log files. Reads stdin when omitted.")
     parser.add_argument("--min-total", type=int, default=1)

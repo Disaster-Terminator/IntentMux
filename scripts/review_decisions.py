@@ -239,7 +239,7 @@ def run_review(
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--endpoint", default="http://127.0.0.1:4001/v1/semantic-router/decision")
+    parser.add_argument("--endpoint", default="http://127.0.0.1:4001/v1/intentmux/decision")
     parser.add_argument("--cases", default="tests/samples/review_decisions.yaml")
     parser.add_argument("--timeout", type=float, default=10.0)
     parser.add_argument("--output", choices=["table", "json"], default="table")

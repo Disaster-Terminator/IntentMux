@@ -82,12 +82,10 @@ class RouterSettings(BaseModel):
     # When both keys are present, route_model takes precedence via AliasChoices
     # ordering for deterministic compatibility.
     route_model: str = Field(
-        default="semantic-router",
+        default="intentmux",
         validation_alias=AliasChoices("route_model", "entry_model"),
     )
-    entry_model_aliases: list[str] = Field(
-        default_factory=lambda: ["auto", "semantic-router"]
-    )
+    entry_model_aliases: list[str] = Field(default_factory=list)
     route_id_aliases: dict[str, str] = Field(default_factory=dict)
     fallback_route_id: str = Field(
         default="lite",

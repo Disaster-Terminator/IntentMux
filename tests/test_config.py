@@ -34,7 +34,7 @@ def test_load_settings_supports_route_ids_mapped_to_target_models(tmp_path: Path
     routes_path = tmp_path / "routes.yaml"
     routes_path.write_text(
         """
-route_model: semantic-router
+route_model: intentmux
 fallback_route_id: lite
 routes:
   lite:
@@ -71,7 +71,7 @@ def test_target_models_are_owned_by_routes_yaml_not_environment(
     routes_path = tmp_path / "routes.yaml"
     routes_path.write_text(
         """
-route_model: auto
+route_model: intentmux
 fallback_route_id: lite
 routes:
   lite:
@@ -100,7 +100,7 @@ def test_litellm_api_key_can_come_from_environment(monkeypatch, tmp_path: Path):
     routes_path = tmp_path / "routes.yaml"
     routes_path.write_text(
         """
-route_model: semantic-router
+route_model: intentmux
 fallback_route_id: lite
 routes:
   lite:
@@ -122,7 +122,7 @@ def test_inbound_api_key_can_come_from_environment(monkeypatch, tmp_path: Path):
     routes_path = tmp_path / "routes.yaml"
     routes_path.write_text(
         """
-route_model: semantic-router
+route_model: intentmux
 fallback_route_id: lite
 routes:
   lite:
@@ -144,7 +144,7 @@ def test_empty_litellm_api_key_env_does_not_clear_configured_key(monkeypatch, tm
     routes_path = tmp_path / "routes.yaml"
     routes_path.write_text(
         """
-route_model: semantic-router
+route_model: intentmux
 fallback_route_id: lite
 litellm_api_key: sk-configured
 routes:
@@ -168,7 +168,7 @@ def test_load_settings_merges_seed_utterances_with_route_bank(tmp_path: Path):
     bank_path = tmp_path / "route_bank.yaml"
     routes_path.write_text(
         """
-route_model: smart-router
+route_model: intentmux
 default_route: lite-upstream
 threshold: 0.55
 margin: 0.04
@@ -224,7 +224,7 @@ def test_load_settings_ignores_missing_route_bank_by_default(tmp_path: Path):
     routes_path = tmp_path / "routes.yaml"
     routes_path.write_text(
         """
-route_model: smart-router
+route_model: intentmux
 default_route: lite-upstream
 route_bank_path: missing.yaml
 routes:
@@ -245,7 +245,7 @@ def test_load_settings_requires_route_bank_when_enabled(tmp_path: Path):
     routes_path = tmp_path / "routes.yaml"
     routes_path.write_text(
         """
-route_model: smart-router
+route_model: intentmux
 default_route: lite-upstream
 require_route_bank: true
 route_bank_path: missing.yaml
@@ -267,7 +267,7 @@ def test_load_settings_requires_route_bank_to_provide_declared_route_utterances(
     bank_path = tmp_path / "route_bank.yaml"
     routes_path.write_text(
         """
-route_model: smart-router
+route_model: intentmux
 default_route: lite-upstream
 require_route_bank: true
 route_bank_path: route_bank.yaml
@@ -299,7 +299,7 @@ def test_load_settings_required_route_bank_accepts_duplicate_utterances(tmp_path
     bank_path = tmp_path / "route_bank.yaml"
     routes_path.write_text(
         """
-route_model: smart-router
+route_model: intentmux
 default_route: lite-upstream
 require_route_bank: true
 route_bank_path: route_bank.yaml
@@ -333,7 +333,7 @@ def test_load_settings_requires_route_bank_via_environment(monkeypatch, tmp_path
     routes_path = tmp_path / "routes.yaml"
     routes_path.write_text(
         """
-route_model: smart-router
+route_model: intentmux
 default_route: lite-upstream
 route_bank_path: missing.yaml
 routes:
@@ -361,7 +361,7 @@ def test_load_settings_resolves_route_bank_from_cwd_when_not_next_to_config(
     routes_path = config_dir / "routes.yaml"
     routes_path.write_text(
         """
-route_model: smart-router
+route_model: intentmux
 default_route: lite-upstream
 route_bank_path: data/semantic_sets/route_bank.yaml
 routes:
@@ -400,7 +400,7 @@ def test_embedding_api_key_and_headers_can_come_from_environment(
     routes_path = tmp_path / "routes.yaml"
     routes_path.write_text(
         """
-route_model: semantic-router
+route_model: intentmux
 default_route: lite-upstream
 routes:
   lite-upstream:
@@ -423,7 +423,7 @@ def test_embedding_batch_size_can_come_from_environment(monkeypatch, tmp_path: P
     routes_path = tmp_path / "routes.yaml"
     routes_path.write_text(
         """
-route_model: semantic-router
+route_model: intentmux
 default_route: lite-upstream
 routes:
   lite-upstream:
@@ -446,7 +446,7 @@ def test_route_embedding_cache_defaults_to_runtime_home(monkeypatch, tmp_path: P
     routes_path.parent.mkdir(parents=True)
     routes_path.write_text(
         """
-route_model: semantic-router
+route_model: intentmux
 default_route: lite-upstream
 routes:
   lite-upstream:
@@ -474,7 +474,7 @@ def test_route_embedding_cache_infers_runtime_home_from_explicit_runtime_config(
     routes_path.parent.mkdir(parents=True)
     routes_path.write_text(
         """
-route_model: semantic-router
+route_model: intentmux
 default_route: lite-upstream
 routes:
   lite-upstream:
@@ -501,7 +501,7 @@ def test_route_embedding_cache_path_can_come_from_environment(
     routes_path = tmp_path / "routes.yaml"
     routes_path.write_text(
         """
-route_model: semantic-router
+route_model: intentmux
 default_route: lite-upstream
 routes:
   lite-upstream:
@@ -526,7 +526,7 @@ def test_route_kernel_can_come_from_environment(monkeypatch, tmp_path: Path):
     config_path = tmp_path / "routes.yaml"
     config_path.write_text(
         """
-route_model: auto
+route_model: intentmux
 fallback_route_id: lite
 routes:
   lite:
@@ -551,7 +551,7 @@ routes:
 
 def test_route_kernel_defaults_to_aurelio_hybrid():
     settings = RouterSettings(
-        route_model="auto",
+        route_model="intentmux",
         fallback_route_id="lite",
         routes={
             "lite": RouteSpec(
@@ -575,7 +575,7 @@ def test_route_kernel_defaults_to_aurelio_hybrid():
 def test_aurelio_hybrid_alpha_must_not_be_zero():
     with pytest.raises(ValueError, match="aurelio_hybrid_alpha"):
         RouterSettings(
-            route_model="auto",
+            route_model="intentmux",
             fallback_route_id="lite",
             aurelio_hybrid_alpha=0.0,
             routes={
@@ -599,7 +599,7 @@ def test_empty_embedding_api_key_env_does_not_clear_configured_key(
     routes_path = tmp_path / "routes.yaml"
     routes_path.write_text(
         """
-route_model: semantic-router
+route_model: intentmux
 default_route: lite-upstream
 embedding_api_key: sk-configured
 routes:
@@ -621,7 +621,7 @@ def test_invalid_embedding_headers_json_env_fails_loudly(monkeypatch, tmp_path: 
     routes_path = tmp_path / "routes.yaml"
     routes_path.write_text(
         """
-route_model: semantic-router
+route_model: intentmux
 default_route: lite-upstream
 routes:
   lite-upstream:
@@ -660,31 +660,31 @@ def test_default_hard_rules_keep_only_high_precision_deep_escalations():
     assert settings.hard_rules[0].route_id == "deep"
 
 
-def test_router_settings_defaults_entry_model_to_semantic_router():
+def test_router_settings_defaults_entry_model_to_intentmux():
     settings = RouterSettings(
         routes={
             "lite": RouteSpec(description="low risk", utterances=["x"]),
         }
     )
-    assert settings.route_model == "semantic-router"
-    assert settings.entry_model == "semantic-router"
+    assert settings.route_model == "intentmux"
+    assert settings.entry_model == "intentmux"
 
 
 def test_router_settings_accepts_legacy_route_model_config_key():
     settings = RouterSettings.model_validate(
         {
-            "route_model": "smart-router",
+            "route_model": "intentmux",
             "routes": {"lite": {"description": "low risk", "utterances": ["x"]}},
         }
     )
-    assert settings.route_model == "smart-router"
+    assert settings.route_model == "intentmux"
 
 
 def test_load_settings_reads_litellm_timeout_override(tmp_path: Path, monkeypatch):
     routes_path = tmp_path / "routes.yaml"
     routes_path.write_text(
         """
-route_model: semantic-router
+route_model: intentmux
 default_route: lite-upstream
 routes:
   lite-upstream:
@@ -777,7 +777,7 @@ def test_load_settings_records_runtime_config_diagnostics(tmp_path: Path, monkey
     routes_path.parent.mkdir(parents=True)
     routes_path.write_text(
         """
-route_model: auto
+route_model: intentmux
 fallback_route_id: lite
 routes:
   lite:
@@ -806,7 +806,7 @@ def test_load_settings_marks_repo_default_when_runtime_config_is_absent(
     repo_config.parent.mkdir(parents=True)
     repo_config.write_text(
         """
-route_model: auto
+route_model: intentmux
 fallback_route_id: lite
 routes:
   lite:
@@ -837,7 +837,7 @@ def test_load_settings_uses_intentmux_home_defaults_for_runtime_paths(
     routes_path.parent.mkdir(parents=True)
     routes_path.write_text(
         """
-route_model: auto
+route_model: intentmux
 fallback_route_id: lite
 audit_log_enabled: true
 routes:
@@ -857,7 +857,7 @@ routes:
 
     settings = load_settings()
 
-    assert settings.route_model == "auto"
+    assert settings.route_model == "intentmux"
     assert settings.audit_log_dir == str(runtime_home / "logs" / "routes")
     assert settings.prompt_log_mode == "raw_local"
     assert settings.prompt_log_dir == str(runtime_home / "logs" / "prompts")
@@ -869,7 +869,7 @@ def test_load_settings_defaults_logs_to_ignored_repo_runtime_home(
     routes_path = tmp_path / "routes.yaml"
     routes_path.write_text(
         """
-route_model: auto
+route_model: intentmux
 fallback_route_id: lite
 audit_log_enabled: true
 routes:
@@ -908,7 +908,7 @@ def test_load_settings_reads_audit_log_overrides(tmp_path: Path, monkeypatch):
     audit_dir = tmp_path / "logs" / "routes"
     routes_path.write_text(
         """
-route_model: semantic-router
+route_model: intentmux
 default_route: lite-upstream
 routes:
   lite-upstream:
@@ -934,7 +934,7 @@ def test_load_settings_reads_prompt_review_log_overrides(tmp_path: Path, monkeyp
     prompt_dir = tmp_path / "logs" / "prompts"
     routes_path.write_text(
         """
-route_model: semantic-router
+route_model: intentmux
 default_route: lite-upstream
 routes:
   lite-upstream:
@@ -961,7 +961,7 @@ def test_load_settings_defaults_prompt_review_log_dir_for_runtime_home(
     routes_path = tmp_path / "routes.yaml"
     routes_path.write_text(
         """
-route_model: semantic-router
+route_model: intentmux
 default_route: lite-upstream
 routes:
   lite-upstream:
@@ -984,7 +984,7 @@ routes:
 def test_router_settings_rejects_prompt_review_log_without_directory():
     with pytest.raises(ValidationError, match="prompt_log_dir"):
         RouterSettings(
-            route_model="semantic-router",
+            route_model="intentmux",
             fallback_route_id="lite",
             prompt_log_mode="raw_local",
             routes={
@@ -1001,7 +1001,7 @@ def test_load_settings_disables_access_log_by_default(tmp_path: Path):
     routes_path = tmp_path / "routes.yaml"
     routes_path.write_text(
         """
-route_model: semantic-router
+route_model: intentmux
 default_route: lite-upstream
 routes:
   lite-upstream:
@@ -1021,7 +1021,7 @@ def test_load_settings_reads_access_log_override(tmp_path: Path, monkeypatch):
     routes_path = tmp_path / "routes.yaml"
     routes_path.write_text(
         """
-route_model: semantic-router
+route_model: intentmux
 default_route: lite-upstream
 routes:
   lite-upstream:
@@ -1042,7 +1042,7 @@ def test_load_settings_reads_readiness_timeout_override(tmp_path: Path, monkeypa
     routes_path = tmp_path / "routes.yaml"
     routes_path.write_text(
         """
-route_model: semantic-router
+route_model: intentmux
 default_route: lite-upstream
 routes:
   lite-upstream:
@@ -1062,8 +1062,8 @@ routes:
 def test_router_settings_rejects_default_route_that_points_back_to_entry_model():
     with pytest.raises(ValidationError, match="fallback_route_id"):
         RouterSettings(
-            route_model="semantic-router",
-            default_route="semantic-router",
+            route_model="intentmux",
+            default_route="intentmux",
             routes={
                 "lite-upstream": RouteSpec(
                     description="seed cheap",
@@ -1076,10 +1076,10 @@ def test_router_settings_rejects_default_route_that_points_back_to_entry_model()
 def test_router_settings_rejects_recursive_route_target():
     with pytest.raises(ValidationError, match="recursive"):
         RouterSettings(
-            route_model="semantic-router",
+            route_model="intentmux",
             default_route="lite-upstream",
             routes={
-                "semantic-router": RouteSpec(
+                "intentmux": RouteSpec(
                     description="recursive target",
                     utterances=["send back to entry model"],
                 ),
@@ -1093,7 +1093,7 @@ def test_router_settings_rejects_recursive_route_target():
 
 def test_router_settings_allows_user_defined_route_ids_and_target_models():
     settings = RouterSettings(
-        route_model="semantic-router",
+        route_model="intentmux",
         fallback_route_id="local",
         routes={
             "local": RouteSpec(
@@ -1116,11 +1116,11 @@ def test_router_settings_allows_user_defined_route_ids_and_target_models():
 def test_router_settings_rejects_recursive_target_model():
     with pytest.raises(ValidationError, match="target_model"):
         RouterSettings(
-            route_model="semantic-router",
+            route_model="intentmux",
             fallback_route_id="lite",
             routes={
                 "lite": RouteSpec(
-                    target_model="semantic-router",
+                    target_model="intentmux",
                     description="recursive target",
                     utterances=["send back to entry model"],
                 ),
@@ -1131,12 +1131,12 @@ def test_router_settings_rejects_recursive_target_model():
 def test_router_settings_accepts_entry_model_alias_key():
     settings = RouterSettings.model_validate(
         {
-            "entry_model": "smart-router",
+            "entry_model": "intentmux",
             "routes": {"lite": {"description": "low risk", "utterances": ["x"]}},
         }
     )
-    assert settings.route_model == "smart-router"
-    assert settings.entry_model == "smart-router"
+    assert settings.route_model == "intentmux"
+    assert settings.entry_model == "intentmux"
 
 
 def test_router_settings_prefers_route_model_when_both_alias_keys_present():

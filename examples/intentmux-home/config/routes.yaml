@@ -2,7 +2,7 @@
 # then edit this file there. The lite.target_model and deep.target_model values
 # below are the main deployment mapping from IntentMux route ids to your
 # upstream OpenAI-compatible model names or LiteLLM model groups.
-route_model: auto
+route_model: intentmux
 fallback_route_id: lite
 agent_signal_enabled: true
 agent_signal_route_id: deep

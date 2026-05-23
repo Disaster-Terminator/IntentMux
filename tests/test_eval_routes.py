@@ -556,7 +556,7 @@ async def test_eval_routes_reuses_persisted_eval_query_embeddings(
     route_cache = tmp_path / "route-embeddings.json"
     routes.write_text(
         f"""
-route_model: auto
+route_model: intentmux
 fallback_route_id: lite
 route_kernel: basic
 threshold: 0.1
@@ -566,12 +566,12 @@ embedding_model: local-embedding
 route_embedding_cache_path: {route_cache}
 routes:
   lite:
-    target_model: cheap-router
+    target_model: lite-upstream
     description: simple requests
     utterances:
       - simple request
   deep:
-    target_model: pro-router
+    target_model: deep-upstream
     description: hard requests
     utterances:
       - hard request
@@ -695,7 +695,7 @@ async def test_eval_routes_passes_configured_embedding_batch_size(
     routes = tmp_path / "routes.yaml"
     routes.write_text(
         """
-route_model: auto
+route_model: intentmux
 fallback_route_id: lite
 route_kernel: basic
 threshold: 0.1
@@ -705,12 +705,12 @@ embedding_model: local-embedding
 embedding_batch_size: 7
 routes:
   lite:
-    target_model: cheap-router
+    target_model: lite-upstream
     description: simple requests
     utterances:
       - simple request
   deep:
-    target_model: pro-router
+    target_model: deep-upstream
     description: hard requests
     utterances:
       - hard request

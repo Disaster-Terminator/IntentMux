@@ -21,7 +21,7 @@
 
 <table>
   <tr>
-    <td><strong>Two-tier routing</strong><br>`auto` routes automatically; `lite` / `deep` are explicit model entries.</td>
+    <td><strong>Two-tier routing</strong><br>`intentmux` routes automatically; `lite` / `deep` are explicit model entries.</td>
     <td><strong>Clear boundary</strong><br>Keep LiteLLM responsible for provider routing, fallback, rate limits, keys, and budgets.</td>
   </tr>
   <tr>
@@ -33,7 +33,7 @@
 ## What It Is
 
 IntentMux is a lightweight routing sidecar. It accepts OpenAI-compatible chat
-completion requests and routes `model=auto` traffic to two product routes:
+completion requests and routes `model=intentmux` traffic to two product routes:
 
 - `lite`: lower-risk, lower-cost, lightweight tasks.
 - `deep`: code, debugging, architecture, risk analysis, and tasks that need a
@@ -44,18 +44,18 @@ another provider gateway. It owns entry-model semantics, route decisions,
 OpenAI-compatible proxying, and auditable route metadata.
 
 ```text
-model=auto -> route_id(lite/deep) -> target_model -> OpenAI-compatible upstream
+model=intentmux -> route_id(lite/deep) -> target_model -> OpenAI-compatible upstream
 ```
 
 Supported topologies:
 
 ```text
 Direct gateway:
-client -> IntentMux :4001/v1, model=auto|lite|deep
+client -> IntentMux :4001/v1, model=intentmux|lite|deep
        -> OpenAI-compatible upstream
 
 LiteLLM-first sidecar:
-client -> LiteLLM :4000, model=semantic-router
+client -> LiteLLM :4000, model=intentmux
        -> IntentMux :4001
        -> LiteLLM target model group
 ```
@@ -109,7 +109,7 @@ Default endpoints:
 
 First deployment checklist:
 
-1. Use IntentMux directly, or add a `semantic-router` model entry in LiteLLM.
+1. Use IntentMux directly, or add a `intentmux` model entry in LiteLLM.
 2. Copy `examples/intentmux-home/` to a persistent runtime home.
 3. Set `routes.lite.target_model` and `routes.deep.target_model` in runtime
    `config/routes.yaml`.
@@ -120,7 +120,7 @@ First deployment checklist:
 Core `routes.yaml` shape:
 
 ```yaml
-route_model: auto
+route_model: intentmux
 fallback_route_id: lite
 
 routes:
@@ -160,25 +160,24 @@ Supported endpoints:
 - `GET /ready`
 - `GET /v1/models`
 - `POST /v1/chat/completions`
-- `POST /v1/semantic-router/decision`
+- `POST /v1/intentmux/decision`
 
 Entry models:
 
 | Model | Purpose |
 | --- | --- |
-| `auto` | default automatic routing |
+| `intentmux` | default automatic routing |
 | `lite` | force the `lite` route |
 | `deep` | force the `deep` route |
-| `semantic-router` | LiteLLM sidecar compatibility entry, equivalent to `auto` |
 
-`/v1/models` advertises only `auto`, `lite`, and `deep`.
+`/v1/models` advertises only `intentmux`, `lite`, and `deep`.
 
 Preview a route decision without forwarding upstream:
 
 ```bash
-curl http://127.0.0.1:4001/v1/semantic-router/decision \
+curl http://127.0.0.1:4001/v1/intentmux/decision \
   -H "Content-Type: application/json" \
-  -d '{"model":"auto","messages":[{"role":"user","content":"Why is this production bug intermittent?"}]}'
+  -d '{"model":"intentmux","messages":[{"role":"user","content":"Why is this production bug intermittent?"}]}'
 ```
 
 The response includes route, target, policy, scores, thresholds, margins, and

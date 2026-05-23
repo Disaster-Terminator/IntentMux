@@ -149,11 +149,11 @@ should remain outside this public repository.
 
 Production may intentionally keep the LiteLLM sidecar topology even though the
 product also supports direct OpenAI-compatible gateway use. The rollout helper
-therefore checks both contracts: before rebuilding it probes the legacy
-`semantic-router` sidecar entry against the existing container, and after
-recreating IntentMux it probes the canonical `auto` direct entry plus the
-cost-first decision endpoint. This keeps the local production topology stable
-while forcing development changes to preserve the broader gateway contract.
+therefore checks both contracts: before rebuilding it probes the `intentmux`
+sidecar entry against the existing container, and after recreating IntentMux it
+probes the canonical `intentmux` direct entry plus the cost-first decision
+endpoint. This keeps the local production topology stable while forcing
+development changes to preserve the broader gateway contract.
 
 Runtime config sync is opt-in:
 

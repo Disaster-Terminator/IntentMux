@@ -86,7 +86,7 @@ def create_app(
         return {
             "object": "list",
             "data": [
-                {"id": "auto", "object": "model"},
+                {"id": settings.route_model, "object": "model"},
                 {"id": "lite", "object": "model"},
                 {"id": "deep", "object": "model"},
             ],
@@ -128,7 +128,7 @@ def create_app(
             headers={"www-authenticate": "Bearer"},
         )
 
-    @app.post("/v1/semantic-router/decision")
+    @app.post("/v1/intentmux/decision")
     async def route_decision(request: Request) -> Any:
         auth_error = require_inbound_auth(request)
         if auth_error is not None:

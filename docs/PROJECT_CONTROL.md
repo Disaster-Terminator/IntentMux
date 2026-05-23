@@ -88,7 +88,7 @@ methods to validate the scoring mechanism and baseline comparisons.
 
 Implemented:
 
-- `auto` / `lite` / `deep` route semantics and `semantic-router` sidecar entry;
+- `intentmux` / `lite` / `deep` model semantics and LiteLLM sidecar entry;
 - metadata-only route audit logs and optional local prompt review logs;
 - health reports, route budgets, review-candidate selection;
 - smoke evals and baseline comparison: `current-router`, `always-lite`,

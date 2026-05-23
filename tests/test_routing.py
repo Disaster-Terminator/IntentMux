@@ -23,7 +23,7 @@ class FakeEmbeddingClient:
 
 def settings() -> RouterSettings:
     return RouterSettings(
-        route_model="smart-router",
+        route_model="intentmux",
         fallback_route_id="lite",
         threshold=0.5,
         margin=0.05,
@@ -45,7 +45,7 @@ def settings() -> RouterSettings:
 
 def canonical_settings() -> RouterSettings:
     return RouterSettings(
-        route_model="auto",
+        route_model="intentmux",
         fallback_route_id="lite",
         threshold=0.5,
         margin=0.05,
@@ -106,7 +106,7 @@ async def test_auto_entry_model_uses_normal_routing():
     router = Router(route_settings, FakeEmbeddingClient(vectors))
 
     decision = await router.decide(
-        {"model": "auto", "messages": [{"role": "user", "content": "把这句话翻译成英文"}]}
+        {"model": "intentmux", "messages": [{"role": "user", "content": "把这句话翻译成英文"}]}
     )
 
     assert decision.route_id == "lite"
@@ -117,7 +117,7 @@ async def test_auto_entry_model_uses_normal_routing():
 @pytest.mark.asyncio
 async def test_embedding_decision_reports_matched_route_bank_provenance():
     route_settings = RouterSettings(
-        route_model="auto",
+        route_model="intentmux",
         fallback_route_id="lite",
         threshold=0.5,
         margin=0.05,
@@ -144,7 +144,7 @@ async def test_embedding_decision_reports_matched_route_bank_provenance():
     router = Router(route_settings, FakeEmbeddingClient(vectors))
 
     decision = await router.decide(
-        {"model": "auto", "messages": [{"role": "user", "content": "线上 bug 怎么修"}]}
+        {"model": "intentmux", "messages": [{"role": "user", "content": "线上 bug 怎么修"}]}
     )
 
     assert decision.route_id == "deep"
@@ -161,7 +161,7 @@ async def test_embedding_decision_reports_matched_route_bank_provenance():
 @pytest.mark.asyncio
 async def test_embedding_decision_reports_inline_config_source_when_no_bank_source():
     route_settings = RouterSettings(
-        route_model="auto",
+        route_model="intentmux",
         fallback_route_id="lite",
         threshold=0.5,
         margin=0.05,
@@ -186,7 +186,7 @@ async def test_embedding_decision_reports_inline_config_source_when_no_bank_sour
     router = Router(route_settings, FakeEmbeddingClient(vectors))
 
     decision = await router.decide(
-        {"model": "auto", "messages": [{"role": "user", "content": "线上 bug 怎么修"}]}
+        {"model": "intentmux", "messages": [{"role": "user", "content": "线上 bug 怎么修"}]}
     )
 
     assert decision.route_id == "deep"
@@ -197,7 +197,7 @@ async def test_embedding_decision_reports_inline_config_source_when_no_bank_sour
 async def test_aurelio_route_kernel_uses_upstream_router_and_keeps_provenance():
     pytest.importorskip("semantic_router")
     route_settings = RouterSettings(
-        route_model="auto",
+        route_model="intentmux",
         fallback_route_id="lite",
         route_kernel="aurelio",
         threshold=0.5,
@@ -225,7 +225,7 @@ async def test_aurelio_route_kernel_uses_upstream_router_and_keeps_provenance():
     router = Router(route_settings, FakeEmbeddingClient(vectors))
 
     decision = await router.decide(
-        {"model": "auto", "messages": [{"role": "user", "content": "线上 bug 怎么修"}]}
+        {"model": "intentmux", "messages": [{"role": "user", "content": "线上 bug 怎么修"}]}
     )
 
     assert decision.route_id == "deep"
@@ -242,7 +242,7 @@ async def test_aurelio_route_kernel_uses_upstream_router_and_keeps_provenance():
 @pytest.mark.asyncio
 async def test_aurelio_hybrid_kernel_uses_lexical_signal_without_extra_model():
     route_settings = RouterSettings(
-        route_model="auto",
+        route_model="intentmux",
         fallback_route_id="lite",
         route_kernel="aurelio",
         aurelio_router="hybrid",
@@ -273,7 +273,7 @@ async def test_aurelio_hybrid_kernel_uses_lexical_signal_without_extra_model():
     router = Router(route_settings, FakeEmbeddingClient(vectors))
 
     decision = await router.decide(
-        {"model": "auto", "messages": [{"role": "user", "content": "线上事故怎么处理"}]}
+        {"model": "intentmux", "messages": [{"role": "user", "content": "线上事故怎么处理"}]}
     )
 
     assert decision.route_id == "deep"
@@ -286,7 +286,7 @@ async def test_aurelio_hybrid_kernel_uses_lexical_signal_without_extra_model():
 async def test_aurelio_hybrid_provenance_tracks_hybrid_match_not_dense_fallback():
     pytest.importorskip("semantic_router")
     route_settings = RouterSettings(
-        route_model="auto",
+        route_model="intentmux",
         fallback_route_id="lite",
         route_kernel="aurelio",
         aurelio_router="hybrid",
@@ -322,7 +322,7 @@ async def test_aurelio_hybrid_provenance_tracks_hybrid_match_not_dense_fallback(
     router = Router(route_settings, FakeEmbeddingClient(vectors))
 
     decision = await router.decide(
-        {"model": "auto", "messages": [{"role": "user", "content": "线上事故怎么处理"}]}
+        {"model": "intentmux", "messages": [{"role": "user", "content": "线上事故怎么处理"}]}
     )
 
     assert decision.route_id == "deep"
@@ -336,7 +336,7 @@ async def test_aurelio_hybrid_provenance_tracks_hybrid_match_not_dense_fallback(
 async def test_aurelio_hybrid_provenance_index_is_reused_between_decisions():
     pytest.importorskip("semantic_router")
     route_settings = RouterSettings(
-        route_model="auto",
+        route_model="intentmux",
         fallback_route_id="lite",
         route_kernel="aurelio",
         aurelio_router="hybrid",
@@ -365,12 +365,12 @@ async def test_aurelio_hybrid_provenance_index_is_reused_between_decisions():
     router = Router(route_settings, FakeEmbeddingClient(vectors))
 
     await router.decide(
-        {"model": "auto", "messages": [{"role": "user", "content": "线上事故怎么处理"}]}
+        {"model": "intentmux", "messages": [{"role": "user", "content": "线上事故怎么处理"}]}
     )
     first_index = router._hybrid_provenance_index
 
     await router.decide(
-        {"model": "auto", "messages": [{"role": "user", "content": "帮我翻译一下"}]}
+        {"model": "intentmux", "messages": [{"role": "user", "content": "帮我翻译一下"}]}
     )
 
     assert router._hybrid_provenance_index is first_index
@@ -381,7 +381,7 @@ async def test_route_embedding_cache_reuses_persisted_vectors_between_router_ins
     tmp_path: Path,
 ):
     route_settings = RouterSettings(
-        route_model="auto",
+        route_model="intentmux",
         fallback_route_id="lite",
         threshold=0.5,
         margin=0.05,
@@ -411,7 +411,7 @@ async def test_route_embedding_cache_reuses_persisted_vectors_between_router_ins
     first_router = Router(route_settings, first_client)
 
     first_decision = await first_router.decide(
-        {"model": "auto", "messages": [{"role": "user", "content": "线上 bug 怎么修"}]}
+        {"model": "intentmux", "messages": [{"role": "user", "content": "线上 bug 怎么修"}]}
     )
 
     assert first_decision.route_id == "deep"
@@ -421,7 +421,7 @@ async def test_route_embedding_cache_reuses_persisted_vectors_between_router_ins
     second_router = Router(route_settings, second_client)
 
     second_decision = await second_router.decide(
-        {"model": "auto", "messages": [{"role": "user", "content": "线上 bug 怎么修"}]}
+        {"model": "intentmux", "messages": [{"role": "user", "content": "线上 bug 怎么修"}]}
     )
 
     assert second_client.calls == [["线上 bug 怎么修"]]
@@ -435,7 +435,7 @@ async def test_route_embedding_cache_reuses_persisted_vectors_between_router_ins
 @pytest.mark.asyncio
 async def test_route_embedding_cache_misses_when_embedding_model_changes(tmp_path: Path):
     route_settings = RouterSettings(
-        route_model="auto",
+        route_model="intentmux",
         fallback_route_id="lite",
         threshold=0.5,
         margin=0.05,
@@ -461,7 +461,7 @@ async def test_route_embedding_cache_misses_when_embedding_model_changes(tmp_pat
     }
     first_router = Router(route_settings, FakeEmbeddingClient(vectors))
     await first_router.decide(
-        {"model": "auto", "messages": [{"role": "user", "content": "线上 bug 怎么修"}]}
+        {"model": "intentmux", "messages": [{"role": "user", "content": "线上 bug 怎么修"}]}
     )
     changed_model_settings = route_settings.model_copy(
         update={"embedding_model": "embed-model-b"}
@@ -470,7 +470,7 @@ async def test_route_embedding_cache_misses_when_embedding_model_changes(tmp_pat
     changed_model_router = Router(changed_model_settings, changed_model_client)
 
     decision = await changed_model_router.decide(
-        {"model": "auto", "messages": [{"role": "user", "content": "线上 bug 怎么修"}]}
+        {"model": "intentmux", "messages": [{"role": "user", "content": "线上 bug 怎么修"}]}
     )
 
     assert decision.route_id == "deep"
@@ -481,7 +481,7 @@ async def test_route_embedding_cache_misses_when_embedding_model_changes(tmp_pat
 async def test_route_embedding_cache_misses_when_route_source_changes(tmp_path: Path):
     cache_path = tmp_path / "route-embeddings.json"
     base_settings = RouterSettings(
-        route_model="auto",
+        route_model="intentmux",
         fallback_route_id="lite",
         threshold=0.5,
         margin=0.05,
@@ -506,7 +506,7 @@ async def test_route_embedding_cache_misses_when_route_source_changes(tmp_path: 
         "翻译一下": [1.0, 0.0, 0.0],
     }
     await Router(base_settings, FakeEmbeddingClient(vectors)).decide(
-        {"model": "auto", "messages": [{"role": "user", "content": "翻译一下"}]}
+        {"model": "intentmux", "messages": [{"role": "user", "content": "翻译一下"}]}
     )
     changed_source_settings = base_settings.model_copy(
         update={
@@ -524,7 +524,7 @@ async def test_route_embedding_cache_misses_when_route_source_changes(tmp_path: 
     changed_source_client = FakeEmbeddingClient(vectors)
 
     decision = await Router(changed_source_settings, changed_source_client).decide(
-        {"model": "auto", "messages": [{"role": "user", "content": "翻译一下"}]}
+        {"model": "intentmux", "messages": [{"role": "user", "content": "翻译一下"}]}
     )
 
     assert decision.match_source == "new_source"
@@ -535,7 +535,7 @@ async def test_route_embedding_cache_misses_when_route_source_changes(tmp_path: 
 async def test_route_embedding_cache_can_be_disabled(tmp_path: Path):
     cache_path = tmp_path / "route-embeddings.json"
     route_settings = RouterSettings(
-        route_model="auto",
+        route_model="intentmux",
         fallback_route_id="lite",
         threshold=0.5,
         margin=0.05,
@@ -562,7 +562,7 @@ async def test_route_embedding_cache_can_be_disabled(tmp_path: Path):
     router = Router(route_settings, FakeEmbeddingClient(vectors))
 
     decision = await router.decide(
-        {"model": "auto", "messages": [{"role": "user", "content": "线上 bug 怎么修"}]}
+        {"model": "intentmux", "messages": [{"role": "user", "content": "线上 bug 怎么修"}]}
     )
 
     assert decision.route_id == "deep"
@@ -582,7 +582,7 @@ async def test_auto_entry_alias_works_with_legacy_route_model_config():
     router = Router(route_settings, FakeEmbeddingClient(vectors))
 
     decision = await router.decide(
-        {"model": "auto", "messages": [{"role": "user", "content": "把这句话翻译成英文"}]}
+        {"model": "intentmux", "messages": [{"role": "user", "content": "把这句话翻译成英文"}]}
     )
 
     assert decision.route_id == "lite"
@@ -603,7 +603,7 @@ async def test_legacy_semantic_router_entry_model_alias_uses_normal_routing():
 
     decision = await router.decide(
         {
-            "model": "semantic-router",
+            "model": "intentmux",
             "messages": [{"role": "user", "content": "代码审查这个变更"}],
         }
     )
@@ -657,14 +657,14 @@ async def test_metadata_route_id_accepts_canonical_ids_and_legacy_aliases():
 
     canonical_decision = await router.decide(
         {
-            "model": "auto",
+            "model": "intentmux",
             "metadata": {"route_id": "deep"},
             "messages": [{"role": "user", "content": "你好"}],
         }
     )
     legacy_decision = await router.decide(
         {
-            "model": "auto",
+            "model": "intentmux",
             "metadata": {"route_id": "lite"},
             "messages": [{"role": "user", "content": "密钥疑似泄漏"}],
         }
@@ -684,7 +684,7 @@ async def test_high_precision_hard_rule_routes_to_deep_without_embedding():
 
     decision = await router.decide(
         {
-            "model": "smart-router",
+            "model": "intentmux",
             "messages": [{"role": "user", "content": "生产环境发生线上事故，需要回滚"}],
         }
     )
@@ -703,7 +703,7 @@ async def test_default_security_reviewer_role_text_does_not_force_deep_route():
 
     decision = await router.decide(
         {
-            "model": "auto",
+            "model": "intentmux",
             "messages": [
                 {
                     "role": "user",
@@ -730,7 +730,7 @@ async def test_default_recursive_delete_risk_still_routes_to_deep_without_embedd
 
     decision = await router.decide(
         {
-            "model": "auto",
+            "model": "intentmux",
             "messages": [
                 {
                     "role": "user",
@@ -760,7 +760,7 @@ async def test_agent_instruction_boilerplate_uses_cost_first_fallback():
 
     decision = await router.decide(
         {
-            "model": "smart-router",
+            "model": "intentmux",
             "messages": [{"role": "user", "content": SUPERPOWERS_BOILERPLATE}],
         },
         format_signals={
@@ -797,7 +797,7 @@ async def test_agent_instruction_boilerplate_does_not_trigger_hard_rule_without_
 
     decision = await router.decide(
         {
-            "model": "smart-router",
+            "model": "intentmux",
             "messages": [{"role": "user", "content": SUPERPOWERS_BOILERPLATE}],
         },
     )
@@ -820,7 +820,7 @@ async def test_ambiguous_engineering_terms_use_embedding_not_hard_rule():
 
     decision = await router.decide(
         {
-            "model": "smart-router",
+            "model": "intentmux",
             "messages": [
                 {"role": "system", "content": "route normally"},
                 {"role": "user", "content": "帮我看这个 PR 里的索引改动是否合理"},
@@ -850,7 +850,7 @@ async def test_ambiguous_engineering_terms_can_route_lite_when_semantics_are_lig
 
     decision = await router.decide(
         {
-            "model": "smart-router",
+            "model": "intentmux",
             "messages": [{"role": "user", "content": "把这个 PR 标题翻译成英文"}],
         }
     )
@@ -874,7 +874,7 @@ async def test_low_confidence_embedding_falls_back_to_default_route():
 
     decision = await router.decide(
         {
-            "model": "smart-router",
+            "model": "intentmux",
             "messages": [{"role": "user", "content": "天气怎么样"}],
         }
     )
@@ -898,7 +898,7 @@ async def test_agent_tool_schema_does_not_override_cost_first_routing():
 
     decision = await router.decide(
         {
-            "model": "smart-router",
+            "model": "intentmux",
             "messages": [{"role": "user", "content": "翻译这段工具说明"}],
         },
         format_signals={
@@ -923,7 +923,7 @@ async def test_agent_tool_history_does_not_override_cost_first_routing():
 
     decision = await router.decide(
         {
-            "model": "smart-router",
+            "model": "intentmux",
             "messages": [{"role": "user", "content": "继续"}],
         },
         format_signals={
@@ -948,7 +948,7 @@ async def test_legacy_functions_do_not_override_cost_first_routing():
 
     decision = await router.decide(
         {
-            "model": "smart-router",
+            "model": "intentmux",
             "messages": [{"role": "user", "content": "解释这个函数"}],
         },
         format_signals={
@@ -973,7 +973,7 @@ async def test_long_multiturn_context_does_not_override_cost_first_routing():
 
     decision = await router.decide(
         {
-            "model": "smart-router",
+            "model": "intentmux",
             "messages": [{"role": "user", "content": "总结目前状态"}],
         },
         format_signals={
@@ -1003,7 +1003,7 @@ async def test_empty_agent_signal_fields_do_not_route_to_deep():
 
     decision = await router.decide(
         {
-            "model": "smart-router",
+            "model": "intentmux",
             "messages": [{"role": "user", "content": "天气怎么样"}],
         },
         format_signals={
@@ -1027,7 +1027,7 @@ async def test_empty_agent_signal_fields_do_not_route_to_deep():
 @pytest.mark.asyncio
 async def test_agent_signal_is_disabled_when_route_is_absent():
     route_settings = RouterSettings(
-        route_model="smart-router",
+        route_model="intentmux",
         fallback_route_id="lite",
         threshold=0.5,
         margin=0.05,
@@ -1043,7 +1043,7 @@ async def test_agent_signal_is_disabled_when_route_is_absent():
 
     decision = await router.decide(
         {
-            "model": "smart-router",
+            "model": "intentmux",
             "messages": [{"role": "user", "content": "翻译这段工具说明"}],
         },
         format_signals={
@@ -1066,7 +1066,7 @@ async def test_explicit_route_precedence_over_agent_signal():
 
     decision = await router.decide(
         {
-            "model": "smart-router",
+            "model": "intentmux",
             "metadata": {"route_id": "lite"},
             "messages": [{"role": "user", "content": "继续"}],
         },
@@ -1089,7 +1089,7 @@ async def test_hard_rule_precedence_over_agent_signal():
 
     decision = await router.decide(
         {
-            "model": "smart-router",
+            "model": "intentmux",
             "messages": [{"role": "user", "content": "密钥疑似泄漏"}],
         },
         format_signals={
@@ -1112,7 +1112,7 @@ async def test_embedding_failure_falls_back_to_default_route():
 
     decision = await router.decide(
         {
-            "model": "smart-router",
+            "model": "intentmux",
             "messages": [{"role": "user", "content": "解释一下这个概念"}],
         }
     )
@@ -1186,7 +1186,7 @@ async def test_decide_with_empty_extracted_text_returns_low_confidence_not_crash
     ):
         decision = await router.decide(
             {
-                "model": "smart-router",
+                "model": "intentmux",
                 "messages": bad_messages,
             }
         )
@@ -1218,7 +1218,7 @@ async def test_empty_utterance_route_is_skipped_for_embedding_and_hard_rule_can_
 
     hard_rule_decision = await router.decide(
         {
-            "model": "smart-router",
+            "model": "intentmux",
             "messages": [{"role": "user", "content": "这是紧急事件"}],
         }
     )
@@ -1231,7 +1231,7 @@ async def test_empty_utterance_route_is_skipped_for_embedding_and_hard_rule_can_
 @pytest.mark.asyncio
 async def test_all_empty_utterance_routes_fall_back_deterministically_without_embedding_failure():
     route_settings = RouterSettings(
-        route_model="smart-router",
+        route_model="intentmux",
         fallback_route_id="fallback",
         threshold=0.5,
         margin=0.05,
@@ -1244,7 +1244,7 @@ async def test_all_empty_utterance_routes_fall_back_deterministically_without_em
 
     decision = await router.decide(
         {
-            "model": "smart-router",
+            "model": "intentmux",
             "messages": [{"role": "user", "content": "anything"}],
         }
     )
@@ -1261,7 +1261,7 @@ async def test_decide_with_empty_messages_returns_low_confidence_without_embeddi
 
     decision = await router.decide(
         {
-            "model": "smart-router",
+            "model": "intentmux",
             "messages": [],
         }
     )
@@ -1277,7 +1277,7 @@ async def test_explicit_route_id_precedence_over_legacy_metadata_keys():
 
     decision = await router.decide(
         {
-            "model": "smart-router",
+            "model": "intentmux",
             "metadata": {
                 "route_id": "deep",
                 "route": "lite",
@@ -1305,7 +1305,7 @@ async def test_unknown_explicit_route_id_is_ignored_and_normal_routing_continues
 
     decision = await router.decide(
         {
-            "model": "smart-router",
+            "model": "intentmux",
             "metadata": {"route_id": "does-not-exist"},
             "messages": [{"role": "user", "content": "代码审查这个变更"}],
         }

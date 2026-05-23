@@ -364,7 +364,7 @@ def format_slow_request(sample: SlowRequest) -> str:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Summarize semantic-router route logs.")
+    parser = argparse.ArgumentParser(description="Summarize IntentMux route logs.")
     parser.add_argument("paths", nargs="*", help="JSONL log files. Reads stdin when omitted.")
     parser.add_argument(
         "--output",

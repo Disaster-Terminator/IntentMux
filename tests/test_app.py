@@ -49,7 +49,7 @@ class FakeDecisionEmbeddingClient:
 
 def decision_router_settings() -> RouterSettings:
     return RouterSettings(
-        route_model="semantic-router",
+        route_model="intentmux",
         fallback_route_id="lite",
         threshold=0.5,
         margin=0.05,
@@ -124,12 +124,12 @@ class NoUpstreamProxy:
 
     async def forward_chat(self, payload: dict[str, Any], headers: dict[str, str]):
         self.forward_called = True
-        raise AssertionError("/v1/semantic-router/decision must not call forward_chat")
+        raise AssertionError("/v1/intentmux/decision must not call forward_chat")
 
     @asynccontextmanager
     async def stream_chat(self, payload: dict[str, Any], headers: dict[str, str]):
         self.stream_called = True
-        raise AssertionError("/v1/semantic-router/decision must not call stream_chat")
+        raise AssertionError("/v1/intentmux/decision must not call stream_chat")
         yield
 
 class FailingProxy(FakeProxy):
@@ -197,7 +197,7 @@ class UpstreamStatusStreamProxy(FakeProxy):
 def test_health_reports_ready():
     app = create_app(
         router=FakeRouter(
-            RoutingDecision("lite-upstream", "test", rewrite=True, source_model="smart-router")
+            RoutingDecision("lite-upstream", "test", rewrite=True, source_model="intentmux")
         ),
         proxy=FakeProxy(),
     )
@@ -211,7 +211,7 @@ def test_health_reports_ready():
 def test_models_lists_only_canonical_synthetic_entries_without_targets():
     app = create_app(
         settings=RouterSettings(
-            route_model="semantic-router",
+            route_model="intentmux",
             fallback_route_id="lite",
             routes={
                 "lite": RouteSpec(
@@ -236,15 +236,40 @@ def test_models_lists_only_canonical_synthetic_entries_without_targets():
     assert response.json() == {
         "object": "list",
         "data": [
-            {"id": "auto", "object": "model"},
+            {"id": "intentmux", "object": "model"},
             {"id": "lite", "object": "model"},
             {"id": "deep", "object": "model"},
         ],
     }
     response_text = response.text
     assert "semantic-router" not in response_text
+    assert "auto" not in response_text
     assert "local-lite-model" not in response_text
     assert "local-deep-model" not in response_text
+
+
+def test_intentmux_decision_endpoint_alias_matches_legacy_contract():
+    proxy = NoUpstreamProxy()
+    router = Router(
+        decision_router_settings(),
+        FakeDecisionEmbeddingClient({}),
+    )
+    app = create_app(router=router, proxy=proxy)
+
+    response = TestClient(app).post(
+        "/v1/intentmux/decision",
+        json={
+            "model": "intentmux",
+            "messages": [{"role": "user", "content": "这个线上 bug 为什么偶发"}],
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["source_model"] == "intentmux"
+    assert body["route_id"] == "deep"
+    assert body["target_model"] == "deep-upstream"
+    assert body["policy_id"] == "hard_rule"
 
 
 def test_main_disables_uvicorn_access_log_by_default(monkeypatch):
@@ -253,7 +278,7 @@ def test_main_disables_uvicorn_access_log_by_default(monkeypatch):
     monkeypatch.setattr(
         "router.app.load_settings",
         lambda: RouterSettings(
-            route_model="semantic-router",
+            route_model="intentmux",
             default_route="lite-upstream",
             routes={
                 "lite-upstream": RouteSpec(
@@ -317,7 +342,7 @@ def test_chat_completion_rewrites_smart_router_before_forwarding():
                 "deep-upstream",
                 "hard_rule:线上",
                 rewrite=True,
-                source_model="smart-router",
+                source_model="intentmux",
                 score=None,
             )
         ),
@@ -328,7 +353,7 @@ def test_chat_completion_rewrites_smart_router_before_forwarding():
         "/v1/chat/completions",
         headers={"Authorization": "Bearer litellm-test"},
         json={
-            "model": "smart-router",
+            "model": "intentmux",
             "messages": [{"role": "user", "content": "这个线上 bug 为什么偶发"}],
         },
     )
@@ -382,16 +407,16 @@ def test_decision_endpoint_hard_rule_returns_contract_without_forwarding():
     app = create_app(router=router, proxy=proxy)
 
     response = TestClient(app).post(
-        "/v1/semantic-router/decision",
+        "/v1/intentmux/decision",
         json={
-            "model": "semantic-router",
+            "model": "intentmux",
             "messages": [{"role": "user", "content": "这个线上 bug 为什么偶发"}],
         },
     )
 
     assert response.status_code == 200
     assert response.json() == {
-        "source_model": "semantic-router",
+        "source_model": "intentmux",
         "route_id": "deep",
         "target_model": "deep-upstream",
         "policy_id": "hard_rule",
@@ -419,9 +444,9 @@ def test_decision_endpoint_explicit_route_override_returns_explicit_policy():
     app = create_app(router=Router(decision_router_settings(), FakeDecisionEmbeddingClient({})), proxy=proxy)
 
     response = TestClient(app).post(
-        "/v1/semantic-router/decision",
+        "/v1/intentmux/decision",
         json={
-            "model": "semantic-router",
+            "model": "intentmux",
             "messages": [{"role": "user", "content": "无关文本"}],
             "metadata": {"route_id": "deep"},
         },
@@ -438,7 +463,7 @@ def test_decision_endpoint_explicit_route_override_returns_explicit_policy():
 def test_decision_endpoint_requires_inbound_api_key_when_configured():
     app = create_app(
         settings=RouterSettings(
-            route_model="semantic-router",
+            route_model="intentmux",
             fallback_route_id="lite",
             inbound_api_key="sk-intentmux",
             routes={"lite": RouteSpec(target_model="lite-upstream", description="lite", utterances=["hi"])},
@@ -448,16 +473,16 @@ def test_decision_endpoint_requires_inbound_api_key_when_configured():
     )
     client = TestClient(app)
 
-    missing = client.post("/v1/semantic-router/decision", json={"model": "semantic-router"})
+    missing = client.post("/v1/intentmux/decision", json={"model": "intentmux"})
     wrong = client.post(
-        "/v1/semantic-router/decision",
+        "/v1/intentmux/decision",
         headers={"Authorization": "Bearer wrong"},
-        json={"model": "semantic-router"},
+        json={"model": "intentmux"},
     )
     ok = client.post(
-        "/v1/semantic-router/decision",
+        "/v1/intentmux/decision",
         headers={"Authorization": "Bearer sk-intentmux"},
-        json={"model": "semantic-router"},
+        json={"model": "intentmux"},
     )
 
     assert missing.status_code == 401
@@ -468,7 +493,7 @@ def test_decision_endpoint_requires_inbound_api_key_when_configured():
 def test_chat_completion_requires_inbound_api_key_when_configured():
     app = create_app(
         settings=RouterSettings(
-            route_model="semantic-router",
+            route_model="intentmux",
             fallback_route_id="lite",
             inbound_api_key="sk-intentmux",
             routes={"lite": RouteSpec(target_model="lite-upstream", description="lite", utterances=["hi"])},
@@ -480,17 +505,17 @@ def test_chat_completion_requires_inbound_api_key_when_configured():
 
     missing = client.post(
         "/v1/chat/completions",
-        json={"model": "semantic-router", "messages": [{"role": "user", "content": "hi"}]},
+        json={"model": "intentmux", "messages": [{"role": "user", "content": "hi"}]},
     )
     wrong = client.post(
         "/v1/chat/completions",
         headers={"Authorization": "Bearer wrong"},
-        json={"model": "semantic-router", "messages": [{"role": "user", "content": "hi"}]},
+        json={"model": "intentmux", "messages": [{"role": "user", "content": "hi"}]},
     )
     ok = client.post(
         "/v1/chat/completions",
         headers={"Authorization": "Bearer sk-intentmux"},
-        json={"model": "semantic-router", "messages": [{"role": "user", "content": "hi"}]},
+        json={"model": "intentmux", "messages": [{"role": "user", "content": "hi"}]},
     )
 
     assert missing.status_code == 401
@@ -502,7 +527,7 @@ def test_chat_completion_does_not_write_prompt_review_log_by_default(tmp_path: P
     prompt_dir = tmp_path / "prompts"
     app = create_app(
         settings=RouterSettings(
-            route_model="semantic-router",
+            route_model="intentmux",
             fallback_route_id="lite",
             prompt_log_dir=str(prompt_dir),
             routes={"lite": RouteSpec(target_model="lite-upstream", description="lite", utterances=["hi"])},
@@ -514,7 +539,7 @@ def test_chat_completion_does_not_write_prompt_review_log_by_default(tmp_path: P
     response = TestClient(app).post(
         "/v1/chat/completions",
         json={
-            "model": "semantic-router",
+            "model": "intentmux",
             "messages": [{"role": "user", "content": "raw local prompt"}],
         },
     )
@@ -527,7 +552,7 @@ def test_chat_completion_writes_raw_local_prompt_review_log(tmp_path: Path):
     prompt_dir = tmp_path / "prompts"
     app = create_app(
         settings=RouterSettings(
-            route_model="semantic-router",
+            route_model="intentmux",
             fallback_route_id="lite",
             prompt_log_mode="raw_local",
             prompt_log_dir=str(prompt_dir),
@@ -541,7 +566,7 @@ def test_chat_completion_writes_raw_local_prompt_review_log(tmp_path: Path):
         "/v1/chat/completions",
         headers={"x-request-id": "req-prompt"},
         json={
-            "model": "semantic-router",
+            "model": "intentmux",
             "messages": [{"role": "user", "content": "请分析回滚方案"}],
         },
     )
@@ -561,7 +586,7 @@ def test_chat_completion_redacted_prompt_review_log_masks_credentials(tmp_path: 
     prompt_dir = tmp_path / "prompts"
     app = create_app(
         settings=RouterSettings(
-            route_model="semantic-router",
+            route_model="intentmux",
             fallback_route_id="lite",
             prompt_log_mode="redacted",
             prompt_log_dir=str(prompt_dir),
@@ -575,7 +600,7 @@ def test_chat_completion_redacted_prompt_review_log_masks_credentials(tmp_path: 
         "/v1/chat/completions",
         headers={"x-request-id": "req-redacted"},
         json={
-            "model": "semantic-router",
+            "model": "intentmux",
             "messages": [{"role": "user", "content": "use Bearer abcdefghijklmnop"}],
         },
     )
@@ -589,7 +614,7 @@ def test_chat_completion_redacted_prompt_review_log_masks_credentials(tmp_path: 
 def test_health_and_ready_do_not_require_inbound_api_key():
     app = create_app(
         settings=RouterSettings(
-            route_model="semantic-router",
+            route_model="intentmux",
             fallback_route_id="lite",
             inbound_api_key="sk-intentmux",
             routes={"lite": RouteSpec(target_model="lite-upstream", description="lite", utterances=["hi"])},
@@ -619,8 +644,8 @@ def test_decision_endpoint_low_confidence_uses_fallback_route_id():
     app = create_app(router=Router(decision_router_settings(), FakeDecisionEmbeddingClient(vectors)), proxy=proxy)
 
     response = TestClient(app).post(
-        "/v1/semantic-router/decision",
-        json={"model": "semantic-router", "messages": [{"role": "user", "content": "天气怎么样"}]},
+        "/v1/intentmux/decision",
+        json={"model": "intentmux", "messages": [{"role": "user", "content": "天气怎么样"}]},
     )
 
     assert response.status_code == 200
@@ -636,8 +661,8 @@ def test_decision_endpoint_embedding_error_uses_fallback_route_id_and_policy():
     app = create_app(router=Router(decision_router_settings(), FakeDecisionEmbeddingClient({}, fail=True)), proxy=proxy)
 
     response = TestClient(app).post(
-        "/v1/semantic-router/decision",
-        json={"model": "semantic-router", "messages": [{"role": "user", "content": "解释一下这个概念"}]},
+        "/v1/intentmux/decision",
+        json={"model": "intentmux", "messages": [{"role": "user", "content": "解释一下这个概念"}]},
     )
 
     assert response.status_code == 200
@@ -653,7 +678,7 @@ def test_decision_endpoint_passthrough_keeps_model_without_inventing_route_id_an
     app = create_app(router=Router(decision_router_settings(), FakeDecisionEmbeddingClient({})), proxy=proxy)
 
     response = TestClient(app).post(
-        "/v1/semantic-router/decision",
+        "/v1/intentmux/decision",
         json={
             "model": "deepseek-v4-pro",
             "messages": [{"role": "user", "content": "just answer directly"}],
@@ -716,8 +741,8 @@ def test_decision_endpoint_returns_400_for_invalid_json_without_leaking_input():
     client = TestClient(app)
 
     response = client.post(
-        "/v1/semantic-router/decision",
-        data='{"model":"semantic-router","messages":[{"role":"user","content":"secret"',
+        "/v1/intentmux/decision",
+        data='{"model":"intentmux","messages":[{"role":"user","content":"secret"',
         headers={
             "content-type": "application/json",
             "authorization": "Bearer super-secret-token",
@@ -742,7 +767,7 @@ def test_chat_completion_returns_400_for_invalid_json_without_leaking_input():
 
     response = client.post(
         "/v1/chat/completions",
-        data='{"model":"semantic-router","messages":[{"role":"user","content":"secret"',
+        data='{"model":"intentmux","messages":[{"role":"user","content":"secret"',
         headers={
             "content-type": "application/json",
             "authorization": "Bearer super-secret-token",
@@ -788,7 +813,7 @@ def test_decision_endpoint_returns_400_for_non_object_payload_without_leaking_in
     client = TestClient(app)
 
     response = client.post(
-        "/v1/semantic-router/decision",
+        "/v1/intentmux/decision",
         headers={"authorization": "Bearer super-secret-token"},
         json=["super", "sensitive", {"prompt": "do not leak"}],
     )
@@ -814,7 +839,7 @@ def test_decision_endpoint_missing_model_and_messages_preserves_router_semantics
     app = create_app(router=router, proxy=proxy)
     client = TestClient(app)
 
-    response = client.post("/v1/semantic-router/decision", json={"metadata": {"k": "v"}})
+    response = client.post("/v1/intentmux/decision", json={"metadata": {"k": "v"}})
 
     assert response.status_code == 200
     assert router.requests == [{"metadata": {"k": "v"}}]
@@ -852,7 +877,7 @@ def test_streaming_chat_completion_uses_stream_proxy():
                 rewrite=True,
                 route_id="deep",
                 policy_id="hard_rule",
-                source_model="smart-router",
+                source_model="intentmux",
             )
         ),
         proxy=proxy,
@@ -862,7 +887,7 @@ def test_streaming_chat_completion_uses_stream_proxy():
         "POST",
         "/v1/chat/completions",
         json={
-            "model": "smart-router",
+            "model": "intentmux",
             "stream": True,
             "messages": [{"role": "user", "content": "这个线上 bug 为什么偶发"}],
         },
@@ -889,7 +914,7 @@ def test_chat_completion_emits_structured_log_without_sensitive_payload(caplog):
                 rewrite=True,
                 route_id="deep",
                 policy_id="hard_rule",
-                source_model="smart-router",
+                source_model="intentmux",
             )
         ),
         proxy=proxy,
@@ -903,7 +928,7 @@ def test_chat_completion_emits_structured_log_without_sensitive_payload(caplog):
                 "x-request-id": "external-request-1",
             },
             json={
-                "model": "smart-router",
+                "model": "intentmux",
                 "messages": [
                     {
                         "role": "user",
@@ -948,7 +973,7 @@ def test_chat_completion_emits_structured_log_without_sensitive_payload(caplog):
                 "route_id": "deep",
                 "score": None,
                 "second_score": None,
-                "source_model": "smart-router",
+                "source_model": "intentmux",
                 "status": 200,
                 "stream": False,
                 "target_model": "deep-upstream",
@@ -976,7 +1001,7 @@ def test_chat_completion_audit_log_includes_format_signals_without_content(caplo
         response = TestClient(app).post(
             "/v1/chat/completions",
             json={
-                "model": "semantic-router",
+                "model": "intentmux",
                 "messages": [
                     {"role": "user", "content": "private edit request"},
                     {
@@ -1016,7 +1041,7 @@ def test_chat_completion_audit_log_includes_format_signals_without_content(caplo
 def test_chat_completion_writes_redacted_audit_log(tmp_path):
     audit_dir = tmp_path / "logs" / "routes"
     settings = RouterSettings(
-        route_model="semantic-router",
+        route_model="intentmux",
         fallback_route_id="lite",
         routes={
             "lite": RouteSpec(
@@ -1037,7 +1062,7 @@ def test_chat_completion_writes_redacted_audit_log(tmp_path):
                 rewrite=True,
                 route_id="lite",
                 policy_id="embedding",
-                source_model="semantic-router",
+                source_model="intentmux",
                 score=0.7,
                 second_score=0.2,
             )
@@ -1049,7 +1074,7 @@ def test_chat_completion_writes_redacted_audit_log(tmp_path):
         "/v1/chat/completions",
         headers={"Authorization": "Bearer litellm-test"},
         json={
-            "model": "semantic-router",
+            "model": "intentmux",
             "metadata": {"semantic_router_request_id": "audit-request-1"},
             "messages": [{"role": "user", "content": "敏感 prompt"}],
         },
@@ -1091,7 +1116,7 @@ def test_chat_completion_writes_redacted_audit_log(tmp_path):
             "route_id": "lite",
             "score": 0.7,
             "second_score": 0.2,
-            "source_model": "semantic-router",
+            "source_model": "intentmux",
             "status": 200,
             "stream": False,
             "target_model": "lite-upstream",
@@ -1116,7 +1141,7 @@ def test_chat_completion_marks_upstream_4xx_as_unhealthy_without_gateway_rewrite
                 rewrite=True,
                 route_id="lite",
                 policy_id="low_confidence",
-                source_model="semantic-router",
+                source_model="intentmux",
                 score=0.36,
                 second_score=0.19,
             )
@@ -1128,7 +1153,7 @@ def test_chat_completion_marks_upstream_4xx_as_unhealthy_without_gateway_rewrite
         response = TestClient(app, raise_server_exceptions=False).post(
             "/v1/chat/completions",
             json={
-                "model": "semantic-router",
+                "model": "intentmux",
                 "metadata": {"semantic_router_request_id": "bad-request-1"},
                 "messages": [{"role": "user", "content": "敏感 prompt"}],
             },
@@ -1152,7 +1177,7 @@ def test_chat_completion_uses_metadata_request_id_when_header_is_not_forwarded(c
                 "deep-upstream",
                 "hard_rule:线上",
                 rewrite=True,
-                source_model="semantic-router",
+                source_model="intentmux",
             )
         ),
         proxy=proxy,
@@ -1162,7 +1187,7 @@ def test_chat_completion_uses_metadata_request_id_when_header_is_not_forwarded(c
         response = TestClient(app).post(
             "/v1/chat/completions",
             json={
-                "model": "semantic-router",
+                "model": "intentmux",
                 "metadata": {
                     "semantic_router_request_id": "metadata-request-1",
                 },
@@ -1187,7 +1212,7 @@ def test_chat_completion_strips_router_private_metadata_before_forwarding():
                 "deep-upstream",
                 "metadata.route_id",
                 rewrite=True,
-                source_model="semantic-router",
+                source_model="intentmux",
                 route_id="deep",
                 policy_id="explicit_override",
             )
@@ -1198,7 +1223,7 @@ def test_chat_completion_strips_router_private_metadata_before_forwarding():
     response = TestClient(app).post(
         "/v1/chat/completions",
         json={
-            "model": "semantic-router",
+            "model": "intentmux",
             "metadata": {
                 "route_id": "deep",
                 "route": "lite",
@@ -1224,7 +1249,7 @@ def test_chat_completion_does_not_use_user_field_as_request_id(caplog):
                 "deep-upstream",
                 "hard_rule:线上",
                 rewrite=True,
-                source_model="semantic-router",
+                source_model="intentmux",
             )
         ),
         proxy=proxy,
@@ -1234,7 +1259,7 @@ def test_chat_completion_does_not_use_user_field_as_request_id(caplog):
         response = TestClient(app).post(
             "/v1/chat/completions",
             json={
-                "model": "semantic-router",
+                "model": "intentmux",
                 "user": "user-request-1",
                 "messages": [{"role": "user", "content": "这个线上 bug 为什么偶发"}],
             },
@@ -1256,7 +1281,7 @@ def test_chat_completion_rejects_unsafe_request_id_header(caplog):
                 "deep-upstream",
                 "hard_rule:线上",
                 rewrite=True,
-                source_model="semantic-router",
+                source_model="intentmux",
             )
         ),
         proxy=proxy,
@@ -1267,7 +1292,7 @@ def test_chat_completion_rejects_unsafe_request_id_header(caplog):
             "/v1/chat/completions",
             headers={"x-request-id": "Bearer sk-secret-token"},
             json={
-                "model": "semantic-router",
+                "model": "intentmux",
                 "messages": [{"role": "user", "content": "这个线上 bug 为什么偶发"}],
             },
         )
@@ -1291,7 +1316,7 @@ def test_chat_completion_uses_traceparent_when_request_id_headers_are_absent(cap
                 "deep-upstream",
                 "hard_rule:线上",
                 rewrite=True,
-                source_model="semantic-router",
+                source_model="intentmux",
             )
         ),
         proxy=proxy,
@@ -1303,7 +1328,7 @@ def test_chat_completion_uses_traceparent_when_request_id_headers_are_absent(cap
             "/v1/chat/completions",
             headers={"traceparent": f"00-{trace_id}-0123456789abcdef-01"},
             json={
-                "model": "semantic-router",
+                "model": "intentmux",
                 "messages": [{"role": "user", "content": "这个线上 bug 为什么偶发"}],
             },
         )
@@ -1318,7 +1343,7 @@ def test_chat_completion_uses_traceparent_when_request_id_headers_are_absent(cap
 
 def test_embedding_degraded_readiness_but_chat_falls_back_to_default_route(caplog):
     settings = RouterSettings(
-        route_model="semantic-router",
+        route_model="intentmux",
         default_route="lite-upstream",
         routes={
             "lite-upstream": RouteSpec(
@@ -1366,7 +1391,7 @@ def test_embedding_degraded_readiness_but_chat_falls_back_to_default_route(caplo
         response = client.post(
             "/v1/chat/completions",
             json={
-                "model": "semantic-router",
+                "model": "intentmux",
                 "metadata": {"semantic_router_request_id": "embedding-degraded-1"},
                 "messages": [{"role": "user", "content": "敏感 prompt"}],
             },
@@ -1394,7 +1419,7 @@ def test_chat_completion_logs_structured_route_error_without_sensitive_payload(c
                 "lite-upstream",
                 "embedding",
                 rewrite=True,
-                source_model="semantic-router",
+                source_model="intentmux",
                 score=0.7,
                 second_score=0.2,
             )
@@ -1407,7 +1432,7 @@ def test_chat_completion_logs_structured_route_error_without_sensitive_payload(c
             "/v1/chat/completions",
             headers={"Authorization": "Bearer litellm-test"},
             json={
-                "model": "semantic-router",
+                "model": "intentmux",
                 "metadata": {"semantic_router_request_id": "error-request-1"},
                 "messages": [{"role": "user", "content": "敏感 prompt"}],
             },
@@ -1440,7 +1465,7 @@ def test_chat_completion_maps_upstream_5xx_to_redacted_route_error(caplog):
                 "lite-upstream",
                 "embedding",
                 rewrite=True,
-                source_model="semantic-router",
+                source_model="intentmux",
                 score=0.7,
                 second_score=0.2,
             )
@@ -1453,7 +1478,7 @@ def test_chat_completion_maps_upstream_5xx_to_redacted_route_error(caplog):
             "/v1/chat/completions",
             headers={"Authorization": "Bearer litellm-test"},
             json={
-                "model": "semantic-router",
+                "model": "intentmux",
                 "metadata": {"semantic_router_request_id": "status-error-request-1"},
                 "messages": [{"role": "user", "content": "敏感 prompt"}],
             },
@@ -1491,7 +1516,7 @@ def test_streaming_chat_completion_returns_gateway_error_when_upstream_disconnec
                 "deep-upstream",
                 "hard_rule:PR",
                 rewrite=True,
-                source_model="semantic-router",
+                source_model="intentmux",
             )
         ),
         proxy=FailingStreamProxy(),
@@ -1502,7 +1527,7 @@ def test_streaming_chat_completion_returns_gateway_error_when_upstream_disconnec
             "/v1/chat/completions",
             headers={"Authorization": "Bearer litellm-test"},
             json={
-                "model": "semantic-router",
+                "model": "intentmux",
                 "stream": True,
                 "metadata": {"semantic_router_request_id": "stream-error-request-1"},
                 "messages": [{"role": "user", "content": "敏感 prompt"}],
@@ -1534,7 +1559,7 @@ def test_streaming_chat_completion_maps_upstream_5xx_to_redacted_route_error(cap
                 "deep-upstream",
                 "hard_rule:PR",
                 rewrite=True,
-                source_model="semantic-router",
+                source_model="intentmux",
             )
         ),
         proxy=proxy,
@@ -1545,7 +1570,7 @@ def test_streaming_chat_completion_maps_upstream_5xx_to_redacted_route_error(cap
             "/v1/chat/completions",
             headers={"Authorization": "Bearer litellm-test"},
             json={
-                "model": "semantic-router",
+                "model": "intentmux",
                 "stream": True,
                 "metadata": {"semantic_router_request_id": "stream-status-error-request-1"},
                 "messages": [{"role": "user", "content": "敏感 prompt"}],
@@ -1584,7 +1609,7 @@ def test_streaming_chat_completion_logs_after_body_iteration(caplog):
                 "deep-upstream",
                 "hard_rule:线上",
                 rewrite=True,
-                source_model="smart-router",
+                source_model="intentmux",
             )
         ),
         proxy=proxy,
@@ -1596,7 +1621,7 @@ def test_streaming_chat_completion_logs_after_body_iteration(caplog):
             "/v1/chat/completions",
             headers={"x-request-id": "stream-request-1"},
             json={
-                "model": "smart-router",
+                "model": "intentmux",
                 "stream": True,
                 "messages": [{"role": "user", "content": "这个线上 bug 为什么偶发"}],
             },
@@ -1638,7 +1663,7 @@ async def test_streaming_chat_completion_logs_when_client_closes_early(caplog):
                 "deep-upstream",
                 "hard_rule:线上",
                 rewrite=True,
-                source_model="smart-router",
+                source_model="intentmux",
             ),
             upstream_status=200,
             started_ms=0,
@@ -1678,7 +1703,7 @@ async def test_streaming_chat_completion_logs_route_error_when_body_iteration_fa
                 "deep-upstream",
                 "hard_rule:PR",
                 rewrite=True,
-                source_model="semantic-router",
+                source_model="intentmux",
             ),
             upstream_status=200,
             started_ms=0,

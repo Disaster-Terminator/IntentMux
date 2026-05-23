@@ -1,10 +1,11 @@
 # Add this model entry to your LiteLLM config, then point api_base at the
 # IntentMux sidecar URL visible from the LiteLLM process or container.
 model_list:
-  - model_name: semantic-router
+  - model_name: intentmux
     litellm_params:
-      model: openai/semantic-router
+      model: openai/intentmux
       api_base: http://intentmux:4001/v1
+      use_chat_completions_api: true
       # This key authenticates LiteLLM -> IntentMux only. Configure
       # ROUTER_LITELLM_API_KEY on IntentMux for IntentMux -> LiteLLM auth.
       api_key: sk-local-placeholder

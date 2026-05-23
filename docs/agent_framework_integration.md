@@ -6,9 +6,8 @@
 
 | model | 含义 |
 | --- | --- |
-| `auto` | 推荐自动路由入口 |
-| `semantic-router` | LiteLLM sidecar 兼容入口，语义等同 `auto` |
-| `lite` | 显式低成本/轻量路由 |
+| `intentmux` | 推荐自动路由入口 |
+| | `lite` | 显式低成本/轻量路由 |
 | `deep` | 显式高能力/高风险路由 |
 
 `metadata.route_id` 也可显式指定 `lite` / `deep`。不要使用部署侧 target model
@@ -16,9 +15,9 @@
 
 ## 策略
 
-- 普通混合流量用 `auto`。
+- 普通混合流量用 `intentmux`。
 - 调用方明确知道高风险时用 `deep`：生产事故、安全/权限/凭据、代码审查、复杂 debug。
-- 低风险工具调用、解释、翻译、总结、格式转换可以用 `auto` 或 `lite`。
+- 低风险工具调用、解释、翻译、总结、格式转换可以用 `intentmux` 或 `lite`。
 - `tools`、tool history、长上下文等结构信号只作为审计信号，不单独强制 `deep`。
 - 如果日志显示某类 agent 请求长期低置信或误路由，再决定是否让该框架显式发 `deep`。
 

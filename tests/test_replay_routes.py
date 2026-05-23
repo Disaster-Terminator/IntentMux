@@ -11,7 +11,7 @@ from scripts.replay_routes import load_replay_cases, render_markdown
 def write_routes(path: Path) -> None:
     path.write_text(
         """
-route_model: auto
+route_model: intentmux
 fallback_route_id: lite
 route_kernel: basic
 threshold: 0.5

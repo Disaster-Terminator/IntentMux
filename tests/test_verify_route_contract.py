@@ -21,7 +21,7 @@ def test_verify_route_contract_passes_for_valid_contract(tmp_path: Path):
     routes_path = write_routes(
         tmp_path,
         """
-route_model: semantic-router
+route_model: intentmux
 fallback_route_id: lite
 routes:
   lite:
@@ -55,15 +55,15 @@ def test_verify_route_contract_reports_target_model_and_missing_references(tmp_p
     routes_path = write_routes(
         tmp_path,
         """
-route_model: semantic-router
+route_model: intentmux
 fallback_route_id: missing
 routes:
-  semantic-router:
+  intentmux:
     target_model: lite-upstream
     description: bad recursion
     utterances: [hello]
   deep:
-    target_model: semantic-router
+    target_model: intentmux
     description: bad target model
     utterances: [debug]
 hard_rules:
@@ -82,7 +82,7 @@ cases:
 
     errors = verify_route_contract(routes_path, cases_path)
 
-    assert any("entry model 'semantic-router'" in error for error in errors)
+    assert any("entry model 'intentmux'" in error for error in errors)
     assert any("fallback_route_id 'missing'" in error for error in errors)
     assert any("hard_rules route_id 'experimental'" in error for error in errors)
     assert any("failed to load route settings" in error for error in errors)
@@ -92,7 +92,7 @@ def test_verify_route_contract_rejects_eval_expect_target_model(tmp_path: Path):
     routes_path = write_routes(
         tmp_path,
         """
-route_model: semantic-router
+route_model: intentmux
 fallback_route_id: lite
 routes:
   lite:
@@ -134,7 +134,7 @@ routes:
     routes_path = write_routes(
         tmp_path,
         """
-route_model: semantic-router
+route_model: intentmux
 fallback_route_id: lite
 route_bank_path: semantic_sets/route_bank.yaml
 routes:
@@ -183,7 +183,7 @@ routes:
     routes_path = write_routes(
         tmp_path,
         """
-route_model: semantic-router
+route_model: intentmux
 fallback_route_id: lite
 route_bank_path: semantic_sets/route_bank.yaml
 routes:

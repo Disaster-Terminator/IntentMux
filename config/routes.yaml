@@ -1,7 +1,7 @@
 # Built-in development default. Production deployments should set
 # ROUTER_CONFIG to a runtime-owned routes.yaml, normally copied from
 # examples/intentmux-home/config/routes.yaml and edited outside the repo.
-route_model: auto
+route_model: intentmux
 fallback_route_id: lite
 agent_signal_enabled: true
 agent_signal_route_id: deep

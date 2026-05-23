@@ -112,7 +112,7 @@ def test_stream_completion_preserves_upstream_sse_chunks():
 
 def intentmux_app(upstream_base_url: str) -> FastAPI:
     settings = RouterSettings(
-        route_model="auto",
+        route_model="intentmux",
         fallback_route_id="lite",
         routes={
             "lite": RouteSpec(

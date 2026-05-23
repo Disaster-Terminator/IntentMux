@@ -13,8 +13,8 @@ def test_tracked_example_eval_bank_uses_product_routes_and_public_sources():
     sources = {case.get("source") for case in cases}
 
     assert expects == {"lite", "deep"}
-    assert "cheap-router" not in str(payload)
-    assert "pro-router" not in str(payload)
+    assert "lite-upstream" not in str(payload)
+    assert "deep-upstream" not in str(payload)
     assert "free-probe-router" not in str(payload)
     assert "massive_zh_cn_general" in sources
     assert "swebench_issue_resolution" in sources
