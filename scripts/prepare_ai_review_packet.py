@@ -17,6 +17,7 @@ SCHEMA_VERSION = "intentmux.ai_review_packet.v1"
 ALLOWED_PROMPT_TEXT_MODES = {"off", "raw_local"}
 GROUPS = (
     "needs_human_decision",
+    "manual_zh_high_value",
     "likely_regression_case",
     "watch_only",
     "privacy_blocked",
@@ -55,6 +56,16 @@ def group_candidate(candidate: dict[str, Any]) -> str:
         return "needs_human_decision"
     if isinstance(prompt_review, dict) and prompt_review.get("truncated") is True:
         return "privacy_blocked"
+    if (
+        isinstance(prompt_review, dict)
+        and prompt_review.get("prompt_kind") == "manual_zh"
+        and prompt_review.get("prompt_value_tier") == "high"
+    ):
+        return "manual_zh_high_value"
+    if isinstance(prompt_review, dict) and prompt_review.get("prompt_value_tier") == "ignore":
+        return "watch_only"
+    if isinstance(prompt_review, dict) and prompt_review.get("prompt_kind") == "agent_generated":
+        return "watch_only"
     if review_reasons.intersection({"low_confidence", "near_margin", "near_threshold"}):
         if isinstance(prompt_review, dict) and prompt_review.get("matched") is True:
             return "likely_regression_case"

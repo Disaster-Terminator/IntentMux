@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
 import sys
@@ -7,6 +8,8 @@ from pathlib import Path
 
 from scripts.select_review_candidates import (
     build_review_candidate_report,
+    classify_prompt_review_text,
+    load_agent_prompt_hashes,
     load_route_thresholds,
     render_markdown,
     select_review_candidates,
@@ -261,6 +264,148 @@ def test_build_review_candidate_report_joins_prompt_reviews_without_inferring_so
     encoded = json.dumps(report, ensure_ascii=False)
     assert "Review this patch" not in encoded
     assert "Summarize this paragraph" not in encoded
+
+
+def test_classify_prompt_review_text_separates_manual_zh_from_agent_noise():
+    assert classify_prompt_review_text("今天这个路由为什么把中文 debug 请求走 lite") == {
+        "prompt_language": "zh-CN",
+        "prompt_kind": "manual_zh",
+        "prompt_value_tier": "high",
+        "prompt_origin": "local_prompt_log",
+    }
+    assert classify_prompt_review_text(
+        "You are a coding agent. Use tools and inspect the repository before editing."
+    ) == {
+        "prompt_language": "en",
+        "prompt_kind": "agent_generated",
+        "prompt_value_tier": "baseline",
+        "prompt_origin": "agent_prompt_pattern",
+    }
+    assert classify_prompt_review_text(
+        "[IMPORTANT: The user has invoked the \"wsl-runtime-update-watch\" skill]"
+    ) == {
+        "prompt_language": "en",
+        "prompt_kind": "system_boilerplate",
+        "prompt_value_tier": "ignore",
+        "prompt_origin": "system_boilerplate",
+    }
+    assert classify_prompt_review_text("Retinue 并发验证这个判断，至少两个子代理认可后再采信") == {
+        "prompt_language": "zh-CN",
+        "prompt_kind": "manual_zh",
+        "prompt_value_tier": "high",
+        "prompt_origin": "local_prompt_log",
+    }
+    assert classify_prompt_review_text(
+        "只读审查。检查当前 diff，提供具体建议，不要编辑文件。"
+    ) == {
+        "prompt_language": "zh-CN",
+        "prompt_kind": "agent_generated",
+        "prompt_value_tier": "baseline",
+        "prompt_origin": "agent_prompt_pattern",
+    }
+
+
+def test_classify_prompt_review_text_uses_exact_retinue_prompt_hash_before_language():
+    retinue_prompt = "Retinue 并发验证这个判断，至少两个子代理认可后再采信"
+    prompt_hash = hashlib.sha256(retinue_prompt.encode("utf-8")).hexdigest()
+
+    assert classify_prompt_review_text(retinue_prompt, agent_prompt_hashes={prompt_hash}) == {
+        "prompt_language": "zh-CN",
+        "prompt_kind": "agent_generated",
+        "prompt_value_tier": "baseline",
+        "prompt_origin": "retinue_job_prompt",
+    }
+
+
+def test_load_agent_prompt_hashes_accepts_prompt_files_and_retinue_meta(tmp_path):
+    prompt_path = tmp_path / "prompt.md"
+    prompt_path.write_text("只读任务，不要改文件。", encoding="utf-8")
+    meta_path = tmp_path / "meta.json"
+    meta_path.write_text(
+        json.dumps({"promptSha256": "a" * 64}),
+        encoding="utf-8",
+    )
+
+    assert load_agent_prompt_hashes([str(prompt_path), str(meta_path)]) == {
+        hashlib.sha256("只读任务，不要改文件。".encode("utf-8")).hexdigest(),
+        "a" * 64,
+    }
+
+
+def test_build_review_candidate_report_filters_for_manual_zh_without_leaking_text():
+    records = [
+        {
+            "event": "route_complete",
+            "timestamp": "2026-05-24T00:00:00Z",
+            "request_id": "req-zh",
+            "route_id": "lite",
+            "target_model": "lite-upstream",
+            "reason": "low_confidence",
+            "duration_ms": 100,
+        },
+        {
+            "event": "route_complete",
+            "timestamp": "2026-05-24T00:00:01Z",
+            "request_id": "req-agent",
+            "route_id": "lite",
+            "target_model": "lite-upstream",
+            "reason": "low_confidence",
+            "duration_ms": 100,
+        },
+        {
+            "event": "route_complete",
+            "timestamp": "2026-05-24T00:00:02Z",
+            "request_id": "req-short",
+            "route_id": "lite",
+            "target_model": "lite-upstream",
+            "reason": "low_confidence",
+            "duration_ms": 100,
+        },
+    ]
+    report = build_review_candidate_report(
+        records,
+        prompt_records=[
+            {
+                "event": "prompt_review",
+                "request_id": "req-zh",
+                "latest_user_text": "为什么这个中文调试请求没有走 deep",
+                "truncated": False,
+            },
+            {
+                "event": "prompt_review",
+                "request_id": "req-agent",
+                "latest_user_text": "You are a coding agent. Use tools and inspect the repo.",
+                "truncated": False,
+            },
+            {
+                "event": "prompt_review",
+                "request_id": "req-short",
+                "latest_user_text": "你好",
+                "truncated": False,
+            },
+        ],
+        classify_prompts=True,
+        prompt_language_filter="zh-CN",
+        prompt_kind_filter="manual_zh",
+        min_prompt_chars=8,
+    )
+
+    assert report["summary"]["candidate_count"] == 1
+    assert report["summary"]["prompt_origins"] == {"local_prompt_log": 1}
+    assert report["summary"]["prompt_value_tiers"] == {"high": 1}
+    assert report["candidates"][0]["request_id"] == "req-zh"
+    assert report["candidates"][0]["prompt_review"] == {
+        "matched": True,
+        "truncated": False,
+        "text_chars": 19,
+        "prompt_language": "zh-CN",
+        "prompt_kind": "manual_zh",
+        "prompt_value_tier": "high",
+        "prompt_origin": "local_prompt_log",
+    }
+    encoded = json.dumps(report, ensure_ascii=False)
+    assert "为什么这个中文调试请求" not in encoded
+    assert "coding agent" not in encoded
 
 
 def test_build_review_candidate_report_counts_hard_rule_keywords():

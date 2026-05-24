@@ -62,6 +62,7 @@ def test_build_ai_review_packet_groups_candidates_without_prompt_text():
     assert packet["privacy_mode"] == "metadata_only"
     assert packet["summary"]["groups"] == {
         "needs_human_decision": 1,
+        "manual_zh_high_value": 0,
         "likely_regression_case": 1,
         "privacy_blocked": 1,
         "watch_only": 1,
@@ -120,6 +121,69 @@ def test_build_ai_review_packet_includes_excerpt_only_when_raw_local_enabled():
     assert metadata_only["candidates"][0]["prompt_excerpt"] is None
     assert raw_local["privacy_mode"] == "raw_local"
     assert raw_local["candidates"][0]["prompt_excerpt"] == "请分析这个"
+
+
+def test_build_ai_review_packet_prioritizes_manual_zh_high_value_candidates():
+    candidate_report = {
+        "summary": {"candidate_count": 2},
+        "candidates": [
+            {
+                "request_id": "req-zh",
+                "route_id": "lite",
+                "target_model": "cheap",
+                "reason": "low_confidence",
+                "review_reasons": ["low_confidence"],
+                "prompt_review": {
+                    "matched": True,
+                    "truncated": False,
+                    "text_chars": 18,
+                    "prompt_language": "zh-CN",
+                    "prompt_kind": "manual_zh",
+                    "prompt_value_tier": "high",
+                },
+            },
+            {
+                "request_id": "req-agent",
+                "route_id": "lite",
+                "target_model": "cheap",
+                "reason": "low_confidence",
+                "review_reasons": ["low_confidence"],
+                "prompt_review": {
+                    "matched": True,
+                    "truncated": False,
+                    "text_chars": 70,
+                    "prompt_language": "en",
+                    "prompt_kind": "agent_generated",
+                    "prompt_value_tier": "baseline",
+                },
+            },
+            {
+                "request_id": "req-system",
+                "route_id": "lite",
+                "target_model": "cheap",
+                "reason": "low_confidence",
+                "review_reasons": ["low_confidence"],
+                "prompt_review": {
+                    "matched": True,
+                    "truncated": False,
+                    "text_chars": 2000,
+                    "prompt_language": "en",
+                    "prompt_kind": "system_boilerplate",
+                    "prompt_value_tier": "ignore",
+                },
+            },
+        ],
+    }
+
+    packet = build_ai_review_packet(candidate_report)
+
+    assert packet["summary"]["groups"]["manual_zh_high_value"] == 1
+    assert packet["summary"]["groups"]["likely_regression_case"] == 0
+    assert packet["summary"]["groups"]["watch_only"] == 2
+    assert packet["candidates"][0]["group"] == "manual_zh_high_value"
+    assert packet["candidates"][0]["prompt_review"]["prompt_kind"] == "manual_zh"
+    assert packet["candidates"][1]["group"] == "watch_only"
+    assert packet["candidates"][2]["group"] == "watch_only"
 
 
 def test_prepare_ai_review_packet_cli_writes_json_and_markdown(tmp_path, monkeypatch):

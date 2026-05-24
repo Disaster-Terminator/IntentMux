@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import argparse
 import glob
+import hashlib
 import json
 import sys
 from collections import Counter
 from pathlib import Path
+import re
 from typing import Any, Iterable
 
 import yaml
@@ -30,6 +32,40 @@ REVIEW_REASON_PRIORITY = {
 
 FALLBACK_THRESHOLD = 0.4
 FALLBACK_MARGIN = 0.04
+
+AGENT_PROMPT_MARKERS = (
+    "coding agent",
+    "read-only audit",
+    "readonly audit",
+    "do not edit files",
+    "do not modify files",
+    "provide concrete recommendations",
+    "inspect the current diff",
+    "inspect the relevant",
+    "inspect the repo",
+    "inspect the repository",
+    "use tools",
+    "只读审查",
+    "只读调查",
+    "不要编辑文件",
+    "不要修改文件",
+    "不要改文件",
+    "提供具体建议",
+    "检查当前 diff",
+    "审查当前 diff",
+)
+SYSTEM_BOILERPLATE_MARKERS = (
+    "[important:",
+    "has invoked the",
+    "skill]",
+    "system-reminder",
+    "extremely_important",
+    "agents.md",
+    "instruction priority",
+    "you are chatgpt",
+)
+CJK_RE = re.compile(r"[\u3400-\u9fff]")
+LATIN_RE = re.compile(r"[A-Za-z]")
 
 
 SAFE_CANDIDATE_FIELDS = {
@@ -103,6 +139,9 @@ def select_review_candidates(
 
 def prompt_review_index(
     records: Iterable[dict[str, Any]],
+    *,
+    classify_prompts: bool = False,
+    agent_prompt_hashes: set[str] | None = None,
 ) -> dict[str, dict[str, Any]]:
     indexed: dict[str, dict[str, Any]] = {}
     for record in records:
@@ -113,25 +152,89 @@ def prompt_review_index(
             continue
         latest_user_text = record.get("latest_user_text")
         text = latest_user_text if isinstance(latest_user_text, str) else ""
-        indexed[request_id] = {
+        prompt_review = {
             "matched": True,
             "truncated": bool(record.get("truncated")),
             "text_chars": len(text),
         }
+        if classify_prompts:
+            prompt_review.update(
+                classify_prompt_review_text(text, agent_prompt_hashes=agent_prompt_hashes),
+            )
+        indexed[request_id] = prompt_review
     return indexed
 
 
 def attach_prompt_reviews(
     candidates: list[dict[str, Any]],
     prompt_records: Iterable[dict[str, Any]] | None,
+    *,
+    classify_prompts: bool = False,
+    agent_prompt_hashes: set[str] | None = None,
 ) -> None:
     if prompt_records is None:
         return
-    prompts_by_request_id = prompt_review_index(prompt_records)
+    prompts_by_request_id = prompt_review_index(
+        prompt_records,
+        classify_prompts=classify_prompts,
+        agent_prompt_hashes=agent_prompt_hashes,
+    )
     for candidate in candidates:
         request_id = candidate.get("request_id")
         if isinstance(request_id, str) and request_id in prompts_by_request_id:
             candidate["prompt_review"] = prompts_by_request_id[request_id]
+
+
+def classify_prompt_review_text(
+    text: str,
+    *,
+    agent_prompt_hashes: set[str] | None = None,
+) -> dict[str, str]:
+    lowered = text.lower()
+    cjk_count = len(CJK_RE.findall(text))
+    latin_count = len(LATIN_RE.findall(text))
+    visible_count = max(sum(not char.isspace() for char in text), 1)
+    cjk_ratio = cjk_count / visible_count
+    text_sha256 = hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+    if agent_prompt_hashes and text_sha256 in agent_prompt_hashes:
+        prompt_kind = "agent_generated"
+        value_tier = "baseline"
+        prompt_origin = "retinue_job_prompt"
+    elif any(marker in lowered for marker in SYSTEM_BOILERPLATE_MARKERS):
+        prompt_kind = "system_boilerplate"
+        value_tier = "ignore"
+        prompt_origin = "system_boilerplate"
+    elif any(marker in lowered for marker in AGENT_PROMPT_MARKERS):
+        prompt_kind = "agent_generated"
+        value_tier = "baseline"
+        prompt_origin = "agent_prompt_pattern"
+    elif cjk_count >= 4 and cjk_ratio >= 0.35:
+        prompt_kind = "manual_zh"
+        value_tier = "high"
+        prompt_origin = "local_prompt_log"
+    elif cjk_count >= 4 and latin_count >= 20:
+        prompt_kind = "mixed"
+        value_tier = "baseline"
+        prompt_origin = "local_prompt_log"
+    else:
+        prompt_kind = "unknown"
+        value_tier = "baseline"
+        prompt_origin = "local_prompt_log"
+
+    if cjk_count >= 4 and cjk_ratio >= 0.25:
+        language = "zh-CN"
+    elif latin_count >= 4:
+        language = "en"
+    else:
+        language = "unknown"
+
+    return {
+        "prompt_language": language,
+        "prompt_kind": prompt_kind,
+        "prompt_value_tier": value_tier,
+        "prompt_origin": prompt_origin,
+    }
 
 
 def review_reasons_for_record(
@@ -225,8 +328,25 @@ def build_review_candidate_report(
     margin_window: float = 0.02,
     slow_duration_ms: float = 60_000.0,
     limit: int = 50,
+    classify_prompts: bool = False,
+    prompt_language_filter: str | None = None,
+    prompt_kind_filter: str | None = None,
+    prompt_origin_filter: str | None = None,
+    min_prompt_chars: int | None = None,
+    max_prompt_chars: int | None = None,
+    agent_prompt_hashes: set[str] | None = None,
 ) -> dict[str, Any]:
     record_list = list(records)
+    prompt_filters_enabled = any(
+        value is not None
+        for value in (
+            prompt_language_filter,
+            prompt_kind_filter,
+            prompt_origin_filter,
+            min_prompt_chars,
+            max_prompt_chars,
+        )
+    )
     candidates = select_review_candidates(
         record_list,
         threshold=threshold,
@@ -234,9 +354,30 @@ def build_review_candidate_report(
         margin=margin,
         margin_window=margin_window,
         slow_duration_ms=slow_duration_ms,
-        limit=limit,
+        limit=max(len(record_list), limit) if prompt_filters_enabled else limit,
     )
-    attach_prompt_reviews(candidates, prompt_records)
+    attach_prompt_reviews(
+        candidates,
+        prompt_records,
+        classify_prompts=classify_prompts or prompt_filters_enabled,
+        agent_prompt_hashes=agent_prompt_hashes,
+    )
+    if prompt_filters_enabled:
+        candidates = [
+            candidate
+            for candidate in candidates
+            if prompt_review_matches_filters(
+                candidate.get("prompt_review"),
+                prompt_language_filter=prompt_language_filter,
+                prompt_kind_filter=prompt_kind_filter,
+                prompt_origin_filter=prompt_origin_filter,
+                min_prompt_chars=min_prompt_chars,
+                max_prompt_chars=max_prompt_chars,
+            )
+        ]
+    if classify_prompts or prompt_filters_enabled:
+        candidates.sort(key=prompt_value_sort_key)
+    candidates = candidates[: max(limit, 0)]
     review_reasons = Counter(
         review_reason
         for candidate in candidates
@@ -256,26 +397,97 @@ def build_review_candidate_report(
         for key, value in candidate["format_signals"].items()
         if value is True
     )
+    prompt_value_tiers = Counter(
+        prompt_review.get("prompt_value_tier")
+        for candidate in candidates
+        if isinstance((prompt_review := candidate.get("prompt_review")), dict)
+        and prompt_review.get("prompt_value_tier")
+    )
+    prompt_origins = Counter(
+        prompt_review.get("prompt_origin")
+        for candidate in candidates
+        if isinstance((prompt_review := candidate.get("prompt_review")), dict)
+        and prompt_review.get("prompt_origin")
+    )
+    summary = {
+        "input_records": len(record_list),
+        "candidate_count": len(candidates),
+        "candidate_prompt_matches": sum(
+            1
+            for candidate in candidates
+            if isinstance(candidate.get("prompt_review"), dict)
+            and candidate["prompt_review"].get("matched") is True
+        ),
+        "format_signal_counts": dict(sorted(format_signal_counts.items())),
+        "review_reasons": dict(sorted(review_reasons.items())),
+        "routes": dict(
+            sorted(
+                Counter(
+                    candidate.get("route_id")
+                    for candidate in candidates
+                    if candidate.get("route_id")
+                ).items()
+            )
+        ),
+        "targets": dict(
+            sorted(
+                Counter(
+                    candidate.get("target_model")
+                    for candidate in candidates
+                    if candidate.get("target_model")
+                ).items()
+            )
+        ),
+        "hard_rules": dict(sorted(hard_rules.items())),
+        "log_paths": log_paths or [],
+        "prompt_log_paths": prompt_log_paths or [],
+    }
+    if prompt_value_tiers:
+        summary["prompt_value_tiers"] = dict(sorted(prompt_value_tiers.items()))
+    if prompt_origins:
+        summary["prompt_origins"] = dict(sorted(prompt_origins.items()))
     return {
-        "summary": {
-            "input_records": len(record_list),
-            "candidate_count": len(candidates),
-            "candidate_prompt_matches": sum(
-                1
-                for candidate in candidates
-                if isinstance(candidate.get("prompt_review"), dict)
-                and candidate["prompt_review"].get("matched") is True
-            ),
-            "format_signal_counts": dict(sorted(format_signal_counts.items())),
-            "review_reasons": dict(sorted(review_reasons.items())),
-            "routes": dict(sorted(Counter(candidate.get("route_id") for candidate in candidates if candidate.get("route_id")).items())),
-            "targets": dict(sorted(Counter(candidate.get("target_model") for candidate in candidates if candidate.get("target_model")).items())),
-            "hard_rules": dict(sorted(hard_rules.items())),
-            "log_paths": log_paths or [],
-            "prompt_log_paths": prompt_log_paths or [],
-        },
+        "summary": summary,
         "candidates": candidates,
     }
+
+
+def prompt_review_matches_filters(
+    prompt_review: Any,
+    *,
+    prompt_language_filter: str | None,
+    prompt_kind_filter: str | None,
+    prompt_origin_filter: str | None,
+    min_prompt_chars: int | None,
+    max_prompt_chars: int | None,
+) -> bool:
+    if not isinstance(prompt_review, dict) or prompt_review.get("matched") is not True:
+        return False
+    if (
+        prompt_language_filter is not None
+        and prompt_review.get("prompt_language") != prompt_language_filter
+    ):
+        return False
+    if prompt_kind_filter is not None and prompt_review.get("prompt_kind") != prompt_kind_filter:
+        return False
+    if (
+        prompt_origin_filter is not None
+        and prompt_review.get("prompt_origin") != prompt_origin_filter
+    ):
+        return False
+    text_chars = number_or_none(prompt_review.get("text_chars"))
+    if min_prompt_chars is not None and (text_chars is None or text_chars < min_prompt_chars):
+        return False
+    if max_prompt_chars is not None and (text_chars is None or text_chars > max_prompt_chars):
+        return False
+    return True
+
+
+def prompt_value_sort_key(candidate: dict[str, Any]) -> tuple[int, float]:
+    prompt_review = candidate.get("prompt_review")
+    tier = prompt_review.get("prompt_value_tier") if isinstance(prompt_review, dict) else None
+    tier_rank = {"high": 0, "baseline": 1, "ignore": 2}.get(str(tier), 3)
+    return (tier_rank, -float(candidate.get("duration_ms") or 0.0))
 
 
 def render_markdown(report: dict[str, Any]) -> str:
@@ -287,6 +499,8 @@ def render_markdown(report: dict[str, Any]) -> str:
         f"- input_records: {summary.get('input_records', 0)}",
         f"- candidate_count: {summary.get('candidate_count', 0)}",
         f"- candidate_prompt_matches: {summary.get('candidate_prompt_matches', 0)}",
+        f"- prompt_value_tiers: {format_counts(summary.get('prompt_value_tiers', {}))}",
+        f"- prompt_origins: {format_counts(summary.get('prompt_origins', {}))}",
         f"- format_signal_counts: {format_counts(summary.get('format_signal_counts', {}))}",
         f"- review_reasons: {format_counts(summary.get('review_reasons', {}))}",
         f"- routes: {format_counts(summary.get('routes', {}))}",
@@ -295,15 +509,21 @@ def render_markdown(report: dict[str, Any]) -> str:
         "",
         "## Candidates",
         "",
-        "| timestamp | request_id | route_id | target_model | reason | review_reasons | top_route | second_route | score | second_score | threshold | margin | match_source | match_index | match_text_sha256 | prompt_review | prompt_truncated | duration_ms | upstream_status |",
-        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+        "| timestamp | request_id | route_id | target_model | reason | review_reasons | top_route | second_route | score | second_score | threshold | margin | match_source | match_index | match_text_sha256 | prompt_review | prompt_kind | prompt_value | prompt_origin | prompt_truncated | duration_ms | upstream_status |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     for candidate in report.get("candidates", []):
         prompt_review = candidate.get("prompt_review")
         prompt_matched = ""
+        prompt_kind = ""
+        prompt_value = ""
+        prompt_origin = ""
         prompt_truncated = ""
         if isinstance(prompt_review, dict) and prompt_review.get("matched") is True:
             prompt_matched = "matched"
+            prompt_kind = str(prompt_review.get("prompt_kind") or "")
+            prompt_value = str(prompt_review.get("prompt_value_tier") or "")
+            prompt_origin = str(prompt_review.get("prompt_origin") or "")
             prompt_truncated = str(bool(prompt_review.get("truncated"))).lower()
         lines.append(
             "| "
@@ -325,6 +545,9 @@ def render_markdown(report: dict[str, Any]) -> str:
                     markdown_cell(candidate.get("match_index")),
                     markdown_cell(candidate.get("match_text_sha256")),
                     markdown_cell(prompt_matched),
+                    markdown_cell(prompt_kind),
+                    markdown_cell(prompt_value),
+                    markdown_cell(prompt_origin),
                     markdown_cell(prompt_truncated),
                     markdown_cell(candidate.get("duration_ms")),
                     markdown_cell(candidate.get("upstream_status")),
@@ -388,6 +611,29 @@ def load_prompt_review_records(paths: list[str]) -> list[dict[str, Any]]:
     return records
 
 
+def load_agent_prompt_hashes(paths: list[str]) -> set[str]:
+    hashes: set[str] = set()
+    for path in paths:
+        file_path = Path(path)
+        if not file_path.is_file():
+            continue
+        if file_path.name == "meta.json":
+            try:
+                raw = json.loads(file_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            prompt_sha256 = raw.get("promptSha256")
+            if isinstance(prompt_sha256, str) and len(prompt_sha256) == 64:
+                hashes.add(prompt_sha256.lower())
+            continue
+        try:
+            text = file_path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        hashes.add(hashlib.sha256(text.encode("utf-8")).hexdigest())
+    return hashes
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Select metadata-only IntentMux route log records for human review.",
@@ -405,10 +651,46 @@ def main() -> None:
     parser.add_argument("--slow-duration-ms", type=float, default=60_000.0)
     parser.add_argument("--limit", type=int, default=50)
     parser.add_argument(
+        "--classify-prompts",
+        action="store_true",
+        help="Attach safe prompt language/kind/value metadata from local prompt review logs.",
+    )
+    parser.add_argument(
+        "--prompt-language-filter",
+        "--lang-filter",
+        dest="prompt_language_filter",
+        help="Keep only candidates whose prompt_review prompt_language matches this value.",
+    )
+    parser.add_argument(
+        "--prompt-kind-filter",
+        "--kind-filter",
+        dest="prompt_kind_filter",
+        help="Keep only candidates whose prompt_review prompt_kind matches this value.",
+    )
+    parser.add_argument(
+        "--prompt-origin-filter",
+        "--origin-filter",
+        dest="prompt_origin_filter",
+        help="Keep only candidates whose prompt_review prompt_origin matches this value.",
+    )
+    parser.add_argument("--min-prompt-chars", type=int)
+    parser.add_argument("--max-prompt-chars", type=int)
+    parser.add_argument(
         "--prompt-path",
         action="append",
         default=[],
         help="Optional prompt review JSONL file or glob. Joined by request_id; raw text is never emitted.",
+    )
+    parser.add_argument(
+        "--agent-prompt-path",
+        "--retinue-prompt-path",
+        action="append",
+        default=[],
+        dest="agent_prompt_path",
+        help=(
+            "Optional local agent prompt files or meta.json globs. Their SHA256 values mark "
+            "exact prompt matches as agent_generated without emitting raw text."
+        ),
     )
     parser.add_argument("--json-output")
     parser.add_argument("--markdown-output")
@@ -422,8 +704,10 @@ def main() -> None:
 
     log_paths = expand_log_paths(args.paths)
     prompt_log_paths = expand_log_paths(args.prompt_path)
+    agent_prompt_paths = expand_log_paths(args.agent_prompt_path)
     records = list(parse_route_records(iter_lines(log_paths)))
     prompt_records = load_prompt_review_records(prompt_log_paths) if prompt_log_paths else None
+    agent_prompt_hashes = load_agent_prompt_hashes(agent_prompt_paths) if agent_prompt_paths else None
     report = build_review_candidate_report(
         records,
         prompt_records=prompt_records,
@@ -435,6 +719,13 @@ def main() -> None:
         margin_window=args.margin_window,
         slow_duration_ms=args.slow_duration_ms,
         limit=args.limit,
+        classify_prompts=args.classify_prompts,
+        prompt_language_filter=args.prompt_language_filter,
+        prompt_kind_filter=args.prompt_kind_filter,
+        prompt_origin_filter=args.prompt_origin_filter,
+        min_prompt_chars=args.min_prompt_chars,
+        max_prompt_chars=args.max_prompt_chars,
+        agent_prompt_hashes=agent_prompt_hashes,
     )
 
     if args.json_output:
