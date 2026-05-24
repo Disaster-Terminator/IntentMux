@@ -254,6 +254,30 @@ def test_curated_default_seed_declares_required_audit_fields():
     assert {row["language"] for row in rows} == {"zh-CN"}
 
 
+def test_curated_deep_seed_covers_runtime_operations_audit_gap():
+    source = RouteSource(
+        name="curated_zh_cn_deep",
+        kind="curated_yaml",
+        path="data/source_samples/default_zh_cn_deep.example.yaml",
+        route="deep",
+        text_field="text",
+        limit=100,
+    )
+    rows = load_rows(source, Path("."))
+    route_texts = {
+        row["text"]
+        for row in rows
+        if row["proposed_use"] == "route" and row["slice"] == "deep_operations_zh"
+    }
+
+    assert {
+        "请基于这段长上下文工具执行记录审计运行时健康状态，并给出下一步修复计划",
+        "分析这次网关巡检里多个端点连续失败的根因，区分路由问题和上游容量问题",
+        "根据多轮命令输出判断本机服务升级是否收敛，列出仍需处理的风险",
+        "审计自动化健康巡检任务的多轮执行结果，判断 cron、日志和服务状态是否一致",
+    }.issubset(route_texts)
+
+
 def test_asset_builders_keep_route_eval_and_calibration_separate():
     records = [
         {

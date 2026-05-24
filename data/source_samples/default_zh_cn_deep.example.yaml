@@ -56,6 +56,50 @@ samples:
     context_policy: long_context
     redacted: true
 
+  - text: 请基于这段长上下文工具执行记录审计运行时健康状态，并给出下一步修复计划
+    route_id: deep
+    language: zh-CN
+    slice: deep_operations_zh
+    proposed_use: route
+    license: Apache-2.0
+    input_chars: 16000
+    message_count: 6
+    context_policy: long_context
+    redacted: true
+
+  - text: 分析这次网关巡检里多个端点连续失败的根因，区分路由问题和上游容量问题
+    route_id: deep
+    language: zh-CN
+    slice: deep_operations_zh
+    proposed_use: route
+    license: Apache-2.0
+    input_chars: 14000
+    message_count: 5
+    context_policy: long_context
+    redacted: true
+
+  - text: 根据多轮命令输出判断本机服务升级是否收敛，列出仍需处理的风险
+    route_id: deep
+    language: zh-CN
+    slice: deep_operations_zh
+    proposed_use: route
+    license: Apache-2.0
+    input_chars: 12000
+    message_count: 6
+    context_policy: long_context
+    redacted: true
+
+  - text: 审计自动化健康巡检任务的多轮执行结果，判断 cron、日志和服务状态是否一致
+    route_id: deep
+    language: zh-CN
+    slice: deep_operations_zh
+    proposed_use: route
+    license: Apache-2.0
+    input_chars: 12000
+    message_count: 6
+    context_policy: long_context
+    redacted: true
+
   - text: 这个生产故障是否可能由连接池耗尽、死锁或缓存击穿导致
     route_id: deep
     language: zh-CN
