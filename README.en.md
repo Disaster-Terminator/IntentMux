@@ -5,12 +5,13 @@
 
 <p align="center">
   <img alt="runtime Python 3.11+" src="https://img.shields.io/badge/runtime-Python%203.11%2B-3776AB">
-  <img alt="entries auto lite deep" src="https://img.shields.io/badge/entries-auto%20%7C%20lite%20%7C%20deep-0EA5E9">
+  <img alt="entries intentmux lite deep" src="https://img.shields.io/badge/entries-intentmux%20%7C%20lite%20%7C%20deep-0EA5E9">
   <img alt="LiteLLM sidecar compatible" src="https://img.shields.io/badge/LiteLLM-sidecar%20compatible-16A34A">
   <img alt="route logs metadata only" src="https://img.shields.io/badge/route%20logs-metadata%20only-7C3AED">
 </p>
 <p align="center">
   <img alt="built with FastAPI" src="https://img.shields.io/badge/built%20with-FastAPI-009688">
+  <img alt="kernel Aurelio Semantic Router" src="https://img.shields.io/badge/kernel-Aurelio%20Semantic%20Router-F59E0B">
   <img alt="config YAML" src="https://img.shields.io/badge/config-YAML-CB171E">
   <img alt="tests pytest" src="https://img.shields.io/badge/tests-pytest-0A9EDC">
   <img alt="package uv" src="https://img.shields.io/badge/package-uv-DE5FE9">
@@ -81,8 +82,16 @@ explicit route -> hard escalation -> semantic score + threshold -> fallback lite
 - Upstream connection failures or 5xx return redacted `502`; upstream 4xx are
   passed through and recorded as `upstream_non_200`.
 
-The default online router uses Aurelio Semantic Router. The built-in `basic`
-router is retained only as a fallback/debug baseline.
+The default online router uses [Aurelio Semantic Router](https://docs.aurelio.ai/semantic-router/get-started/introduction).
+The built-in `basic` router is retained only as a fallback/debug baseline.
+
+## Core Dependency And Credits
+
+IntentMux uses Aurelio Semantic Router as the default mature matching kernel.
+The current default shape is `HybridRouter + HybridLocalIndex`. IntentMux
+builds the OpenAI-compatible gateway entry, `lite` / `deep` product semantics,
+runtime configuration, audit logs, quality reports, and LiteLLM sidecar
+integration around that kernel.
 
 ## Quick Start
 

@@ -5,12 +5,13 @@
 
 <p align="center">
   <img alt="runtime Python 3.11+" src="https://img.shields.io/badge/runtime-Python%203.11%2B-3776AB">
-  <img alt="entries auto lite deep" src="https://img.shields.io/badge/entries-auto%20%7C%20lite%20%7C%20deep-0EA5E9">
+  <img alt="entries intentmux lite deep" src="https://img.shields.io/badge/entries-intentmux%20%7C%20lite%20%7C%20deep-0EA5E9">
   <img alt="LiteLLM sidecar compatible" src="https://img.shields.io/badge/LiteLLM-sidecar%20compatible-16A34A">
   <img alt="route logs metadata only" src="https://img.shields.io/badge/route%20logs-metadata%20only-7C3AED">
 </p>
 <p align="center">
   <img alt="built with FastAPI" src="https://img.shields.io/badge/built%20with-FastAPI-009688">
+  <img alt="kernel Aurelio Semantic Router" src="https://img.shields.io/badge/kernel-Aurelio%20Semantic%20Router-F59E0B">
   <img alt="config YAML" src="https://img.shields.io/badge/config-YAML-CB171E">
   <img alt="tests pytest" src="https://img.shields.io/badge/tests-pytest-0A9EDC">
   <img alt="package uv" src="https://img.shields.io/badge/package-uv-DE5FE9">
@@ -75,8 +76,15 @@ explicit route -> hard escalation -> semantic score + threshold -> fallback lite
 - embedding 不可用时按 `fallback_route_id` fail open，默认是 `lite`。
 - upstream 连接错误或 5xx 返回脱敏 `502`；upstream 4xx 按代理语义透传，同时记入审计日志。
 
-默认在线路由内核是 Aurelio Semantic Router。内置 `basic` 只作为 fallback/debug
-baseline。
+默认在线路由内核是 [Aurelio Semantic Router](https://docs.aurelio.ai/semantic-router/get-started/introduction)。
+内置 `basic` 只作为 fallback/debug baseline。
+
+## 核心依赖与致谢
+
+IntentMux 默认依赖 Aurelio Semantic Router 作为成熟路由匹配内核，当前默认形态是
+`HybridRouter + HybridLocalIndex`。
+IntentMux 在其上提供 OpenAI-compatible 网关入口、`lite` / `deep` 产品语义、
+运行时配置、日志审计、质量报告和 LiteLLM sidecar 集成。
 
 ## 快速开始
 
