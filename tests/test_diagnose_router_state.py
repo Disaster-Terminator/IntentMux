@@ -12,7 +12,7 @@ def test_cli_emits_stable_config_section(capsys):
     output = capsys.readouterr().out
     assert exit_code == 0
     assert "[router_config]" in output
-    assert "entry_model: auto" in output
+    assert "entry_model: intentmux" in output
     assert "fallback_route_id: lite" in output
     assert "route_targets:" in output
     assert "  lite: your-lite-model" in output

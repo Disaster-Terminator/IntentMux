@@ -8,6 +8,7 @@ from scripts.intentmux_daily_health import (
     build_e2e_cmd,
     build_quality_artifact_paths,
     default_log_dir,
+    derive_health_scopes,
     log_consistency_from_day_logs,
     run_quality_artifacts,
     traffic_evidence_from_day_log,
@@ -18,6 +19,27 @@ from scripts.intentmux_daily_health import (
     report_now_and_day,
     run,
 )
+
+
+def test_derive_health_scopes_keeps_upstream_failure_out_of_router_health():
+    scopes = derive_health_scopes(
+        ready_ok=True,
+        traffic_evidence_ok=True,
+        log_consistency_ok=True,
+        router_budget_exit=0,
+        upstream_budget_exit=1,
+    )
+
+    assert scopes == {
+        "router_health": {
+            "ok": True,
+            "detail": "ready_ok=true traffic_evidence_ok=true log_consistency_ok=true router_budget_exit=0",
+        },
+        "upstream_health": {
+            "ok": False,
+            "detail": "upstream_budget_exit=1",
+        },
+    }
 
 
 def test_parse_ready_reads_components_contract():

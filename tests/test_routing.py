@@ -415,6 +415,8 @@ async def test_route_embedding_cache_reuses_persisted_vectors_between_router_ins
     )
 
     assert first_decision.route_id == "deep"
+    assert first_decision.route_vector_source == "remote_embed"
+    assert first_decision.query_embedding_ms is not None
     assert first_client.calls[0] == ["翻译成中文", "分析这个线上 bug"]
 
     second_client = FakeEmbeddingClient({"线上 bug 怎么修": [0.0, 1.0, 0.0]})
@@ -427,6 +429,8 @@ async def test_route_embedding_cache_reuses_persisted_vectors_between_router_ins
     assert second_client.calls == [["线上 bug 怎么修"]]
     assert second_decision.route_id == "deep"
     assert second_decision.policy_id == "embedding"
+    assert second_decision.route_vector_source == "disk_cache"
+    assert second_decision.query_embedding_ms is not None
     assert second_decision.match_source == "swebench_issue_resolution"
     assert second_decision.match_index == 0
     assert second_decision.match_text_sha256

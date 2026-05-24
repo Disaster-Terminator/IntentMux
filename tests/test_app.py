@@ -434,6 +434,9 @@ def test_decision_endpoint_hard_rule_returns_contract_without_forwarding():
         "match_text_sha256": None,
         "match_score": None,
         "match_provenance": None,
+        "route_vector_source": None,
+        "route_vector_load_ms": None,
+        "query_embedding_ms": None,
     }
     assert proxy.forward_called is False
     assert proxy.stream_called is False
@@ -706,6 +709,9 @@ def test_decision_endpoint_passthrough_keeps_model_without_inventing_route_id_an
         "match_text_sha256": None,
         "match_score": None,
         "match_provenance": None,
+        "route_vector_source": None,
+        "route_vector_load_ms": None,
+        "query_embedding_ms": None,
     }
     assert set(response.json()) == {
         "source_model",
@@ -726,6 +732,9 @@ def test_decision_endpoint_passthrough_keeps_model_without_inventing_route_id_an
         "match_text_sha256",
         "match_score",
         "match_provenance",
+        "route_vector_source",
+        "route_vector_load_ms",
+        "query_embedding_ms",
     }
     assert "prompt" not in response.text
     assert proxy.forward_called is False
@@ -862,6 +871,9 @@ def test_decision_endpoint_missing_model_and_messages_preserves_router_semantics
         "match_text_sha256": None,
         "match_score": None,
         "match_provenance": None,
+        "route_vector_source": None,
+        "route_vector_load_ms": None,
+        "query_embedding_ms": None,
     }
     assert proxy.forward_called is False
     assert proxy.stream_called is False
@@ -1065,6 +1077,9 @@ def test_chat_completion_writes_redacted_audit_log(tmp_path):
                 source_model="intentmux",
                 score=0.7,
                 second_score=0.2,
+                route_vector_source="disk_cache",
+                route_vector_load_ms=1.25,
+                query_embedding_ms=12.5,
             )
         ),
         proxy=FakeProxy(),
@@ -1113,6 +1128,9 @@ def test_chat_completion_writes_redacted_audit_log(tmp_path):
             "request_id": "audit-request-1",
             "request_id_source": "metadata.semantic_router_request_id",
             "rewrite": True,
+            "query_embedding_ms": 12.5,
+            "route_vector_load_ms": 1.25,
+            "route_vector_source": "disk_cache",
             "route_id": "lite",
             "score": 0.7,
             "second_score": 0.2,

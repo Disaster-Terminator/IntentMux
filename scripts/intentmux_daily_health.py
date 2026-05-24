@@ -645,6 +645,34 @@ def render_md(report: dict[str, Any]) -> str:
             f"- prompt_without_route: {consistency['prompt_without_route']}",
         ]
 
+    router_health = r.get("router_health")
+    if router_health:
+        lines += [
+            "",
+            "## router_health",
+            f"- ok: {router_health['ok']}",
+            f"- detail: {router_health['detail']}",
+        ]
+
+    upstream_health = r.get("upstream_health")
+    if upstream_health:
+        lines += [
+            "",
+            "## upstream_health",
+            f"- ok: {upstream_health['ok']}",
+            f"- detail: {upstream_health['detail']}",
+        ]
+
+    router_budget = r.get("router_budget")
+    if router_budget:
+        lines += [
+            "",
+            "## router_budget",
+            f"- exit_code: {router_budget['exit_code']}",
+        ]
+        for ln in router_budget.get("reasons", []):
+            append_md_highlight(lines, ln)
+
     lines += [
         "",
         "## strict_budget",
@@ -710,6 +738,38 @@ def append_md_highlight(lines: list[str], line: str) -> None:
         lines.append(f"  {line}")
     else:
         lines.append(f"- {line}")
+
+
+def derive_health_scopes(
+    *,
+    ready_ok: bool,
+    traffic_evidence_ok: bool,
+    log_consistency_ok: bool,
+    router_budget_exit: int,
+    upstream_budget_exit: int,
+) -> dict[str, dict[str, Any]]:
+    router_ok = (
+        ready_ok
+        and traffic_evidence_ok
+        and log_consistency_ok
+        and router_budget_exit == 0
+    )
+    upstream_ok = upstream_budget_exit == 0
+    return {
+        "router_health": {
+            "ok": router_ok,
+            "detail": (
+                f"ready_ok={str(ready_ok).lower()} "
+                f"traffic_evidence_ok={str(traffic_evidence_ok).lower()} "
+                f"log_consistency_ok={str(log_consistency_ok).lower()} "
+                f"router_budget_exit={router_budget_exit}"
+            ),
+        },
+        "upstream_health": {
+            "ok": upstream_ok,
+            "detail": f"upstream_budget_exit={upstream_budget_exit}",
+        },
+    }
 
 
 def main() -> int:
@@ -841,11 +901,25 @@ def main() -> int:
     )
 
     if budget_no_samples(day_log):
+        router_budget = {"ok": True, "exit_code": 0, "stdout": "no_samples", "stderr": ""}
         strict = {"ok": True, "exit_code": 0, "stdout": "no_samples", "stderr": ""}
         tolerant = {"ok": True, "exit_code": 0, "stdout": "no_samples", "stderr": ""}
+        router_budget_reasons = ["no_samples: router budget skipped"]
         strict_reasons = ["no_samples: strict budget skipped"]
         tolerant_reasons = ["no_samples: tolerant budget skipped"]
     else:
+        router_budget_cmd = (
+            "uv run python scripts/check_route_error_budget.py "
+            f"{shlex.quote(str(day_log))} --min-total 1 --max-error-rate 0 --max-target-error-rate 0 "
+            "--max-route-error-rate 0 --max-embedding-error-rate 0"
+        )
+        router_budget = run(router_budget_cmd, cwd=repo, timeout=90)
+        router_budget_reasons = keep(
+            (router_budget["stdout"] + "\n" + router_budget["stderr"]).strip(),
+            ["reason", "rate", "total", "fails", "failed", "no_samples"],
+            no_truncate_keywords=("reasons:",),
+        )
+
         strict_cmd = (
             "uv run python scripts/check_route_error_budget.py "
             f"{shlex.quote(str(day_log))} --min-total 1 --max-error-rate 0 --max-target-error-rate 0 "
@@ -913,6 +987,10 @@ def main() -> int:
         "traffic_evidence": traffic_evidence,
         "log_consistency": log_consistency,
         "quality_artifacts": quality_artifacts,
+        "router_budget": {
+            "exit_code": router_budget["exit_code"],
+            "reasons": router_budget_reasons,
+        },
         "strict_budget": {
             "exit_code": strict["exit_code"],
             "reasons": strict_reasons,
@@ -927,6 +1005,15 @@ def main() -> int:
             "highlights": e2e_highlights,
         },
     }
+    report.update(
+        derive_health_scopes(
+            ready_ok=report["ready"]["ok"],
+            traffic_evidence_ok=report["traffic_evidence"]["ok"],
+            log_consistency_ok=report["log_consistency"]["ok"],
+            router_budget_exit=report["router_budget"]["exit_code"],
+            upstream_budget_exit=report["tolerant_budget"]["exit_code"],
+        )
+    )
 
     json_path = health_dir / f"intentmux-health-{day}.json"
     md_path = health_dir / f"intentmux-health-{day}.md"
@@ -954,6 +1041,9 @@ def main() -> int:
                 "time": report["time"],
                 "commit": report["commit"],
                 "ready_ok": report["ready"]["ok"],
+                "router_health_ok": report["router_health"]["ok"],
+                "upstream_health_ok": report["upstream_health"]["ok"],
+                "router_budget_exit": report["router_budget"]["exit_code"],
                 "strict_exit": report["strict_budget"]["exit_code"],
                 "tolerant_exit": report["tolerant_budget"]["exit_code"],
                 "traffic_evidence_ok": report["traffic_evidence"]["ok"],
@@ -976,7 +1066,9 @@ def main() -> int:
         return 2
     if not report["traffic_evidence"]["ok"]:
         return 4
-    if report["strict_budget"]["exit_code"] != 0 and report["tolerant_budget"]["exit_code"] != 0:
+    if not report["log_consistency"]["ok"]:
+        return 5
+    if report["router_budget"]["exit_code"] != 0:
         return 3
     return 0
 

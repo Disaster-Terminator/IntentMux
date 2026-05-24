@@ -99,6 +99,7 @@ class PromptReviewLogger:
         }
         add_decision_explainability(record, decision)
         add_match_provenance(record, decision)
+        add_embedding_diagnostics(record, decision)
         path = self.log_dir / f"{audit_log_day(timezone_name=self.timezone_name)}.jsonl"
         with path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(record, ensure_ascii=False, sort_keys=True))
@@ -414,6 +415,7 @@ def route_record(
         record["upstream_status"] = upstream_status
     add_decision_explainability(record, decision)
     add_match_provenance(record, decision)
+    add_embedding_diagnostics(record, decision)
     if format_signals:
         record["format_signals"] = format_signals
     if timings_ms:
@@ -446,6 +448,15 @@ def add_match_provenance(record: dict[str, Any], decision: RoutingDecision) -> N
         record["match_score"] = decision.match_score
     if decision.match_provenance is not None:
         record["match_provenance"] = decision.match_provenance
+
+
+def add_embedding_diagnostics(record: dict[str, Any], decision: RoutingDecision) -> None:
+    if decision.route_vector_source is not None:
+        record["route_vector_source"] = decision.route_vector_source
+    if decision.route_vector_load_ms is not None:
+        record["route_vector_load_ms"] = decision.route_vector_load_ms
+    if decision.query_embedding_ms is not None:
+        record["query_embedding_ms"] = decision.query_embedding_ms
 
 
 def emit_route_record(

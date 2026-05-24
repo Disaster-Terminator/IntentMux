@@ -5,6 +5,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
+from time import perf_counter
 from typing import Any
 
 import numpy as np
@@ -43,6 +44,9 @@ class RoutingDecision:
     match_text_sha256: str | None = None
     match_score: float | None = None
     match_provenance: str | None = None
+    route_vector_source: str | None = None
+    route_vector_load_ms: float | None = None
+    query_embedding_ms: float | None = None
 
 
 class Router:
@@ -117,8 +121,10 @@ class Router:
             )
 
         try:
-            await self._ensure_route_vectors()
+            route_vector_source, route_vector_load_ms = await self._ensure_route_vectors()
+            query_embedding_started = perf_counter()
             query_vector = (await self.embedding_client.embed([text]))[0]
+            query_embedding_ms = (perf_counter() - query_embedding_started) * 1000
             route_matches = self._rank_route_matches(text, query_vector)
         except Exception:
             return RoutingDecision(
@@ -140,6 +146,9 @@ class Router:
                 rewrite=True,
                 score=0.0,
                 second_score=0.0,
+                route_vector_source=route_vector_source,
+                route_vector_load_ms=round(route_vector_load_ms, 2),
+                query_embedding_ms=round(query_embedding_ms, 2),
             )
 
         ranked = sorted(route_matches.items(), key=lambda item: item[1].score, reverse=True)
@@ -175,6 +184,9 @@ class Router:
                     else None
                 ),
                 match_provenance=best_match.provenance,
+                route_vector_source=route_vector_source,
+                route_vector_load_ms=round(route_vector_load_ms, 2),
+                query_embedding_ms=round(query_embedding_ms, 2),
             )
 
         return RoutingDecision(
@@ -200,6 +212,9 @@ class Router:
                 else None
             ),
             match_provenance=best_match.provenance,
+            route_vector_source=route_vector_source,
+            route_vector_load_ms=round(route_vector_load_ms, 2),
+            query_embedding_ms=round(query_embedding_ms, 2),
         )
 
     def _is_entry_model(self, source_model: Any) -> bool:
@@ -251,9 +266,10 @@ class Router:
             return route_id
         return target_model
 
-    async def _ensure_route_vectors(self) -> None:
+    async def _ensure_route_vectors(self) -> tuple[str, float]:
+        started = perf_counter()
         if self._route_vectors is not None:
-            return
+            return "memory", (perf_counter() - started) * 1000
         entries: list[RouteCorpusEntry] = []
         for route, spec in self.settings.routes.items():
             for index, text in enumerate(spec.utterances):
@@ -270,7 +286,7 @@ class Router:
         cached_vectors = self._load_route_vector_cache(entries)
         if cached_vectors is not None:
             self._route_vectors = cached_vectors
-            return
+            return "disk_cache", (perf_counter() - started) * 1000
 
         texts = [entry.text for entry in entries]
         vectors = await self.embedding_client.embed(texts) if texts else []
@@ -290,6 +306,7 @@ class Router:
             )
         self._route_vectors = route_vectors
         self._write_route_vector_cache(entries, vectors)
+        return "remote_embed", (perf_counter() - started) * 1000
 
     def _load_route_vector_cache(
         self, entries: list["RouteCorpusEntry"]

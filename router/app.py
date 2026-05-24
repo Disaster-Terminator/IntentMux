@@ -157,6 +157,9 @@ def create_app(
             "match_text_sha256": decision.match_text_sha256,
             "match_score": decision.match_score,
             "match_provenance": decision.match_provenance,
+            "route_vector_source": decision.route_vector_source,
+            "route_vector_load_ms": decision.route_vector_load_ms,
+            "query_embedding_ms": decision.query_embedding_ms,
         }
 
     @app.post("/v1/chat/completions")
