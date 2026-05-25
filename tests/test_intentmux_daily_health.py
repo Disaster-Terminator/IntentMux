@@ -5,8 +5,12 @@ from pathlib import Path
 import subprocess
 
 from scripts.intentmux_daily_health import (
+    BUDGET_MIN_SAMPLES,
+    budget_no_samples,
+    budget_samples_too_few,
     build_e2e_cmd,
     build_quality_artifact_paths,
+    count_route_records,
     default_log_dir,
     derive_health_scopes,
     log_consistency_from_day_logs,
@@ -19,6 +23,16 @@ from scripts.intentmux_daily_health import (
     report_now_and_day,
     run,
 )
+
+
+def write_route_records(path: Path, count: int) -> None:
+    path.write_text(
+        "".join(
+            f'{{"event":"route_complete","request_id":"req-{index}"}}\n'
+            for index in range(count)
+        ),
+        encoding="utf-8",
+    )
 
 
 def test_derive_health_scopes_keeps_upstream_failure_out_of_router_health():
@@ -40,6 +54,31 @@ def test_derive_health_scopes_keeps_upstream_failure_out_of_router_health():
             "detail": "upstream_budget_exit=1",
         },
     }
+
+
+def test_budget_no_samples_treats_missing_and_empty_logs_as_skippable(tmp_path: Path):
+    missing = tmp_path / "missing.jsonl"
+    empty = tmp_path / "empty.jsonl"
+    empty.write_text("", encoding="utf-8")
+
+    assert budget_no_samples(missing) is True
+    assert budget_no_samples(empty) is True
+
+
+def test_budget_samples_too_few_skips_below_threshold(tmp_path: Path):
+    day_log = tmp_path / "routes.jsonl"
+    write_route_records(day_log, BUDGET_MIN_SAMPLES - 1)
+
+    assert count_route_records(day_log) == BUDGET_MIN_SAMPLES - 1
+    assert budget_samples_too_few(day_log) is True
+
+
+def test_budget_samples_too_few_allows_budget_at_threshold(tmp_path: Path):
+    day_log = tmp_path / "routes.jsonl"
+    write_route_records(day_log, BUDGET_MIN_SAMPLES)
+
+    assert count_route_records(day_log) == BUDGET_MIN_SAMPLES
+    assert budget_samples_too_few(day_log) is False
 
 
 def test_parse_ready_reads_components_contract():

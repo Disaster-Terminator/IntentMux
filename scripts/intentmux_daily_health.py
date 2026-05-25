@@ -151,8 +151,20 @@ def parse_ready(payload: dict[str, Any] | None, code: int | None, err: str | Non
     }
 
 
+BUDGET_MIN_SAMPLES = 50  # 样本数低于此值时跳过预算检查，避免小样本误告警
+
+
 def budget_no_samples(day_log: Path) -> bool:
+    """日志文件不存在或为空时返回 True（跳过预算）。"""
     return (not day_log.exists()) or day_log.stat().st_size == 0
+
+
+def budget_samples_too_few(day_log: Path) -> bool:
+    """日志样本数低于阈值时返回 True（跳过预算，避免小样本率失真）。"""
+    if budget_no_samples(day_log):
+        return True
+    count = count_route_records(day_log)
+    return count < BUDGET_MIN_SAMPLES
 
 
 def count_route_records(day_log: Path) -> int:
@@ -900,13 +912,15 @@ def main() -> int:
         slow_request_limit=args.slow_request_limit,
     )
 
-    if budget_no_samples(day_log):
-        router_budget = {"ok": True, "exit_code": 0, "stdout": "no_samples", "stderr": ""}
-        strict = {"ok": True, "exit_code": 0, "stdout": "no_samples", "stderr": ""}
-        tolerant = {"ok": True, "exit_code": 0, "stdout": "no_samples", "stderr": ""}
-        router_budget_reasons = ["no_samples: router budget skipped"]
-        strict_reasons = ["no_samples: strict budget skipped"]
-        tolerant_reasons = ["no_samples: tolerant budget skipped"]
+    if budget_samples_too_few(day_log):
+        total = count_route_records(day_log) if day_log.exists() else 0
+        reason = f"skipped: samples={total} (<{BUDGET_MIN_SAMPLES} threshold)"
+        router_budget = {"ok": True, "exit_code": 0, "stdout": reason, "stderr": ""}
+        strict = {"ok": True, "exit_code": 0, "stdout": reason, "stderr": ""}
+        tolerant = {"ok": True, "exit_code": 0, "stdout": reason, "stderr": ""}
+        router_budget_reasons = [reason]
+        strict_reasons = [reason]
+        tolerant_reasons = [reason]
     else:
         router_budget_cmd = (
             "uv run python scripts/check_route_error_budget.py "
