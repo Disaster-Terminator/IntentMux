@@ -150,6 +150,8 @@ Production deployments should set:
 
 - `INTENTMUX_HOME`: runtime home for config, semantic assets, logs, and cache.
 - `ROUTER_CONFIG`: runtime `routes.yaml`.
+- `ROUTER_CLOUD_MODE=true`: enable fail-closed hosted/public safety checks.
+- `ROUTER_INBOUND_API_KEY`: required for hosted/public deployments.
 - `ROUTER_LITELLM_BASE_URL`: upstream OpenAI-compatible gateway.
 - `ROUTER_EMBEDDING_URL` / `ROUTER_EMBEDDING_MODEL`: embedding upstream.
 - `ROUTER_AUDIT_LOG_ENABLED=true` and `ROUTER_AUDIT_LOG_DIR`: persistent route
@@ -160,6 +162,8 @@ Production deployments should set:
 `/ready` reports config source, runtime home, logging state, route-bank load
 state, and route utterance counts. Do not trust docs or stale state files over
 live `/ready` and current logs.
+See [docs/cloud_hosting.md](docs/cloud_hosting.md) for hosted runtime artifact
+handling.
 
 ## API
 
@@ -244,6 +248,7 @@ Useful docs:
 - [docs/PATROL_HANDOFF.md](docs/PATROL_HANDOFF.md): runtime patrol handoff.
 - [docs/log_driven_quality_loop.md](docs/log_driven_quality_loop.md): log-driven quality loop.
 - [docs/router_data_pipeline_research.md](docs/router_data_pipeline_research.md): semantic asset pipeline.
+- [docs/cloud_hosting.md](docs/cloud_hosting.md): hosted runtime and artifact boundaries.
 - [docs/production_rollout_gate.md](docs/production_rollout_gate.md): production rollout gate.
 
 ## Current State

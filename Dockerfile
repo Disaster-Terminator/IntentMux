@@ -14,7 +14,6 @@ RUN uv sync --locked --no-dev
 
 ENV PYTHONUNBUFFERED=1
 ENV ROUTER_HOST=0.0.0.0
-ENV ROUTER_PORT=4001
 ENV ROUTER_CONFIG=/app/config/routes.yaml
 ENV ROUTER_AUDIT_LOG_ENABLED=true
 ENV ROUTER_AUDIT_LOG_DIR=/data/logs/routes
@@ -23,6 +22,6 @@ ENV ROUTER_PROMPT_LOG_DIR=/data/logs/prompts
 
 EXPOSE 4001
 
-HEALTHCHECK --interval=15s --timeout=5s --retries=3 CMD ["uv", "run", "--no-sync", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4001/health', timeout=3).read()"]
+HEALTHCHECK --interval=15s --timeout=5s --retries=3 CMD ["uv", "run", "--no-sync", "python", "-c", "import os, urllib.request; port=os.getenv('ROUTER_PORT') or os.getenv('CONTAINER_APP_PORT') or os.getenv('PORT') or '4001'; urllib.request.urlopen(f'http://127.0.0.1:{port}/health', timeout=3).read()"]
 
 CMD ["uv", "run", "--no-sync", "python", "-m", "router.app"]

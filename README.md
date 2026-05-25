@@ -143,6 +143,8 @@ routes:
 
 - `INTENTMUX_HOME`：运行时目录，保存真实配置、语义资产、日志和缓存。
 - `ROUTER_CONFIG`：运行时 `routes.yaml` 路径。
+- `ROUTER_CLOUD_MODE=true`：云端/公网部署启用 fail-closed 安全检查。
+- `ROUTER_INBOUND_API_KEY`：云端/公网部署必须配置入口认证。
 - `ROUTER_LITELLM_BASE_URL`：上游 OpenAI-compatible gateway。
 - `ROUTER_EMBEDDING_URL` / `ROUTER_EMBEDDING_MODEL`：embedding upstream。
 - `ROUTER_AUDIT_LOG_ENABLED=true` 和 `ROUTER_AUDIT_LOG_DIR`：持久 route audit。
@@ -150,6 +152,7 @@ routes:
 
 `/ready` 会暴露当前配置来源、运行时目录、日志状态、route bank 是否加载和每个 route
 的 utterance 数量。不要盲信文档或旧状态文件，先看 live `/ready` 和最新日志。
+云端运行时资产边界见 [docs/cloud_hosting.md](docs/cloud_hosting.md)。
 
 ## API
 
@@ -229,6 +232,7 @@ uv run python scripts/intentmux_daily_health.py \
 - [docs/PATROL_HANDOFF.md](docs/PATROL_HANDOFF.md)：巡检和运行时交接。
 - [docs/log_driven_quality_loop.md](docs/log_driven_quality_loop.md)：日志驱动质量闭环。
 - [docs/router_data_pipeline_research.md](docs/router_data_pipeline_research.md)：语义资产管线。
+- [docs/cloud_hosting.md](docs/cloud_hosting.md)：云端托管与运行产物边界。
 - [docs/production_rollout_gate.md](docs/production_rollout_gate.md)：生产变更门禁。
 
 ## 当前状态

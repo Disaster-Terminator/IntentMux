@@ -118,6 +118,7 @@ class RouterSettings(BaseModel):
     litellm_base_url: str = "http://127.0.0.1:4000"
     litellm_api_key: str | None = None
     inbound_api_key: str | None = None
+    cloud_mode: bool = False
     litellm_timeout: float = 120.0
     access_log: bool = False
     audit_log_enabled: bool = False
@@ -169,12 +170,20 @@ class RouterSettings(BaseModel):
         for hard_rule in self.hard_rules:
             if hard_rule.route_id not in self.routes:
                 raise ValueError("hard_rules route_id must be present in routes")
+        if self.cloud_mode and not self.inbound_api_key:
+            raise ValueError("inbound_api_key is required in cloud mode")
+        if self.cloud_mode and self.prompt_log_mode == "raw_local":
+            raise ValueError("raw_local prompt logging is not allowed in cloud mode")
+        if self.cloud_mode and self.placeholder_target_models:
+            raise ValueError("placeholder target models are not allowed in cloud mode")
         if self.prompt_log_mode != "off" and not self.prompt_log_dir:
             raise ValueError("prompt_log_dir is required when prompt logging is enabled")
         if self.prompt_log_max_chars <= 0:
             raise ValueError("prompt_log_max_chars must be positive")
         if self.embedding_batch_size <= 0:
             raise ValueError("embedding_batch_size must be positive")
+        if self.listen_port <= 0:
+            raise ValueError("listen_port must be positive")
         return self
 
     def resolve_route_id_alias(self, route_id: str) -> str:
@@ -276,6 +285,7 @@ def load_settings(path: str | Path | None = None) -> RouterSettings:
         "litellm_base_url": os.getenv("ROUTER_LITELLM_BASE_URL", settings.litellm_base_url),
         "litellm_api_key": os.getenv("ROUTER_LITELLM_API_KEY") or settings.litellm_api_key,
         "inbound_api_key": os.getenv("ROUTER_INBOUND_API_KEY") or settings.inbound_api_key,
+        "cloud_mode": bool_from_env("ROUTER_CLOUD_MODE", settings.cloud_mode),
         "litellm_timeout": float(
             os.getenv("ROUTER_LITELLM_TIMEOUT", str(settings.litellm_timeout))
         ),
@@ -307,7 +317,7 @@ def load_settings(path: str | Path | None = None) -> RouterSettings:
             os.getenv("ROUTER_READINESS_TIMEOUT", str(settings.readiness_timeout))
         ),
         "listen_host": os.getenv("ROUTER_HOST", settings.listen_host),
-        "listen_port": int(os.getenv("ROUTER_PORT", str(settings.listen_port))),
+        "listen_port": listen_port_from_env(settings.listen_port),
     }
     return RouterSettings.model_validate(
         settings.model_dump()
@@ -382,6 +392,14 @@ def bool_from_env(name: str, default: bool) -> bool:
     if value is None:
         return default
     return value.lower() in {"1", "true", "yes", "on"}
+
+
+def listen_port_from_env(default: int) -> int:
+    for name in ("ROUTER_PORT", "CONTAINER_APP_PORT", "PORT"):
+        value = os.getenv(name)
+        if value:
+            return int(value)
+    return default
 
 
 def headers_from_json_env(name: str, default: dict[str, str]) -> dict[str, str]:

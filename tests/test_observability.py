@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 
 from router.observability import (
+    AuditLogger,
     audit_log_day,
+    emit_route_record,
     error_class_for,
     redact_prompt_text,
     request_identity_from_request,
@@ -23,6 +26,27 @@ def test_audit_log_day_can_use_utc_when_configured():
     now = datetime(2026, 5, 13, 16, 30, tzinfo=UTC)
 
     assert audit_log_day(now, timezone_name="UTC") == "2026-05-13"
+
+
+def test_audit_logger_can_be_enabled_without_file_sink():
+    audit_logger = AuditLogger(None, enabled=True)
+
+    audit_logger.write({"event": "route_complete", "request_id": "req-1"})
+
+    assert audit_logger.enabled is True
+    assert audit_logger.log_dir is None
+
+
+def test_emit_route_record_with_stdout_only_audit_uses_logger(caplog):
+    audit_logger = AuditLogger(None, enabled=True)
+    record = {"event": "route_complete", "request_id": "req-1"}
+
+    with caplog.at_level(logging.INFO, logger="intentmux.test"):
+        emit_route_record(logging.getLogger("intentmux.test"), record, audit_logger)
+
+    assert caplog.records[0].message == (
+        '{"event": "route_complete", "request_id": "req-1"}'
+    )
 
 
 def test_redact_prompt_text_masks_common_credentials():

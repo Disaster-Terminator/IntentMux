@@ -140,6 +140,159 @@ routes:
     assert settings.inbound_api_key == "sk-intentmux"
 
 
+def test_load_settings_cloud_mode_requires_inbound_api_key(tmp_path: Path, monkeypatch):
+    routes_path = tmp_path / "routes.yaml"
+    routes_path.write_text(
+        """
+route_model: intentmux
+fallback_route_id: lite
+routes:
+  lite:
+    target_model: lite-upstream
+    description: low risk
+    utterances:
+      - hi
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("ROUTER_CLOUD_MODE", "true")
+    monkeypatch.delenv("ROUTER_INBOUND_API_KEY", raising=False)
+
+    with pytest.raises(ValidationError, match="inbound_api_key is required in cloud mode"):
+        load_settings(routes_path)
+
+
+def test_load_settings_cloud_mode_rejects_raw_local_prompt_logging(
+    tmp_path: Path, monkeypatch
+):
+    routes_path = tmp_path / "routes.yaml"
+    routes_path.write_text(
+        """
+route_model: intentmux
+fallback_route_id: lite
+routes:
+  lite:
+    target_model: lite-upstream
+    description: low risk
+    utterances:
+      - hi
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("ROUTER_CLOUD_MODE", "true")
+    monkeypatch.setenv("ROUTER_INBOUND_API_KEY", "sk-intentmux")
+    monkeypatch.setenv("ROUTER_PROMPT_LOG_MODE", "raw_local")
+
+    with pytest.raises(ValidationError, match="raw_local prompt logging is not allowed"):
+        load_settings(routes_path)
+
+
+def test_load_settings_cloud_mode_allows_redacted_prompt_logging(
+    tmp_path: Path, monkeypatch
+):
+    prompt_dir = tmp_path / "prompts"
+    routes_path = tmp_path / "routes.yaml"
+    routes_path.write_text(
+        """
+route_model: intentmux
+fallback_route_id: lite
+routes:
+  lite:
+    target_model: lite-upstream
+    description: low risk
+    utterances:
+      - hi
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("ROUTER_CLOUD_MODE", "true")
+    monkeypatch.setenv("ROUTER_INBOUND_API_KEY", "sk-intentmux")
+    monkeypatch.setenv("ROUTER_PROMPT_LOG_MODE", "redacted")
+    monkeypatch.setenv("ROUTER_PROMPT_LOG_DIR", str(prompt_dir))
+
+    settings = load_settings(routes_path)
+
+    assert settings.cloud_mode is True
+    assert settings.prompt_log_mode == "redacted"
+
+
+def test_load_settings_cloud_mode_rejects_placeholder_target_models(
+    tmp_path: Path, monkeypatch
+):
+    routes_path = tmp_path / "routes.yaml"
+    routes_path.write_text(
+        """
+route_model: intentmux
+fallback_route_id: lite
+routes:
+  lite:
+    target_model: your-lite-model
+    description: low risk
+    utterances:
+      - hi
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("ROUTER_CLOUD_MODE", "true")
+    monkeypatch.setenv("ROUTER_INBOUND_API_KEY", "sk-intentmux")
+
+    with pytest.raises(ValidationError, match="placeholder target models are not allowed"):
+        load_settings(routes_path)
+
+
+def test_load_settings_port_env_precedence_for_hosted_platforms(
+    tmp_path: Path, monkeypatch
+):
+    routes_path = tmp_path / "routes.yaml"
+    routes_path.write_text(
+        """
+route_model: intentmux
+fallback_route_id: lite
+listen_port: 4100
+routes:
+  lite:
+    target_model: lite-upstream
+    description: low risk
+    utterances:
+      - hi
+""",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("PORT", "8080")
+    settings = load_settings(routes_path)
+    assert settings.listen_port == 8080
+
+    monkeypatch.setenv("CONTAINER_APP_PORT", "7000")
+    settings = load_settings(routes_path)
+    assert settings.listen_port == 7000
+
+    monkeypatch.setenv("ROUTER_PORT", "5001")
+    settings = load_settings(routes_path)
+    assert settings.listen_port == 5001
+
+
+def test_load_settings_rejects_non_positive_listen_port(tmp_path: Path, monkeypatch):
+    routes_path = tmp_path / "routes.yaml"
+    routes_path.write_text(
+        """
+route_model: intentmux
+fallback_route_id: lite
+routes:
+  lite:
+    target_model: lite-upstream
+    description: low risk
+    utterances:
+      - hi
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("PORT", "0")
+
+    with pytest.raises(ValidationError, match="listen_port must be positive"):
+        load_settings(routes_path)
+
+
 def test_empty_litellm_api_key_env_does_not_clear_configured_key(monkeypatch, tmp_path: Path):
     routes_path = tmp_path / "routes.yaml"
     routes_path.write_text(
@@ -927,6 +1080,31 @@ routes:
     assert settings.audit_log_dir == str(audit_dir)
     assert settings.audit_log_enabled is True
     assert settings.audit_log_timezone == "UTC"
+
+
+def test_load_settings_allows_empty_audit_log_dir_for_stdout_only(
+    tmp_path: Path, monkeypatch
+):
+    routes_path = tmp_path / "routes.yaml"
+    routes_path.write_text(
+        """
+route_model: intentmux
+default_route: lite-upstream
+routes:
+  lite-upstream:
+    description: seed cheap
+    utterances:
+      - seed cheap utterance
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("ROUTER_AUDIT_LOG_ENABLED", "true")
+    monkeypatch.setenv("ROUTER_AUDIT_LOG_DIR", "")
+
+    settings = load_settings(routes_path)
+
+    assert settings.audit_log_enabled is True
+    assert settings.audit_log_dir == ""
 
 
 def test_load_settings_reads_prompt_review_log_overrides(tmp_path: Path, monkeypatch):

@@ -35,9 +35,7 @@ class AuditLogger:
         self.enabled = enabled
         self.log_dir = Path(log_dir) if log_dir else None
         self.timezone_name = timezone_name
-        if self.enabled:
-            if self.log_dir is None:
-                raise ValueError("audit_log_dir is required when audit logging is enabled")
+        if self.enabled and self.log_dir is not None:
             self.log_dir.mkdir(parents=True, exist_ok=True)
 
     def write(self, record: dict[str, Any]) -> None:
