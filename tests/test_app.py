@@ -526,6 +526,35 @@ def test_chat_completion_requires_inbound_api_key_when_configured():
     assert ok.status_code == 200
 
 
+def test_chat_completion_accepts_inbound_api_key_rotation_slots():
+    app = create_app(
+        settings=RouterSettings(
+            route_model="intentmux",
+            fallback_route_id="lite",
+            inbound_api_key="sk-current",
+            inbound_api_keys=["sk-current", "sk-next"],
+            routes={"lite": RouteSpec(target_model="lite-upstream", description="lite", utterances=["hi"])},
+        ),
+        router=FakeRouter(RoutingDecision("lite-upstream", "test", rewrite=True, route_id="lite")),
+        proxy=FakeProxy(),
+    )
+    client = TestClient(app)
+
+    next_key = client.post(
+        "/v1/chat/completions",
+        headers={"Authorization": "Bearer sk-next"},
+        json={"model": "intentmux", "messages": [{"role": "user", "content": "hi"}]},
+    )
+    wrong = client.post(
+        "/v1/chat/completions",
+        headers={"Authorization": "Bearer wrong"},
+        json={"model": "intentmux", "messages": [{"role": "user", "content": "hi"}]},
+    )
+
+    assert next_key.status_code == 200
+    assert wrong.status_code == 401
+
+
 def test_chat_completion_does_not_write_prompt_review_log_by_default(tmp_path: Path):
     prompt_dir = tmp_path / "prompts"
     app = create_app(

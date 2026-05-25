@@ -120,12 +120,13 @@ def create_app(
         return payload
 
     def require_inbound_auth(request: Request) -> JSONResponse | None:
-        if not settings.inbound_api_key:
+        if not settings.inbound_api_keys:
             return None
-        expected = f"Bearer {settings.inbound_api_key}"
         actual = request.headers.get("authorization", "")
-        if secrets.compare_digest(actual, expected):
-            return None
+        for api_key in settings.inbound_api_keys:
+            expected = f"Bearer {api_key}"
+            if secrets.compare_digest(actual, expected):
+                return None
         return JSONResponse(
             status_code=401,
             content={"error": {"message": "Invalid or missing IntentMux API key"}},

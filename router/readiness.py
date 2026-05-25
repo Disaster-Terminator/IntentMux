@@ -61,16 +61,30 @@ class ReadinessChecker:
             warnings.append("runtime_config_missing")
         if self.settings.placeholder_target_models:
             warnings.append("placeholder_targets")
-        detail_parts = [
-            f"config_source={self.settings.config_source}",
-            f"config_path={self.settings.config_path}",
-            f"runtime_home={self.settings.runtime_home}",
-            f"runtime_config_exists={runtime_config_exists}",
-            f"audit_log_enabled={str(self.settings.audit_log_enabled).lower()}",
-            f"audit_log_dir={self.settings.audit_log_dir}",
-            f"access_log={str(self.settings.access_log).lower()}",
-            f"prompt_log_mode={self.settings.prompt_log_mode}",
-        ]
+        if self.settings.cloud_mode:
+            detail_parts = [
+                "cloud_mode=true",
+                f"config_source={self.settings.config_source}",
+                f"runtime_config_exists={runtime_config_exists}",
+                f"audit_log_enabled={str(self.settings.audit_log_enabled).lower()}",
+                f"access_log={str(self.settings.access_log).lower()}",
+                f"prompt_log_mode={self.settings.prompt_log_mode}",
+            ]
+        else:
+            detail_parts = [
+                f"config_source={self.settings.config_source}",
+                f"config_path={self.settings.config_path}",
+                f"runtime_home={self.settings.runtime_home}",
+                f"runtime_config_exists={runtime_config_exists}",
+                f"audit_log_enabled={str(self.settings.audit_log_enabled).lower()}",
+                f"audit_log_dir={self.settings.audit_log_dir}",
+                f"access_log={str(self.settings.access_log).lower()}",
+                f"prompt_log_mode={self.settings.prompt_log_mode}",
+            ]
+        if self.settings.config_sha256:
+            detail_parts.append(f"config_sha256={self.settings.config_sha256}")
+        if self.settings.route_bank_sha256:
+            detail_parts.append(f"route_bank_sha256={self.settings.route_bank_sha256}")
         if warnings:
             detail_parts.append(f"warnings={','.join(warnings)}")
         if self.settings.placeholder_target_models:

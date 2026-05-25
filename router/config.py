@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -74,6 +75,8 @@ class HardRuleSpec(BaseModel):
 class RouterSettings(BaseModel):
     config_path: str | None = None
     config_source: str | None = None
+    config_sha256: str | None = None
+    route_bank_sha256: str | None = None
     runtime_home: str | None = None
     runtime_config_exists: bool = False
     placeholder_target_models: list[str] = Field(default_factory=list)
@@ -118,6 +121,7 @@ class RouterSettings(BaseModel):
     litellm_base_url: str = "http://127.0.0.1:4000"
     litellm_api_key: str | None = None
     inbound_api_key: str | None = None
+    inbound_api_keys: list[str] = Field(default_factory=list)
     cloud_mode: bool = False
     litellm_timeout: float = 120.0
     access_log: bool = False
@@ -170,7 +174,13 @@ class RouterSettings(BaseModel):
         for hard_rule in self.hard_rules:
             if hard_rule.route_id not in self.routes:
                 raise ValueError("hard_rules route_id must be present in routes")
-        if self.cloud_mode and not self.inbound_api_key:
+        self.inbound_api_keys = merged_api_keys(
+            [self.inbound_api_key],
+            self.inbound_api_keys,
+        )
+        if self.inbound_api_key is None and self.inbound_api_keys:
+            self.inbound_api_key = self.inbound_api_keys[0]
+        if self.cloud_mode and not self.inbound_api_keys:
             raise ValueError("inbound_api_key is required in cloud mode")
         if self.cloud_mode and self.prompt_log_mode == "raw_local":
             raise ValueError("raw_local prompt logging is not allowed in cloud mode")
@@ -235,6 +245,7 @@ def load_settings(path: str | Path | None = None) -> RouterSettings:
     raw["require_route_bank"] = require_route_bank
     raw = merge_route_bank(raw, config_path.parent, require_route_bank=require_route_bank)
     settings = RouterSettings.model_validate(raw)
+    inbound_api_key = os.getenv("ROUTER_INBOUND_API_KEY") or settings.inbound_api_key
     overrides = {
         "embedding_url": os.getenv("ROUTER_EMBEDDING_URL", settings.embedding_url),
         "embedding_model": os.getenv("ROUTER_EMBEDDING_MODEL", settings.embedding_model),
@@ -284,7 +295,11 @@ def load_settings(path: str | Path | None = None) -> RouterSettings:
         ),
         "litellm_base_url": os.getenv("ROUTER_LITELLM_BASE_URL", settings.litellm_base_url),
         "litellm_api_key": os.getenv("ROUTER_LITELLM_API_KEY") or settings.litellm_api_key,
-        "inbound_api_key": os.getenv("ROUTER_INBOUND_API_KEY") or settings.inbound_api_key,
+        "inbound_api_key": inbound_api_key,
+        "inbound_api_keys": inbound_api_keys_from_env(
+            inbound_api_key=inbound_api_key,
+            existing=settings.inbound_api_keys,
+        ),
         "cloud_mode": bool_from_env("ROUTER_CLOUD_MODE", settings.cloud_mode),
         "litellm_timeout": float(
             os.getenv("ROUTER_LITELLM_TIMEOUT", str(settings.litellm_timeout))
@@ -322,7 +337,12 @@ def load_settings(path: str | Path | None = None) -> RouterSettings:
     return RouterSettings.model_validate(
         settings.model_dump()
         | overrides
-        | config_diagnostics(config_path, path=path, runtime_home=runtime_home)
+        | config_diagnostics(
+            config_path,
+            path=path,
+            runtime_home=runtime_home,
+            route_bank_path=settings.route_bank_path,
+        )
     )
 
 
@@ -331,15 +351,62 @@ def config_diagnostics(
     *,
     path: str | Path | None = None,
     runtime_home: Path | None = None,
+    route_bank_path: str | None = None,
 ) -> dict[str, Any]:
     runtime_home = runtime_home or runtime_home_for_config(config_path)
     return {
         "config_path": str(config_path),
         "config_source": config_source(config_path, path=path),
+        "config_sha256": sha256_file(config_path),
+        "route_bank_sha256": route_bank_sha256(route_bank_path, config_path.parent),
         "runtime_home": str(runtime_home),
         "runtime_config_exists": (runtime_home / "config" / "routes.yaml").exists(),
         "placeholder_target_models": placeholder_target_models(config_path),
     }
+
+
+def sha256_file(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def route_bank_sha256(route_bank_path: str | None, base_dir: Path) -> str | None:
+    if not route_bank_path:
+        return None
+    resolved = resolve_route_bank_path(route_bank_path, base_dir)
+    if not resolved.exists():
+        return None
+    return sha256_file(resolved)
+
+
+def inbound_api_keys_from_env(
+    *,
+    inbound_api_key: str | None,
+    existing: list[str],
+) -> list[str]:
+    return merged_api_keys(
+        [inbound_api_key],
+        [os.getenv("ROUTER_INBOUND_API_KEY_NEXT")],
+        split_csv(os.getenv("ROUTER_INBOUND_API_KEYS")),
+        existing,
+    )
+
+
+def split_csv(value: str | None) -> list[str]:
+    if not value:
+        return []
+    return [item.strip() for item in value.split(",")]
+
+
+def merged_api_keys(*groups: list[str | None] | list[str]) -> list[str]:
+    keys: list[str] = []
+    seen: set[str] = set()
+    for group in groups:
+        for key in group:
+            if not key or key in seen:
+                continue
+            keys.append(key)
+            seen.add(key)
+    return keys
 
 
 def config_source(config_path: Path, *, path: str | Path | None = None) -> str:

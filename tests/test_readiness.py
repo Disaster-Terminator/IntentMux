@@ -146,6 +146,38 @@ def test_router_readiness_reports_route_bank_and_utterance_counts():
     )
 
 
+def test_router_readiness_cloud_mode_omits_local_paths_and_reports_fingerprints():
+    settings = RouterSettings(
+        cloud_mode=True,
+        config_path="/data/config/routes.yaml",
+        config_source="ROUTER_CONFIG",
+        config_sha256="a" * 64,
+        route_bank_sha256="b" * 64,
+        runtime_home="/data",
+        runtime_config_exists=True,
+        audit_log_enabled=True,
+        audit_log_dir="/data/logs/routes",
+        access_log=False,
+        prompt_log_mode="redacted",
+        prompt_log_dir="/data/logs/prompts",
+        inbound_api_key="sk-intentmux",
+        routes={"lite": RouteSpec(description="low risk", utterances=["a"])},
+        route_bank_loaded=True,
+    )
+
+    status = ReadinessChecker(settings).check_router()
+
+    assert status.ok is True
+    assert "cloud_mode=true" in status.detail
+    assert "config_source=ROUTER_CONFIG" in status.detail
+    assert f"config_sha256={'a' * 64}" in status.detail
+    assert f"route_bank_sha256={'b' * 64}" in status.detail
+    assert "config_path=" not in status.detail
+    assert "runtime_home=" not in status.detail
+    assert "audit_log_dir=" not in status.detail
+    assert "/data" not in status.detail
+
+
 def test_router_readiness_warns_when_using_repo_default_and_placeholder_targets():
     settings = RouterSettings(
         config_path="config/routes.yaml",

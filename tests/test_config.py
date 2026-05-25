@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 import pytest
@@ -140,6 +141,30 @@ routes:
     assert settings.inbound_api_key == "sk-intentmux"
 
 
+def test_inbound_api_keys_support_rotation_env(monkeypatch, tmp_path: Path):
+    routes_path = tmp_path / "routes.yaml"
+    routes_path.write_text(
+        """
+route_model: intentmux
+fallback_route_id: lite
+routes:
+  lite:
+    target_model: lite-upstream
+    description: low risk
+    utterances:
+      - hi
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("ROUTER_INBOUND_API_KEY", "sk-current")
+    monkeypatch.setenv("ROUTER_INBOUND_API_KEY_NEXT", "sk-next")
+    monkeypatch.setenv("ROUTER_INBOUND_API_KEYS", "sk-extra, ,sk-current")
+
+    settings = load_settings(routes_path)
+
+    assert settings.inbound_api_keys == ["sk-current", "sk-next", "sk-extra"]
+
+
 def test_load_settings_cloud_mode_requires_inbound_api_key(tmp_path: Path, monkeypatch):
     routes_path = tmp_path / "routes.yaml"
     routes_path.write_text(
@@ -238,6 +263,45 @@ routes:
 
     with pytest.raises(ValidationError, match="placeholder target models are not allowed"):
         load_settings(routes_path)
+
+
+def test_load_settings_records_config_and_route_bank_fingerprints(tmp_path: Path):
+    route_bank = tmp_path / "route_bank.yaml"
+    route_bank.write_text(
+        """
+version: 1
+routes:
+  lite:
+    utterances:
+      - text: route bank lite
+        source: test
+""",
+        encoding="utf-8",
+    )
+    routes_path = tmp_path / "routes.yaml"
+    routes_path.write_text(
+        f"""
+route_model: intentmux
+fallback_route_id: lite
+route_bank_path: {route_bank.name}
+routes:
+  lite:
+    target_model: lite-upstream
+    description: low risk
+    utterances:
+      - hi
+""",
+        encoding="utf-8",
+    )
+
+    settings = load_settings(routes_path)
+
+    assert settings.config_sha256 == hashlib.sha256(
+        routes_path.read_bytes()
+    ).hexdigest()
+    assert settings.route_bank_sha256 == hashlib.sha256(
+        route_bank.read_bytes()
+    ).hexdigest()
 
 
 def test_load_settings_port_env_precedence_for_hosted_platforms(
