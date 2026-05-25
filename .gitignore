@@ -18,6 +18,7 @@ data/semantic_sets/*.jsonl
 data/semantic_sets/**/*.yaml
 data/semantic_sets/**/*.jsonl
 data/cache/
+cache/
 logs/
 !examples/intentmux-home/logs/
 !examples/intentmux-home/logs/routes/

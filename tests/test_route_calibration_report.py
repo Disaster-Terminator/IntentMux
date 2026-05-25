@@ -11,6 +11,7 @@ from scripts.route_calibration_report import (
     build_report,
     coverage,
     infer_language,
+    parse_alphas,
     parse_thresholds,
     render_markdown,
     simulate_threshold_payload,
@@ -25,6 +26,15 @@ def test_parse_thresholds_sorts_and_deduplicates_values():
 def test_parse_thresholds_rejects_empty_value():
     with pytest.raises(ValueError, match="at least one"):
         parse_thresholds(" , ")
+
+
+def test_parse_alphas_sorts_deduplicates_and_rejects_out_of_range():
+    assert parse_alphas("0.7,0.3,0.3") == [0.3, 0.7]
+    assert parse_alphas("") == []
+    with pytest.raises(ValueError, match="greater than 0"):
+        parse_alphas("0")
+    with pytest.raises(ValueError, match="at most 1"):
+        parse_alphas("1.2")
 
 
 def test_summarize_eval_reports_deep_call_rate_and_slices():
@@ -78,17 +88,32 @@ def test_build_report_selects_best_threshold_by_quality_then_cost():
                 {"expect": "deep", "actual_route": "deep", "passed": True},
             ]
         },
+        "alpha:0.3": {
+            "cases": [
+                {"expect": "lite", "actual_route": "deep", "passed": False},
+                {"expect": "deep", "actual_route": "deep", "passed": True},
+            ]
+        },
+        "alpha:0.7": {
+            "cases": [
+                {"expect": "lite", "actual_route": "lite", "passed": True},
+                {"expect": "deep", "actual_route": "deep", "passed": True},
+            ]
+        },
     }
     run_results = {
         "current-router": {"exit_code": 0},
         "threshold:0.35": {"exit_code": 1},
         "threshold:0.55": {"exit_code": 0},
+        "alpha:0.3": {"exit_code": 1},
+        "alpha:0.7": {"exit_code": 0},
     }
 
     report = build_report(
         eval_payloads=eval_payloads,
         run_results=run_results,
         threshold_labels=["threshold:0.35", "threshold:0.55"],
+        alpha_labels=["alpha:0.3", "alpha:0.7"],
         cases_path=Path("cases.yaml"),
         routes_path=Path("routes.yaml"),
     )
@@ -96,7 +121,9 @@ def test_build_report_selects_best_threshold_by_quality_then_cost():
     assert report["schema"] == "intentmux-route-calibration-v1"
     assert report["recommendation"]["status"] == "evidence_ready"
     assert report["recommendation"]["best_threshold_label"] == "threshold:0.55"
+    assert report["recommendation"]["best_alpha_label"] == "alpha:0.7"
     assert len(report["threshold_curve"]) == 2
+    assert len(report["alpha_curve"]) == 2
 
 
 def test_simulate_threshold_payload_reuses_probe_scores_without_rerunning_eval():
@@ -212,6 +239,14 @@ def test_render_markdown_includes_baselines_threshold_curve_and_slices():
                 "exit_code": 0,
             }
         ],
+        "alpha_curve": [
+            {
+                "label": "alpha:0.7",
+                "pass_rate": 1.0,
+                "deep_call_rate": 0.5,
+                "exit_code": 0,
+            }
+        ],
     }
 
     markdown = render_markdown(report)
@@ -220,6 +255,8 @@ def test_render_markdown_includes_baselines_threshold_curve_and_slices():
     assert "## Baseline Comparison" in markdown
     assert "current-router: pass_rate=100.00% deep_call_rate=50.00%" in markdown
     assert "threshold:0.55: pass_rate=100.00% deep_call_rate=50.00%" in markdown
+    assert "## Alpha Curve" in markdown
+    assert "alpha:0.7: pass_rate=100.00% deep_call_rate=50.00%" in markdown
     assert "lite_general_zh: total=1 pass_rate=100.00%" in markdown
     assert "## Coverage" in markdown
 
@@ -259,6 +296,8 @@ cases:
             "--mock-embeddings",
             "--thresholds",
             "0.35,0.55",
+            "--alphas",
+            "0.3,0.7",
         ],
         check=True,
         text=True,
@@ -277,5 +316,10 @@ cases:
         "threshold:0.35",
         "threshold:0.55",
     ]
+    assert [point["label"] for point in report["alpha_curve"]] == [
+        "alpha:0.3",
+        "alpha:0.7",
+    ]
     assert "## Threshold Curve" in markdown
+    assert "## Alpha Curve" in markdown
     assert "## Coverage" in markdown

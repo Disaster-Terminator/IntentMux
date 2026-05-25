@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 from collections import Counter
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -28,6 +29,18 @@ DEFAULT_BASELINES = (
     "embedding-only",
 )
 DEFAULT_THRESHOLDS = (0.3, 0.35, 0.4, 0.45, 0.5, 0.55)
+
+
+def parse_alphas(value: str) -> list[float]:
+    if not value.strip():
+        return []
+    alphas = [float(item.strip()) for item in value.split(",") if item.strip()]
+    for alpha in alphas:
+        if alpha <= 0:
+            raise ValueError("alphas must be greater than 0")
+        if alpha > 1:
+            raise ValueError("alphas must be at most 1")
+    return sorted(set(alphas))
 
 
 def parse_thresholds(value: str) -> list[float]:
@@ -55,6 +68,7 @@ def run_eval_json(
     mock_embeddings: bool,
     threshold: float | None = None,
     margin: float | None = None,
+    env_overrides: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     cmd = [
         sys.executable,
@@ -75,7 +89,11 @@ def run_eval_json(
     if margin is not None:
         cmd.extend(["--margin", str(margin)])
 
-    result = subprocess.run(cmd, text=True, capture_output=True, check=False)
+    env = os.environ.copy()
+    if env_overrides:
+        env.update(env_overrides)
+
+    result = subprocess.run(cmd, text=True, capture_output=True, check=False, env=env)
     return {
         "cmd": " ".join(cmd),
         "exit_code": result.returncode,
@@ -182,6 +200,7 @@ def build_report(
     eval_payloads: dict[str, dict[str, Any]],
     run_results: dict[str, dict[str, Any]],
     threshold_labels: list[str],
+    alpha_labels: list[str],
     cases_path: Path,
     routes_path: Path,
 ) -> dict[str, Any]:
@@ -194,6 +213,7 @@ def build_report(
         for label, payload in eval_payloads.items()
     }
     curve = [summaries[label] for label in threshold_labels if label in summaries]
+    alpha_curve = [summaries[label] for label in alpha_labels if label in summaries]
     primary_payload = eval_payloads.get("current-router") or next(
         iter(eval_payloads.values()),
         {"cases": []},
@@ -215,8 +235,9 @@ def build_report(
             if label in summaries
         },
         "threshold_curve": curve,
+        "alpha_curve": alpha_curve,
         "runs": run_results,
-        "recommendation": recommendation(summaries, curve),
+        "recommendation": recommendation(summaries, curve, alpha_curve),
     }
 
 
@@ -264,6 +285,7 @@ def infer_language_from_slice(slice_name: str) -> str:
 def recommendation(
     summaries: dict[str, dict[str, Any]],
     curve: list[dict[str, Any]],
+    alpha_curve: list[dict[str, Any]],
 ) -> dict[str, Any]:
     current = summaries.get("current-router")
     if not current:
@@ -286,7 +308,7 @@ def recommendation(
         useful_curve,
         key=lambda point: (float(point["pass_rate"]), -float(point["deep_call_rate"])),
     )
-    return {
+    result = {
         "status": "evidence_ready",
         "next_step": "Use this report to judge scorer or route-bank changes before changing production routing.",
         "current_pass_rate": current["pass_rate"],
@@ -295,6 +317,25 @@ def recommendation(
         "best_threshold_pass_rate": best["pass_rate"],
         "best_threshold_deep_call_rate": best["deep_call_rate"],
     }
+    useful_alpha_curve = [
+        point
+        for point in alpha_curve
+        if point.get("total") == current.get("total")
+        and point.get("exit_code") is not None
+    ]
+    if useful_alpha_curve:
+        best_alpha = max(
+            useful_alpha_curve,
+            key=lambda point: (float(point["pass_rate"]), -float(point["deep_call_rate"])),
+        )
+        result.update(
+            {
+                "best_alpha_label": best_alpha["label"],
+                "best_alpha_pass_rate": best_alpha["pass_rate"],
+                "best_alpha_deep_call_rate": best_alpha["deep_call_rate"],
+            }
+        )
+    return result
 
 
 def render_markdown(report: dict[str, Any]) -> str:
@@ -322,6 +363,18 @@ def render_markdown(report: dict[str, Any]) -> str:
             f"deep_call_rate={point['deep_call_rate']:.2%} "
             f"exit_code={point['exit_code']}"
         )
+    lines.extend(["", "## Alpha Curve"])
+    alpha_curve = report.get("alpha_curve", [])
+    if alpha_curve:
+        for point in alpha_curve:
+            lines.append(
+                "- "
+                f"{point['label']}: pass_rate={point['pass_rate']:.2%} "
+                f"deep_call_rate={point['deep_call_rate']:.2%} "
+                f"exit_code={point['exit_code']}"
+            )
+    else:
+        lines.append("- not_run")
     lines.extend(["", "## Slice Metrics"])
     current = report["baselines"].get("current-router", {})
     for slice_name, values in sorted(current.get("slice_metrics", {}).items()):
@@ -352,6 +405,13 @@ def render_markdown(report: dict[str, Any]) -> str:
             f"pass_rate={report['recommendation']['best_threshold_pass_rate']:.2%} "
             f"deep_call_rate={report['recommendation']['best_threshold_deep_call_rate']:.2%}"
         )
+    if report["recommendation"].get("best_alpha_label"):
+        lines.append(
+            "- best_observed_alpha: "
+            f"{report['recommendation']['best_alpha_label']} "
+            f"pass_rate={report['recommendation']['best_alpha_pass_rate']:.2%} "
+            f"deep_call_rate={report['recommendation']['best_alpha_deep_call_rate']:.2%}"
+        )
     lines.append("")
     return "\n".join(lines)
 
@@ -375,6 +435,14 @@ def main() -> None:
         help="Comma-separated thresholds for current-router curve.",
     )
     parser.add_argument("--margin", type=float)
+    parser.add_argument(
+        "--alphas",
+        default="",
+        help=(
+            "Comma-separated Aurelio hybrid alpha values to evaluate with "
+            "ROUTER_AURELIO_HYBRID_ALPHA. Empty by default to avoid extra daily work."
+        ),
+    )
     parser.add_argument("--mock-embeddings", action="store_true")
     args = parser.parse_args()
 
@@ -441,10 +509,35 @@ def main() -> None:
         }
         eval_payloads[label] = payload
 
+    alpha_labels: list[str] = []
+    for alpha in parse_alphas(args.alphas):
+        label = f"alpha:{alpha:g}"
+        alpha_labels.append(label)
+        output = work_dir / f"eval-{safe_label(label)}.json"
+        run_results[label] = run_eval_json(
+            cases=cases,
+            routes=routes,
+            baseline="current-router",
+            output=output,
+            mock_embeddings=args.mock_embeddings,
+            margin=margin,
+            env_overrides={"ROUTER_AURELIO_HYBRID_ALPHA": str(alpha)},
+        )
+        if output.exists():
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            payload["baseline"] = label
+            payload["aurelio_hybrid_alpha"] = alpha
+            output.write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            eval_payloads[label] = payload
+
     report = build_report(
         eval_payloads=eval_payloads,
         run_results=run_results,
         threshold_labels=threshold_labels,
+        alpha_labels=alpha_labels,
         cases_path=cases,
         routes_path=routes,
     )
