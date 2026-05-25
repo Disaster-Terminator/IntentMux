@@ -247,3 +247,139 @@ sources:
     intended_use: route
     ingest_all: true
     limit: 164
+
+  - name: ceval_computer_network_eval
+    kind: huggingface
+    dataset: ceval/ceval-exam
+    subset: computer_network
+    homepage: https://cevalbenchmark.com/
+    license: CC BY-NC-SA 4.0
+    license_url: https://creativecommons.org/licenses/by-nc-sa/4.0/
+    split: test
+    route: deep
+    text_field: question
+    text_template: "请解答这道中文技术选择题：{question} A. {A} B. {B} C. {C} D. {D}"
+    language: zh-CN
+    slice: deep_reasoning_zh
+    intended_use: eval
+    ingest_all: true
+    limit: 120
+
+  - name: ceval_computer_network_calibration
+    kind: huggingface
+    dataset: ceval/ceval-exam
+    subset: computer_network
+    homepage: https://cevalbenchmark.com/
+    license: CC BY-NC-SA 4.0
+    license_url: https://creativecommons.org/licenses/by-nc-sa/4.0/
+    split: val
+    route: deep
+    text_field: question
+    text_template: "请解答这道中文技术选择题：{question} A. {A} B. {B} C. {C} D. {D}"
+    language: zh-CN
+    slice: deep_reasoning_zh
+    intended_use: calibration
+    ingest_all: true
+    limit: 80
+
+  - name: ceval_operating_system_eval
+    kind: huggingface
+    dataset: ceval/ceval-exam
+    subset: operating_system
+    homepage: https://cevalbenchmark.com/
+    license: CC BY-NC-SA 4.0
+    license_url: https://creativecommons.org/licenses/by-nc-sa/4.0/
+    split: test
+    route: deep
+    text_field: question
+    text_template: "请解答这道中文技术选择题：{question} A. {A} B. {B} C. {C} D. {D}"
+    language: zh-CN
+    slice: deep_reasoning_zh
+    intended_use: eval
+    ingest_all: true
+    limit: 120
+
+  - name: ceval_operating_system_calibration
+    kind: huggingface
+    dataset: ceval/ceval-exam
+    subset: operating_system
+    homepage: https://cevalbenchmark.com/
+    license: CC BY-NC-SA 4.0
+    license_url: https://creativecommons.org/licenses/by-nc-sa/4.0/
+    split: val
+    route: deep
+    text_field: question
+    text_template: "请解答这道中文技术选择题：{question} A. {A} B. {B} C. {C} D. {D}"
+    language: zh-CN
+    slice: deep_reasoning_zh
+    intended_use: calibration
+    ingest_all: true
+    limit: 80
+
+  - name: cmmlu_computer_science_eval
+    kind: huggingface
+    dataset: ehasler/cmmlu
+    subset: computer_science
+    homepage: https://huggingface.co/datasets/ehasler/cmmlu
+    license: CC BY-NC 4.0 (CMMLU upstream; parquet mirror)
+    license_url: https://creativecommons.org/licenses/by-nc/4.0/
+    split: test
+    route: deep
+    text_field: Question
+    text_template: "请解答这道中文知识推理选择题：{Question} A. {A} B. {B} C. {C} D. {D}"
+    language: zh-CN
+    slice: deep_reasoning_zh
+    intended_use: eval
+    ingest_all: true
+    limit: 120
+
+  - name: cmmlu_computer_science_calibration
+    kind: huggingface
+    dataset: ehasler/cmmlu
+    subset: computer_science
+    homepage: https://huggingface.co/datasets/ehasler/cmmlu
+    license: CC BY-NC 4.0 (CMMLU upstream; parquet mirror)
+    license_url: https://creativecommons.org/licenses/by-nc/4.0/
+    split: dev
+    route: deep
+    text_field: Question
+    text_template: "请解答这道中文知识推理选择题：{Question} A. {A} B. {B} C. {C} D. {D}"
+    language: zh-CN
+    slice: deep_reasoning_zh
+    intended_use: calibration
+    ingest_all: true
+    limit: 80
+
+  - name: cmmlu_computer_security_eval
+    kind: huggingface
+    dataset: ehasler/cmmlu
+    subset: computer_security
+    homepage: https://huggingface.co/datasets/ehasler/cmmlu
+    license: CC BY-NC 4.0 (CMMLU upstream; parquet mirror)
+    license_url: https://creativecommons.org/licenses/by-nc/4.0/
+    split: test
+    route: deep
+    text_field: Question
+    text_template: "请解答这道中文安全与技术选择题：{Question} A. {A} B. {B} C. {C} D. {D}"
+    language: zh-CN
+    slice: deep_reasoning_zh
+    intended_use: eval
+    ingest_all: true
+    limit: 120
+
+  - name: cmmlu_computer_security_calibration
+    kind: huggingface
+    dataset: ehasler/cmmlu
+    subset: computer_security
+    homepage: https://huggingface.co/datasets/ehasler/cmmlu
+    license: CC BY-NC 4.0 (CMMLU upstream; parquet mirror)
+    license_url: https://creativecommons.org/licenses/by-nc/4.0/
+    split: dev
+    route: deep
+    text_field: Question
+    text_template: "请解答这道中文安全与技术选择题：{Question} A. {A} B. {B} C. {C} D. {D}"
+    language: zh-CN
+    slice: deep_reasoning_zh
+    intended_use: calibration
+    ingest_all: true
+    limit: 80

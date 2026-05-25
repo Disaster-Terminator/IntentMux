@@ -29,6 +29,7 @@ class RouteSource:
     route: str
     text_field: str
     limit: int
+    text_template: str | None = None
     ingest_all: bool = False
     language: str | None = None
     slice: str | None = None
@@ -53,6 +54,17 @@ def normalize_text(text: str, max_chars: int = 240) -> str:
     return re.sub(r"\s+", " ", without_markdown_headings).strip()[:max_chars]
 
 
+def source_text(source: RouteSource, row: dict[str, Any]) -> str:
+    if source.text_template:
+        try:
+            return source.text_template.format_map(row)
+        except KeyError as exc:
+            raise ValueError(
+                f"{source.name}: text_template references missing field {exc.args[0]!r}"
+            ) from exc
+    return str(row.get(source.text_field, ""))
+
+
 def build_route_bank(
     sources: list[RouteSource],
     source_rows: dict[str, list[dict[str, Any]]],
@@ -67,7 +79,7 @@ def build_route_bank(
                 continue
             if not row_matches(row, source.mappings):
                 continue
-            text = normalize_text(str(row.get(source.text_field, "")))
+            text = normalize_text(source_text(source, row))
             if not text:
                 continue
             selected.append({"text": text, "source": source.name})
@@ -118,8 +130,8 @@ def git_commit() -> str:
     return completed.stdout.strip() or "unknown"
 
 
-def source_metadata(source: RouteSource) -> dict[str, str | int | None]:
-    return {
+def source_metadata(source: RouteSource) -> dict[str, str | int | bool | None]:
+    metadata: dict[str, str | int | bool | None] = {
         "name": source.name,
         "kind": source.kind,
         "route": source.route,
@@ -132,6 +144,9 @@ def source_metadata(source: RouteSource) -> dict[str, str | int | None]:
         "license": source.license,
         "license_url": source.license_url,
     }
+    if source.text_template is not None:
+        metadata["text_template"] = source.text_template
+    return metadata
 
 
 def row_matches(row: dict[str, Any], mappings: list[SourceMapping]) -> bool:
@@ -153,6 +168,7 @@ def load_sources(path: Path) -> list[RouteSource]:
             route=item["route"],
             text_field=item["text_field"],
             limit=int(item.get("limit", 100)),
+            text_template=item.get("text_template"),
             ingest_all=bool(item.get("ingest_all", False)),
             language=item.get("language"),
             slice=item.get("slice"),

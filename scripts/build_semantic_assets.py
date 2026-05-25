@@ -19,6 +19,7 @@ from scripts.build_route_bank import (
     load_sources,
     normalize_text,
     row_matches,
+    source_text,
 )
 
 ASSET_SCHEMA = "intentmux-semantic-assets-v2"
@@ -44,7 +45,7 @@ def build_normalized_records(
                 raise ValueError(
                     f"{source.name}: proposed_use must be one of {sorted(SUPPORTED_USES)}"
                 )
-            text = normalize_text(str(row.get(source.text_field, "")))
+            text = normalize_text(source_text(source, row))
             if not text:
                 continue
             record = {

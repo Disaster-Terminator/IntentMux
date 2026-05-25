@@ -123,6 +123,45 @@ def test_build_normalized_records_accepts_row_level_curated_metadata():
     assert records[1]["proposed_use"] == "eval"
 
 
+def test_build_normalized_records_can_render_source_text_template():
+    sources = [
+        RouteSource(
+            name="ceval_computer_network_eval",
+            kind="local_rows",
+            route="deep",
+            text_field="question",
+            text_template=(
+                "请解答这道中文技术选择题：{question} "
+                "A. {A} B. {B} C. {C} D. {D}"
+            ),
+            limit=1,
+            language="zh-CN",
+            slice="deep_reasoning_zh",
+            intended_use="eval",
+            license="CC-BY-NC-SA-4.0",
+        )
+    ]
+    rows = {
+        "ceval_computer_network_eval": [
+            {
+                "question": "下列哪一项属于传输层协议？",
+                "A": "IP",
+                "B": "TCP",
+                "C": "ARP",
+                "D": "ICMP",
+            }
+        ]
+    }
+
+    records = build_normalized_records(sources, rows)
+
+    assert records[0]["text"] == (
+        "请解答这道中文技术选择题：下列哪一项属于传输层协议？ "
+        "A. IP B. TCP C. ARP D. ICMP"
+    )
+    assert records[0]["proposed_use"] == "eval"
+
+
 def test_ingest_all_keeps_full_normalized_records_but_caps_route_bank():
     sources = [
         RouteSource(
@@ -519,10 +558,15 @@ def test_route_sources_manifest_declares_bilingual_v2_metadata():
     assert "swebench_train_calibration" in names
     assert "mbpp_validation_eval" in names
     assert "mbpp_train_calibration" in names
+    assert "ceval_computer_network_eval" in names
+    assert "ceval_computer_network_calibration" in names
+    assert "cmmlu_computer_science_eval" in names
+    assert "cmmlu_computer_science_calibration" in names
     assert all(source.ingest_all for source in sources if source.kind in {"remote_tar_jsonl", "huggingface"})
     assert {
         "lite_general_zh",
         "lite_general_en",
+        "deep_reasoning_zh",
         "deep_debug_zh",
         "deep_debug_issue",
         "deep_code_generation",
@@ -567,6 +611,25 @@ def test_deep_huggingface_eval_uses_held_out_splits():
     assert ("mbpp", "validation") in eval_splits
     assert ("princeton-nlp/SWE-bench", "train") in calibration_splits
     assert ("mbpp", "train") in calibration_splits
+
+
+def test_public_chinese_deep_sources_are_eval_or_calibration_only():
+    sources = load_sources(Path("config/route_sources.yaml"))
+    public_zh_deep_sources = [
+        source
+        for source in sources
+        if source.name.startswith(("ceval_", "cmmlu_"))
+    ]
+
+    assert public_zh_deep_sources
+    assert {source.route for source in public_zh_deep_sources} == {"deep"}
+    assert {source.language for source in public_zh_deep_sources} == {"zh-CN"}
+    assert {source.slice for source in public_zh_deep_sources} == {"deep_reasoning_zh"}
+    assert {source.intended_use for source in public_zh_deep_sources} == {
+        "eval",
+        "calibration",
+    }
+    assert all(source.ingest_all for source in public_zh_deep_sources)
 
 
 def test_route_sources_default_limits_are_not_toy_sized():
