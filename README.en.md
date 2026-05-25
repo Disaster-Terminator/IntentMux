@@ -195,7 +195,8 @@ route audit logs.
 
 ## Verify First
 
-IntentMux changes quickly. Treat docs as intent, then verify the live system.
+IntentMux defaults to log-driven maintenance. Treat docs as intent, then verify
+the live system.
 
 Common checks:
 
@@ -251,13 +252,15 @@ IntentMux has working two-tier routing, LiteLLM sidecar compatibility,
 metadata-only audit logs, route-bank provenance, preflight, E2E, daily health,
 and quality-report scripts.
 
-Infrastructure hardening still in progress:
+Routing behavior is no longer changed by default. Future route-policy changes
+should be backed by repeated evidence from logs, replay, eval, or calibration
+reports.
 
-- bounded historical replay;
-- bounded health/eval output and runtime artifact retention;
+Possible follow-up work:
+
 - accepted-finding import gates for redacted regression cases;
-- cleaner route/eval/calibration asset separation;
-- more representative threshold and margin calibration evidence.
+- more representative public eval and calibration evidence;
+- log-driven small changes to route banks, thresholds, margins, or hard rules.
 
 Use live tests, `/ready`, health reports, and current Beads tasks as the source
 of truth, not README alone.

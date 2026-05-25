@@ -26,6 +26,20 @@ IntentMux does not run the AI reviewer inside the routing runtime. It exposes a
 learning interface: packet generation, schema validation, summaries, and import
 gates. Local automation can connect that interface to any AI runner.
 
+## Operating Model
+
+Route behavior is frozen by default. Changes are driven by production logs and
+calibration reports, not by intuition, benchmark labels alone, or oral
+consensus.
+
+- Route-bank, threshold, margin, and hard-rule changes require before/after
+  quality evidence with baseline comparisons.
+- Production runtime assets such as route banks, eval banks, logs, caches, and
+  review files are untracked deployment artifacts. Commit public examples,
+  schemas, manifests, and code instead.
+- Prompt review logs are private. They are disabled by default, local-only when
+  enabled, and must not be synced to git or attached to public reports.
+
 ## Boundaries
 
 Keep in scope:
@@ -107,35 +121,30 @@ Implemented:
 - daily health quality artifacts under `<log-dir>/quality/<day>/`: route
   summary JSON, eval baselines, quality report, review candidates, and AI
   review packet paths.
+- route/eval/calibration asset generation from public sources, with generated
+  semantic-set outputs kept as local or runtime artifacts by default.
 
 Not closed:
 
-- current production default should move toward the mature Aurelio kernel; the
-  `basic` kernel is now a bootstrap fallback/debug baseline, not the product
-  default;
-- the route bank is still `bootstrap-v1`, not a serious bilingual quality
-  baseline;
 - accepted findings are not routinely imported into redacted regression cases;
-- route/eval/calibration assets are not cleanly separated enough for serious
-  threshold calibration;
-- threshold and margin are not calibrated from enough representative evidence;
+- threshold and margin changes still require repeated representative evidence
+  before production policy changes;
 - full-history logs still include legacy `fast` / `strong`, so current policy
   analysis must prefer current-day or post-migration logs.
 
 ## Active Work Order
 
-Do these in order. Do not start a new architecture direction until the current
-item is closed.
+Do these in order. Do not start a new architecture direction while the default
+router is in log-driven maintenance.
 
 1. Keep this control surface, evidence status, log-driven loop, and plan
    registry consistent.
-2. Keep Aurelio as the default mature routing dependency and keep `basic` only
-   as a fallback/debug baseline. Do not expand the self-built kernel as product
-   strategy.
-3. Use `docs/router_data_pipeline_research.md` as the `dataset-pipeline-v2`
-   execution baseline: bilingual source ingestion, normalized records,
-   route/eval/calibration split, embedding cache, and quality gates.
-4. Add a learning import gate for accepted redacted cases.
+2. Keep Aurelio as the default mature routing dependency and keep `basic` as a
+   fallback/debug baseline.
+3. Use mature public data and generated calibration assets for evidence; do not
+   promote private logs or AI-invented examples into the main public eval.
+4. Add a learning import gate for accepted redacted cases when log review shows
+   a repeated need.
 5. Tune route bank, hard rules, threshold, or margin only after reports show a
    repeated actionable pattern.
 

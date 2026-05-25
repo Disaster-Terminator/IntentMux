@@ -184,7 +184,7 @@ margin 和 route-bank match provenance。匹配样本文本不会出现在响应
 
 ## 验证优先
 
-这个项目迭代很快。文档只能说明当前意图，真正接手时应先验证 live 状态。
+这个项目默认进入日志驱动维护。文档只能说明当前意图，真正接手时应先验证 live 状态。
 
 常用检查：
 
@@ -236,10 +236,11 @@ uv run python scripts/intentmux_daily_health.py \
 IntentMux 已具备可运行的两档路由、LiteLLM sidecar 兼容、metadata-only audit、
 route-bank provenance、preflight、E2E、daily health 和质量报告脚本。
 
-仍在推进的基础设施化工作包括：
+默认不再主动调整路由行为。后续改动应由日志、replay、eval 或 calibration report
+证明有重复模式后再推进。
 
-- bounded historical replay；
-- health/eval 输出和 runtime artifact retention；
+后续可能继续打磨的方向：
+
 - accepted findings 到 redacted regression cases 的导入门禁；
-- 更干净的 route/eval/calibration 资产分层；
-- 更有代表性的 threshold / margin 校准证据。
+- 更有代表性的公开 eval / calibration 证据；
+- 日志驱动的 route bank、threshold、margin 或 hard rule 小步调整。

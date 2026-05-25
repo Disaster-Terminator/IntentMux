@@ -20,9 +20,6 @@ data/semantic_sets/**/*.jsonl
 data/cache/
 cache/
 logs/
-!examples/intentmux-home/logs/
-!examples/intentmux-home/logs/routes/
-!examples/intentmux-home/logs/routes/.gitkeep
 intentmux/
 *-runtime/
 
@@ -37,6 +34,12 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 dev-debug.log
+
+!examples/intentmux-home/logs/
+!examples/intentmux-home/logs/routes/
+!examples/intentmux-home/logs/routes/.gitkeep
+!examples/intentmux-home/logs/prompts/
+!examples/intentmux-home/logs/prompts/.gitkeep
 
 # Editor directories and files
 .idea

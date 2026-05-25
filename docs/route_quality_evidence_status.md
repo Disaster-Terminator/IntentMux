@@ -27,17 +27,13 @@ route/utterance 抽象、dense/hybrid matching、本地 index 和 score；Intent
 仍负责 OpenAI-compatible / LiteLLM sidecar 或 gateway、`lite` / `deep` 两档
 模型语义、配置、日志、审计、健康检查、生产质量报告和本地学习闭环。
 
-当前权威本地 route bank 是 `bootstrap-v1`，共 280 条：
+公开仓库只提交小型示例资产和源清单。正式 route/eval/calibration semantic sets
+是本地或生产运行时资产，默认不进 git；当前数量应以 live `/ready`、运行时
+semantic set 文件或 `scripts/inspect_semantic_assets.py` 为准。
 
-| route | source | count |
-| --- | --- | ---: |
-| lite | MASSIVE zh-CN general | 80 |
-| lite | MASSIVE zh-TW general | 40 |
-| deep | SWE-bench issue resolution | 80 |
-| deep | MBPP code generation | 40 |
-| deep | HumanEval code generation | 40 |
-
-这足够 dogfood 和验证数据管线形状，但不足以证明中文语义路由质量。
+现有公开来源已经能支撑 dogfood、回归和离线校准形状，但仍不足以单独证明中文
+语义路由质量。中文 deep 和边界样本仍应优先来自成熟公开数据或经过脱敏审查的
+代表性回归样本。
 
 ## 已实现证据能力
 
@@ -51,24 +47,23 @@ route/utterance 抽象、dense/hybrid matching、本地 index 和 score；Intent
   近似归因；
 - `match_source=inline_config` 表示命中的是当前 `routes.yaml` 内联种子样例，
   不是上游 route-bank 数据集；
-- `examples/*.sample.yaml` 可运行，正式 `data/semantic_sets/*.yaml` 默认不进 git。
+- `examples/*.sample.yaml` 可运行，正式 `data/semantic_sets/*.yaml` 默认不进 git；
+- route-bank embedding vectors 会写入运行时 cache，并在 route bank 或 embedding
+  model 变化时失效。
 
 ## 未闭环
 
-- route/eval/calibration 数据规模太小；
-- eval cases 缺少完整 slice metadata；
-- threshold / margin 没有基于代表性数据校准；
-- embedding vectors 没有持久 cache；
+- 公开 evidence 仍不能覆盖所有通用中文 deep 场景；
+- threshold / margin 变化仍需要重复、代表性的 before/after 报告；
 - AI review 结果尚未形成稳定的接受/拒绝/回灌门禁；
-- 生产质量报告还没有长期、固定地驱动路由策略变更。
+- 生产质量报告还需要长期、固定地驱动路由策略变更。
 
 ## 下一步判断
 
-下一步不应先改路由算法，也不应直接把所有上游数据塞进运行时。应按
-`docs/router_data_pipeline_research.md` 的 `dataset-pipeline-v2` 执行基线推进：
+下一步不应先改路由算法，也不应直接把所有上游数据塞进运行时。默认进入日志驱动
+维护：只有日志、replay、eval 或 calibration report 显示重复模式时，才推进
+route bank、hard rule、threshold 或 margin 变化。
 
-- 扩大成熟上游数据；
-- 区分 route bank、eval bank、calibration bank；
-- 加入 slice metadata；
-- 持久化 embedding cache；
-- 用 before/after quality report gate 任何 route bank、hard rule、threshold 或 margin 变更。
+公开数据方向继续以 `docs/router_data_pipeline_research.md` 为基线：成熟来源、
+route/eval/calibration 分层、slice metadata、embedding cache 和 before/after
+quality gate。
