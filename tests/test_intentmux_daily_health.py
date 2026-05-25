@@ -13,6 +13,7 @@ from scripts.intentmux_daily_health import (
     count_route_records,
     default_log_dir,
     derive_health_scopes,
+    http_get_json,
     log_consistency_from_day_logs,
     run_quality_artifacts,
     traffic_evidence_from_day_log,
@@ -124,6 +125,14 @@ def test_run_returns_timeout_result_without_crashing(monkeypatch):
     assert result["stdout"] == "partial"
     assert "timed out after 3s" in result["stderr"]
     assert result["cmd"] == "slow command"
+
+
+def test_http_get_json_rejects_non_http_url():
+    code, payload, err = http_get_json("file:///tmp/ready.json")
+
+    assert code is None
+    assert payload is None
+    assert err == "url must use http or https"
 
 
 def test_keep_preserves_slow_request_rows_without_truncating():

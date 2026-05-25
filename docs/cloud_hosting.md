@@ -59,6 +59,21 @@ ROUTER_AUDIT_LOG_DIR=
 
 Set `ROUTER_AUDIT_LOG_DIR` only when a private writable volume is intentional.
 
+## Hosted Development Audit
+
+Treat hosted logs as operations evidence, not as a prompt corpus.
+
+- Use route-audit stdout and `/ready` snapshots for normal development triage.
+- Export only redacted route summaries, health reports, and request ids into
+  issue trackers or support bundles.
+- Keep raw prompt review logs local-only; do not backfill them from cloud
+  traffic unless a separate private sink, retention window, and deletion path
+  have been reviewed.
+- When debugging a bad route, correlate by request id first, then reproduce
+  with a manually redacted prompt in a private environment.
+- Rotate `ROUTER_INBOUND_API_KEY` and upstream keys through the platform secret
+  manager; do not store old keys in runtime config snapshots.
+
 ## Rollout Gate
 
 Before exposing a hosted IntentMux endpoint:

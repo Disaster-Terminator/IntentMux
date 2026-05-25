@@ -146,6 +146,7 @@ sources:
   - name: swebench_issue_resolution
     kind: huggingface
     dataset: princeton-nlp/SWE-bench
+    revision: e48e2bd1e9fecd5bbd641e9414ac59da9f2e69f6
     homepage: https://github.com/SWE-bench/SWE-bench
     license: MIT
     license_url: https://github.com/SWE-bench/SWE-bench/blob/main/LICENSE.md
@@ -161,6 +162,7 @@ sources:
   - name: swebench_dev_eval
     kind: huggingface
     dataset: princeton-nlp/SWE-bench
+    revision: e48e2bd1e9fecd5bbd641e9414ac59da9f2e69f6
     homepage: https://github.com/SWE-bench/SWE-bench
     license: MIT
     license_url: https://github.com/SWE-bench/SWE-bench/blob/main/LICENSE.md
@@ -176,6 +178,7 @@ sources:
   - name: swebench_train_calibration
     kind: huggingface
     dataset: princeton-nlp/SWE-bench
+    revision: e48e2bd1e9fecd5bbd641e9414ac59da9f2e69f6
     homepage: https://github.com/SWE-bench/SWE-bench
     license: MIT
     license_url: https://github.com/SWE-bench/SWE-bench/blob/main/LICENSE.md
@@ -191,6 +194,7 @@ sources:
   - name: mbpp_codegen
     kind: huggingface
     dataset: mbpp
+    revision: 4bb6404fdc6cacfda99d4ac4205087b89d32030c
     homepage: https://github.com/google-research/google-research/tree/master/mbpp
     license: CC BY 4.0
     license_url: https://creativecommons.org/licenses/by/4.0/
@@ -206,6 +210,7 @@ sources:
   - name: mbpp_validation_eval
     kind: huggingface
     dataset: mbpp
+    revision: 4bb6404fdc6cacfda99d4ac4205087b89d32030c
     homepage: https://github.com/google-research/google-research/tree/master/mbpp
     license: CC BY 4.0
     license_url: https://creativecommons.org/licenses/by/4.0/
@@ -221,6 +226,7 @@ sources:
   - name: mbpp_train_calibration
     kind: huggingface
     dataset: mbpp
+    revision: 4bb6404fdc6cacfda99d4ac4205087b89d32030c
     homepage: https://github.com/google-research/google-research/tree/master/mbpp
     license: CC BY 4.0
     license_url: https://creativecommons.org/licenses/by/4.0/
@@ -236,6 +242,7 @@ sources:
   - name: humaneval_codegen
     kind: huggingface
     dataset: openai/openai_humaneval
+    revision: 7dce6050a7d6d172f3cc5c32aa97f52fa1a2e544
     homepage: https://github.com/openai/human-eval
     license: MIT
     license_url: https://github.com/openai/human-eval/blob/master/LICENSE
@@ -251,6 +258,7 @@ sources:
   - name: ceval_computer_network_eval
     kind: huggingface
     dataset: ceval/ceval-exam
+    revision: 617524a00b307ff6f9933702f724131fe12ca7ce
     subset: computer_network
     homepage: https://cevalbenchmark.com/
     license: CC BY-NC-SA 4.0
@@ -268,6 +276,7 @@ sources:
   - name: ceval_computer_network_calibration
     kind: huggingface
     dataset: ceval/ceval-exam
+    revision: 617524a00b307ff6f9933702f724131fe12ca7ce
     subset: computer_network
     homepage: https://cevalbenchmark.com/
     license: CC BY-NC-SA 4.0
@@ -285,6 +294,7 @@ sources:
   - name: ceval_operating_system_eval
     kind: huggingface
     dataset: ceval/ceval-exam
+    revision: 617524a00b307ff6f9933702f724131fe12ca7ce
     subset: operating_system
     homepage: https://cevalbenchmark.com/
     license: CC BY-NC-SA 4.0
@@ -302,6 +312,7 @@ sources:
   - name: ceval_operating_system_calibration
     kind: huggingface
     dataset: ceval/ceval-exam
+    revision: 617524a00b307ff6f9933702f724131fe12ca7ce
     subset: operating_system
     homepage: https://cevalbenchmark.com/
     license: CC BY-NC-SA 4.0
@@ -319,6 +330,7 @@ sources:
   - name: cmmlu_computer_science_eval
     kind: huggingface
     dataset: ehasler/cmmlu
+    revision: e596a937e8ba52d146d1ad7ee0d9c46403d8e771
     subset: computer_science
     homepage: https://huggingface.co/datasets/ehasler/cmmlu
     license: CC BY-NC 4.0 (CMMLU upstream; parquet mirror)
@@ -336,6 +348,7 @@ sources:
   - name: cmmlu_computer_science_calibration
     kind: huggingface
     dataset: ehasler/cmmlu
+    revision: e596a937e8ba52d146d1ad7ee0d9c46403d8e771
     subset: computer_science
     homepage: https://huggingface.co/datasets/ehasler/cmmlu
     license: CC BY-NC 4.0 (CMMLU upstream; parquet mirror)
@@ -353,6 +366,7 @@ sources:
   - name: cmmlu_computer_security_eval
     kind: huggingface
     dataset: ehasler/cmmlu
+    revision: e596a937e8ba52d146d1ad7ee0d9c46403d8e771
     subset: computer_security
     homepage: https://huggingface.co/datasets/ehasler/cmmlu
     license: CC BY-NC 4.0 (CMMLU upstream; parquet mirror)
@@ -370,6 +384,7 @@ sources:
   - name: cmmlu_computer_security_calibration
     kind: huggingface
     dataset: ehasler/cmmlu
+    revision: e596a937e8ba52d146d1ad7ee0d9c46403d8e771
     subset: computer_security
     homepage: https://huggingface.co/datasets/ehasler/cmmlu
     license: CC BY-NC 4.0 (CMMLU upstream; parquet mirror)

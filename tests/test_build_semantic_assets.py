@@ -632,6 +632,19 @@ def test_public_chinese_deep_sources_are_eval_or_calibration_only():
     assert all(source.ingest_all for source in public_zh_deep_sources)
 
 
+def test_huggingface_sources_pin_revisions():
+    sources = load_sources(Path("config/route_sources.yaml"))
+    hf_sources = [source for source in sources if source.kind == "huggingface"]
+
+    assert hf_sources
+    assert all(source.revision for source in hf_sources)
+    assert all(
+        len(source.revision or "") == 40
+        and all(char in "0123456789abcdef" for char in (source.revision or ""))
+        for source in hf_sources
+    )
+
+
 def test_route_sources_default_limits_are_not_toy_sized():
     sources = load_sources(Path("config/route_sources.yaml"))
     route_limits = {

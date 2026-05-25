@@ -11,6 +11,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError
+from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 import yaml
@@ -80,9 +81,12 @@ def output_to_text(output: Any) -> str:
 
 
 def http_get_json(url: str, timeout: int = 5) -> tuple[int | None, dict[str, Any] | None, str | None]:
+    if not is_http_url(url):
+        return None, None, "url must use http or https"
     try:
         req = Request(url, headers={"User-Agent": "intentmux-daily-health"})
-        with urlopen(req, timeout=timeout) as resp:
+        # is_http_url rejects file:// and custom schemes before urllib sees input.
+        with urlopen(req, timeout=timeout) as resp:  # nosec B310  # nosemgrep
             body = resp.read().decode("utf-8", errors="replace")
             return resp.status, json.loads(body), None
     except HTTPError as exc:
@@ -93,6 +97,11 @@ def http_get_json(url: str, timeout: int = 5) -> tuple[int | None, dict[str, Any
         return exc.code, None, f"HTTP {exc.code}: {body[:180]}"
     except Exception as exc:
         return None, None, str(exc)
+
+
+def is_http_url(url: str) -> bool:
+    parsed = urlparse(url)
+    return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
 
 
 def keep(

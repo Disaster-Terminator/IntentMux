@@ -28,6 +28,10 @@ from router.routing import Router, latest_user_text
 
 
 logger = logging.getLogger("intentmux")
+STREAMING_SAFETY_HEADERS = {
+    "cache-control": "no-cache, no-transform",
+    "x-accel-buffering": "no",
+}
 
 
 class UpstreamStatusError(Exception):
@@ -247,8 +251,10 @@ def create_app(
                     decision=decision,
                     error=error,
                 )
-            headers = dict(upstream.headers)
-            headers.update(router_headers)
+            headers = streaming_response_headers(
+                dict(upstream.headers),
+                router_headers,
+            )
             return StreamingResponse(
                 stream_with_context(
                     upstream.content,
@@ -454,6 +460,16 @@ def upstream_error_response(
 
 def is_upstream_failure(status_code: int) -> bool:
     return status_code >= 500
+
+
+def streaming_response_headers(
+    upstream_headers: dict[str, str],
+    router_response_headers: dict[str, str],
+) -> dict[str, str]:
+    headers = dict(upstream_headers)
+    headers.update(STREAMING_SAFETY_HEADERS)
+    headers.update(router_response_headers)
+    return headers
 
 
 def main() -> None:

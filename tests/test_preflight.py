@@ -38,7 +38,7 @@ class FakeResponse:
         return None
 
     def iter_bytes(self):
-        yield self._body
+        yield from self._body.splitlines(keepends=True)
 
 
 class FakeClient:
@@ -73,7 +73,7 @@ class FakeClient:
         self.post_payloads.append(json)
         return FakeResponse(
             headers={"x-router-target-model": "your-deep-model"},
-            body=b"data: first\n\n",
+            body=b"data: first\n\ndata: [DONE]\n\n",
         )
 
 
@@ -352,9 +352,43 @@ def test_validate_nonstream_chat_response_can_assert_expected_target_model():
 def test_validate_streaming_sse_response_fixture_pass_and_fail():
     response = FakeResponse(status_code=200, headers={"x-router-target-model": "your-deep-model"})
 
-    pass_by_name = {r.name: r for r in validate_streaming_sse_response(response, b"data: {\"x\":1}\n\n")}
-    fail_by_name = {r.name: r for r in validate_streaming_sse_response(response, b"{\"x\":1}")}
+    pass_by_name = {
+        r.name: r
+        for r in validate_streaming_sse_response(
+            response,
+            b"data: {\"x\":1}\n\ndata: [DONE]\n\n",
+        )
+    }
+    fail_by_name = {
+        r.name: r for r in validate_streaming_sse_response(response, b"{\"x\":1}")
+    }
+    incomplete_by_name = {
+        r.name: r
+        for r in validate_streaming_sse_response(response, b"data: {\"x\":1}\n\n")
+    }
 
     assert pass_by_name["stream_body"].ok is True
     assert fail_by_name["stream_body"].ok is False
     assert fail_by_name["stream_body"].detail == "starts_with_data=False"
+    assert pass_by_name["stream_complete"].ok is True
+    assert incomplete_by_name["stream_complete"].ok is False
+    assert incomplete_by_name["stream_complete"].detail == "has_done=False"
+
+
+def test_run_preflight_reads_bounded_stream_until_done(monkeypatch):
+    fake_client = FakeClient()
+
+    monkeypatch.setattr(
+        "scripts.preflight.httpx.Client",
+        lambda timeout: fake_client,
+    )
+
+    results = run_preflight(
+        "http://router.local",
+        intentmux_api_key=None,
+        timeout=5,
+        ready_attempts=1,
+        ready_interval=0,
+    )
+
+    assert CheckResult("stream_complete", True, "has_done=True") in results

@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import yaml
 
@@ -40,6 +41,7 @@ class RouteSource:
     dataset: str | None = None
     subset: str | None = None
     split: str | None = None
+    revision: str | None = None
     homepage: str | None = None
     license: str | None = None
     license_url: str | None = None
@@ -140,6 +142,7 @@ def source_metadata(source: RouteSource) -> dict[str, str | int | bool | None]:
         "url": source.url,
         "dataset": source.dataset,
         "split": source.split,
+        "revision": source.revision,
         "homepage": source.homepage,
         "license": source.license,
         "license_url": source.license_url,
@@ -179,6 +182,7 @@ def load_sources(path: Path) -> list[RouteSource]:
             dataset=item.get("dataset"),
             subset=item.get("subset"),
             split=item.get("split"),
+            revision=item.get("revision"),
             homepage=item.get("homepage"),
             license=item.get("license"),
             license_url=item.get("license_url"),
@@ -242,7 +246,11 @@ def load_rows(source: RouteSource, base_dir: Path) -> list[dict[str, Any]]:
         dataset_args = [source.dataset]
         if source.subset:
             dataset_args.append(source.subset)
-        dataset = load_dataset(*dataset_args, split=source.split or "train")
+        dataset = load_dataset(
+            *dataset_args,
+            split=source.split or "train",
+            revision=source.revision,
+        )
         return [dict(row) for row in dataset]
 
     if source.kind == "local_rows":
@@ -252,12 +260,20 @@ def load_rows(source: RouteSource, base_dir: Path) -> list[dict[str, Any]]:
 
 
 def cached_download(url: str, download_dir: Path) -> Path:
+    validate_http_url(url)
     download_dir.mkdir(parents=True, exist_ok=True)
     filename = url.rstrip("/").split("/")[-1]
     target = download_dir / filename
     if not target.exists():
-        urllib.request.urlretrieve(url, target)
+        # validate_http_url rejects file:// and custom schemes before urllib sees input.
+        urllib.request.urlretrieve(url, target)  # nosec B310  # nosemgrep
     return target
+
+
+def validate_http_url(url: str) -> None:
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError("url must use http or https")
 
 
 def main() -> None:

@@ -9,6 +9,10 @@ from dataclasses import dataclass
 import httpx
 
 
+STREAM_PREFLIGHT_MAX_CHUNKS = 32
+STREAM_PREFLIGHT_MAX_BYTES = 65536
+
+
 @dataclass(frozen=True)
 class CheckResult:
     name: str
@@ -119,6 +123,7 @@ def validate_streaming_sse_response(
     expected_target_model: str | None = None,
 ) -> list[CheckResult]:
     starts_with_data = body_head.startswith(b"data:")
+    has_done = b"data: [DONE]" in body_head
     return [
         CheckResult(
             "stream_status",
@@ -135,7 +140,34 @@ def validate_streaming_sse_response(
             starts_with_data,
             f"starts_with_data={starts_with_data}",
         ),
+        CheckResult(
+            "stream_complete",
+            has_done,
+            f"has_done={has_done}",
+        ),
     ]
+
+
+def read_bounded_stream_body_head(
+    response: httpx.Response,
+    *,
+    max_chunks: int = STREAM_PREFLIGHT_MAX_CHUNKS,
+    max_bytes: int = STREAM_PREFLIGHT_MAX_BYTES,
+) -> bytes:
+    chunks: list[bytes] = []
+    total = 0
+    for index, chunk in enumerate(response.iter_bytes(), start=1):
+        if not chunk:
+            continue
+        remaining = max_bytes - total
+        if remaining <= 0:
+            break
+        chunks.append(chunk[:remaining])
+        total += min(len(chunk), remaining)
+        body = b"".join(chunks)
+        if b"data: [DONE]" in body or index >= max_chunks or total >= max_bytes:
+            return body
+    return b"".join(chunks)
 
 
 def check_readiness(
@@ -254,7 +286,7 @@ def run_preflight(
             headers=headers,
             json=chat_payload(stream=True, model=model),
         ) as stream_response:
-            body_head = next(stream_response.iter_bytes(), b"")
+            body_head = read_bounded_stream_body_head(stream_response)
             results.extend(
                 validate_streaming_sse_response(
                     stream_response,

@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from urllib import error, request
+from urllib.parse import urlparse
 
 import yaml
 
@@ -168,6 +169,7 @@ def call_decision_endpoint(
     timeout_s: float,
     intentmux_api_key: str | None = None,
 ) -> dict[str, Any]:
+    validate_http_url(endpoint)
     headers = {"content-type": "application/json"}
     if intentmux_api_key:
         headers["Authorization"] = f"Bearer {intentmux_api_key}"
@@ -177,8 +179,15 @@ def call_decision_endpoint(
         headers=headers,
         method="POST",
     )
-    with request.urlopen(req, timeout=timeout_s) as resp:
+    # validate_http_url rejects file:// and custom schemes before urllib sees input.
+    with request.urlopen(req, timeout=timeout_s) as resp:  # nosec B310  # nosemgrep
         return json.loads(resp.read().decode("utf-8"))
+
+
+def validate_http_url(url: str) -> None:
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError("url must use http or https")
 
 
 def run_review(

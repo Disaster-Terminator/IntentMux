@@ -910,6 +910,8 @@ def test_streaming_chat_completion_uses_stream_proxy():
     assert proxy.payloads[0]["model"] == "deep-upstream"
     assert proxy.payloads[0]["stream"] is True
     assert response.headers["content-type"].startswith("text/event-stream")
+    assert response.headers["cache-control"] == "no-cache, no-transform"
+    assert response.headers["x-accel-buffering"] == "no"
     assert response.headers["x-router-target-model"] == "deep-upstream"
     assert response.headers["x-router-route-id"] == "deep"
     assert response.headers["x-router-policy-id"] == "hard_rule"

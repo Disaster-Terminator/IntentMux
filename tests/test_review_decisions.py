@@ -212,6 +212,15 @@ def test_call_decision_endpoint_sets_intentmux_authorization(monkeypatch):
     assert captured == {"authorization": "Bearer sk-intentmux", "timeout": 3.0}
 
 
+def test_call_decision_endpoint_rejects_non_http_endpoint():
+    with pytest.raises(ValueError, match="http or https"):
+        review_decisions.call_decision_endpoint(
+            "file:///tmp/decision.json",
+            {"model": DEFAULT_ROUTE_MODEL},
+            3.0,
+        )
+
+
 def test_run_review_default_table_output_and_success_exit(monkeypatch, tmp_path, capsys):
     path = tmp_path / "cases.yaml"
     path.write_text(

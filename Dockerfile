@@ -13,12 +13,20 @@ COPY README.md ./
 RUN uv sync --locked --no-dev
 
 ENV PYTHONUNBUFFERED=1
+ENV HOME=/home/intentmux
 ENV ROUTER_HOST=0.0.0.0
 ENV ROUTER_CONFIG=/app/config/routes.yaml
 ENV ROUTER_AUDIT_LOG_ENABLED=true
 ENV ROUTER_AUDIT_LOG_DIR=/data/logs/routes
 ENV ROUTER_PROMPT_LOG_MODE=off
 ENV ROUTER_PROMPT_LOG_DIR=/data/logs/prompts
+
+RUN groupadd --system intentmux \
+    && useradd --system --gid intentmux --home-dir /home/intentmux --create-home intentmux \
+    && mkdir -p /data/logs/routes /data/logs/prompts \
+    && chown -R intentmux:intentmux /data /home/intentmux
+
+USER intentmux
 
 EXPOSE 4001
 

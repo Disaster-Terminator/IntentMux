@@ -5,12 +5,14 @@ import json
 import tarfile
 from pathlib import Path
 
+import pytest
 import yaml
 
 from scripts.build_route_bank import (
     RouteSource,
     SourceMapping,
     build_route_bank,
+    cached_download,
     load_rows,
     load_sources,
     normalize_text,
@@ -76,12 +78,13 @@ def test_build_route_bank_maps_rows_to_routes_and_keeps_sources():
         "route": "lite",
         "limit": 2,
         "ingest_all": False,
-        "url": None,
-        "dataset": None,
-        "split": None,
-        "homepage": "https://www.amazon.science/code-and-datasets/massive",
-        "license": "CC BY 4.0",
-        "license_url": "https://github.com/alexa/massive/blob/master/LICENSE",
+            "url": None,
+            "dataset": None,
+            "split": None,
+            "revision": None,
+            "homepage": "https://www.amazon.science/code-and-datasets/massive",
+            "license": "CC BY 4.0",
+            "license_url": "https://github.com/alexa/massive/blob/master/LICENSE",
     }
     assert bank["routes"]["lite"]["utterances"] == [
         {
@@ -207,3 +210,8 @@ def test_load_rows_reads_remote_tar_jsonl_from_cache(tmp_path):
         {"utt": "你好", "partition": "train"},
         {"utt": "再见", "partition": "test"},
     ]
+
+
+def test_cached_download_rejects_non_http_urls(tmp_path):
+    with pytest.raises(ValueError, match="http or https"):
+        cached_download("file:///etc/passwd", tmp_path)
