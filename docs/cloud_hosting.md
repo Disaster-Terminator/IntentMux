@@ -20,6 +20,11 @@ gateway services out of scope for this hardening pass.
 Keep API keys in the platform secret manager or environment variables. Do not
 put provider keys, bearer tokens, or local-only endpoints in tracked config.
 Replace workstation-only hosts such as `host.docker.internal` before rollout.
+Before mounting a runtime directory, run:
+
+```bash
+uv run python scripts/check_cloud_runtime.py /path/to/intentmux-home
+```
 
 Port precedence is:
 
@@ -29,6 +34,26 @@ ROUTER_PORT -> CONTAINER_APP_PORT -> PORT -> routes.yaml/default
 
 Leave `ROUTER_PORT` unset when the hosting platform injects `PORT` or
 `CONTAINER_APP_PORT`.
+
+## Public Surface
+
+Expose only the IntentMux HTTP port. Keep upstream LiteLLM, embedding services,
+runtime storage, and provider dashboards private.
+
+`GET /health` remains unauthenticated so managed platforms can probe the
+container. In cloud mode, `GET /ready` requires the same bearer token as
+`/v1/chat/completions`; it includes runtime diagnostics and should not be a
+public status page. The OpenAI-compatible `/v1/models` endpoint is also
+protected whenever `ROUTER_INBOUND_API_KEY` or rotated inbound keys are
+configured.
+
+Run preflight with the inbound key:
+
+```bash
+uv run python scripts/preflight.py \
+  --router-base-url https://your-intentmux-host \
+  --intentmux-api-key "$ROUTER_INBOUND_API_KEY"
+```
 
 ## Runtime Artifacts
 
@@ -85,6 +110,10 @@ Before exposing a hosted IntentMux endpoint:
 5. Confirm `ROUTER_INBOUND_API_KEY` is configured.
 6. Confirm prompt logging is `off` or `redacted`, never `raw_local`.
 7. Confirm platform logs do not receive raw prompt/review artifacts.
+8. Confirm unauthenticated `/ready`, `/v1/models`, and chat requests return
+   `401`, while `/health` still returns `200`.
+9. Confirm `scripts/check_cloud_runtime.py` passes for the runtime directory
+   that will be mounted or copied into the hosted container.
 
 Keep provider routing, fallback, budget, and key distribution in the upstream
 gateway. IntentMux owns only intent routing and metadata audit.

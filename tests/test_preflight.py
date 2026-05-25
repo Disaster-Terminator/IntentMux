@@ -44,6 +44,7 @@ class FakeResponse:
 class FakeClient:
     def __init__(self):
         self.urls: list[str] = []
+        self.get_headers: list[dict[str, str]] = []
         self.post_headers: list[dict[str, str]] = []
         self.post_payloads: list[dict] = []
 
@@ -53,8 +54,9 @@ class FakeClient:
     def __exit__(self, exc_type, exc, traceback):
         return None
 
-    def get(self, url: str) -> FakeResponse:
+    def get(self, url: str, *, headers: dict[str, str] | None = None) -> FakeResponse:
         self.urls.append(url)
+        self.get_headers.append(headers or {})
         if url.endswith("/ready"):
             return FakeResponse(payload={"ready": True, "components": {}})
         return FakeResponse(payload={"status": "ok"})
@@ -78,8 +80,9 @@ class FakeClient:
 
 
 class DegradedReadyClient(FakeClient):
-    def get(self, url: str) -> FakeResponse:
+    def get(self, url: str, *, headers: dict[str, str] | None = None) -> FakeResponse:
         self.urls.append(url)
+        self.get_headers.append(headers or {})
         if url.endswith("/ready"):
             return FakeResponse(
                 status_code=503,
@@ -100,8 +103,9 @@ class FlakyReadyClient(FakeClient):
         super().__init__()
         self.ready_calls = 0
 
-    def get(self, url: str) -> FakeResponse:
+    def get(self, url: str, *, headers: dict[str, str] | None = None) -> FakeResponse:
         self.urls.append(url)
+        self.get_headers.append(headers or {})
         if url.endswith("/ready"):
             self.ready_calls += 1
             if self.ready_calls == 1:
@@ -181,6 +185,10 @@ def test_run_preflight_checks_layered_readiness(monkeypatch):
     )
 
     assert "http://router.local/ready" in fake_client.urls
+    assert fake_client.get_headers == [
+        {},
+        {"Authorization": "Bearer test-key"},
+    ]
     assert fake_client.post_headers == [
         {"Authorization": "Bearer test-key"},
         {"Authorization": "Bearer test-key"},

@@ -50,12 +50,36 @@ def test_emit_route_record_with_stdout_only_audit_uses_logger(caplog):
 
 
 def test_redact_prompt_text_masks_common_credentials():
-    text = "Authorization: Bearer abcdefghijklmnop and key sk-proj-abcdefghijklmnop"
+    bearer = "abcdefghi" + "jklmnop"
+    openai_key = "sk-proj-" + "abcdefghijklmnop"
+    text = f"Authorization: Bearer {bearer} and key {openai_key}"
 
     redacted = redact_prompt_text(text)
 
-    assert "abcdefghijklmnop" not in redacted
+    assert bearer not in redacted
+    assert openai_key not in redacted
     assert redacted.count("[REDACTED]") == 2
+
+
+def test_redact_prompt_text_masks_cloud_and_provider_credentials():
+    google_key = "AI" + "za" + ("a" * 28)
+    modelscope_key = "ms-" + ("b" * 16)
+    ark_key = "ark-" + ("c" * 36)
+    password = "not-a-real-password-value"
+    text = (
+        f"GOOGLE_API_KEY={google_key} "
+        f"MODELSCOPE_API_KEY={modelscope_key} "
+        f"VOLCANO_ARK_API_KEY={ark_key} "
+        f"password: {password}"
+    )
+
+    redacted = redact_prompt_text(text)
+
+    assert google_key not in redacted
+    assert modelscope_key not in redacted
+    assert ark_key not in redacted
+    assert password not in redacted
+    assert redacted.count("[REDACTED]") == 4
 
 
 def test_request_format_signals_counts_structure_without_content():

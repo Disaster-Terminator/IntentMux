@@ -85,25 +85,6 @@ def create_app(
     async def health() -> dict[str, str]:
         return {"status": "ok"}
 
-    @app.get("/v1/models")
-    async def models() -> dict[str, list[dict[str, str]] | str]:
-        return {
-            "object": "list",
-            "data": [
-                {"id": settings.route_model, "object": "model"},
-                {"id": "lite", "object": "model"},
-                {"id": "deep", "object": "model"},
-            ],
-        }
-
-    @app.get("/ready")
-    async def ready() -> JSONResponse:
-        report = await readiness_checker.check()
-        return JSONResponse(
-            report.to_dict(),
-            status_code=200 if report.ready else 503,
-        )
-
     async def parse_json_object(request: Request) -> Any:
         try:
             payload = await request.json()
@@ -131,6 +112,34 @@ def create_app(
             status_code=401,
             content={"error": {"message": "Invalid or missing IntentMux API key"}},
             headers={"www-authenticate": "Bearer"},
+        )
+
+    @app.get("/v1/models")
+    async def models(request: Request) -> JSONResponse:
+        auth_error = require_inbound_auth(request)
+        if auth_error is not None:
+            return auth_error
+        return JSONResponse(
+            {
+                "object": "list",
+                "data": [
+                    {"id": settings.route_model, "object": "model"},
+                    {"id": "lite", "object": "model"},
+                    {"id": "deep", "object": "model"},
+                ],
+            }
+        )
+
+    @app.get("/ready")
+    async def ready(request: Request) -> JSONResponse:
+        if settings.cloud_mode:
+            auth_error = require_inbound_auth(request)
+            if auth_error is not None:
+                return auth_error
+        report = await readiness_checker.check()
+        return JSONResponse(
+            report.to_dict(),
+            status_code=200 if report.ready else 503,
         )
 
     @app.post("/v1/intentmux/decision")

@@ -248,6 +248,26 @@ def test_models_lists_only_canonical_synthetic_entries_without_targets():
     assert "local-deep-model" not in response_text
 
 
+def test_models_requires_inbound_api_key_when_configured():
+    app = create_app(
+        settings=RouterSettings(
+            route_model="intentmux",
+            fallback_route_id="lite",
+            inbound_api_key="sk-intentmux",
+            routes={"lite": RouteSpec(target_model="lite-upstream", description="lite", utterances=["hi"])},
+        ),
+        router=FakeRouter(RoutingDecision("lite-upstream", "test", rewrite=True, route_id="lite")),
+        proxy=FakeProxy(),
+    )
+    client = TestClient(app)
+
+    assert client.get("/v1/models").status_code == 401
+    assert client.get(
+        "/v1/models",
+        headers={"Authorization": "Bearer sk-intentmux"},
+    ).status_code == 200
+
+
 def test_intentmux_decision_endpoint_alias_matches_legacy_contract():
     proxy = NoUpstreamProxy()
     router = Router(
@@ -643,7 +663,7 @@ def test_chat_completion_redacted_prompt_review_log_masks_credentials(tmp_path: 
     assert record["latest_user_text"] == "use [REDACTED]"
 
 
-def test_health_and_ready_do_not_require_inbound_api_key():
+def test_health_and_local_ready_do_not_require_inbound_api_key():
     app = create_app(
         settings=RouterSettings(
             route_model="intentmux",
@@ -668,6 +688,38 @@ def test_health_and_ready_do_not_require_inbound_api_key():
 
     assert client.get("/health").status_code == 200
     assert client.get("/ready").status_code == 200
+
+
+def test_cloud_ready_requires_inbound_api_key():
+    app = create_app(
+        settings=RouterSettings(
+            route_model="intentmux",
+            fallback_route_id="lite",
+            inbound_api_key="sk-intentmux",
+            cloud_mode=True,
+            routes={"lite": RouteSpec(target_model="lite-upstream", description="lite", utterances=["hi"])},
+        ),
+        router=FakeRouter(RoutingDecision("lite-upstream", "test", rewrite=True, route_id="lite")),
+        proxy=FakeProxy(),
+        readiness_checker=FakeReadinessChecker(
+            ReadinessReport(
+                ready=True,
+                components={
+                    "router": ComponentStatus(ok=True),
+                    "litellm": ComponentStatus(ok=True),
+                    "embedding": ComponentStatus(ok=True),
+                },
+            )
+        ),
+    )
+    client = TestClient(app)
+
+    assert client.get("/health").status_code == 200
+    assert client.get("/ready").status_code == 401
+    assert client.get(
+        "/ready",
+        headers={"Authorization": "Bearer sk-intentmux"},
+    ).status_code == 200
 
 
 def test_decision_endpoint_low_confidence_uses_fallback_route_id():

@@ -152,6 +152,8 @@ routes:
 
 `/ready` 会暴露当前配置来源、运行时目录、日志状态、route bank 是否加载和每个 route
 的 utterance 数量。不要盲信文档或旧状态文件，先看 live `/ready` 和最新日志。
+云端模式下 `/ready` 和 `/v1/models` 都需要 `ROUTER_INBOUND_API_KEY`；`/health`
+保留为无鉴权平台探活。
 云端运行时资产边界见 [docs/cloud_hosting.md](docs/cloud_hosting.md)。
 
 ## API

@@ -174,13 +174,14 @@ def check_readiness(
     client: httpx.Client,
     base_url: str,
     *,
+    headers: dict[str, str],
     attempts: int,
     interval: float,
 ) -> list[CheckResult]:
     attempts = max(1, attempts)
     last_results: list[CheckResult] = []
     for attempt in range(attempts):
-        ready = client.get(f"{base_url}/ready")
+        ready = client.get(f"{base_url}/ready", headers=headers)
         last_results = [
             CheckResult(
                 "ready_status",
@@ -263,6 +264,7 @@ def run_preflight(
             check_readiness(
                 client,
                 base_url,
+                headers=headers,
                 attempts=ready_attempts,
                 interval=ready_interval,
             )

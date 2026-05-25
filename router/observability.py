@@ -106,8 +106,13 @@ class PromptReviewLogger:
 
 SECRET_PATTERNS = (
     re.compile(r"\bBearer\s+[A-Za-z0-9._~+/=-]{8,}", re.IGNORECASE),
+    re.compile(r"\b[A-Z0-9_]*(?:API[_-]?KEY|TOKEN|SECRET|PASSWORD)\s*[:=]\s*\S{8,}", re.IGNORECASE),
     re.compile(r"\bsk-[A-Za-z0-9_-]{8,}"),
     re.compile(r"\bsk-proj-[A-Za-z0-9_-]{8,}"),
+    re.compile(r"\bAIza[A-Za-z0-9_-]{20,}"),
+    re.compile(r"\bark-[A-Za-z0-9-]{20,}"),
+    re.compile(r"\bms-[A-Za-z0-9_-]{8,}"),
+    re.compile(r"\bgh[pousr]_[A-Za-z0-9_]{20,}"),
     re.compile(r"\b[A-Za-z0-9+/]{80,}={0,2}\b"),
 )
 
