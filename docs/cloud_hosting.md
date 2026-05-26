@@ -11,10 +11,11 @@ their own rollout gates.
 
 ## Deployment Boundary
 
-For the current cloud plan, Azure is used only for infrastructure rehearsal and
-hosting. Do not spend the Azure credit on model or embedding inference. Keep
-DigitalOcean credit reserved for model calls, not for IntentMux VPS or
-container infrastructure.
+Hosting providers, credits, and operator-specific budget choices are deployment
+decisions and should stay outside the public repository. This repository may
+document required IntentMux contracts and example platform commands, but it
+should not encode a maintainer's private account layout, domain, credit pool,
+or provider-key strategy.
 
 For the current full-gateway plan, LiteLLM is the public authenticated API and
 control plane; IntentMux should be internal or otherwise protected behind it.
@@ -104,10 +105,10 @@ uv run python scripts/preflight.py \
 
 ## Embedding Failure Policy
 
-The current hosted embedding choice is Cloudflare Workers AI through an
-OpenAI-compatible `/v1/embeddings` proxy using
+A supported hosted embedding shape is an OpenAI-compatible `/v1/embeddings`
+endpoint, for example a Cloudflare Workers AI proxy using
 `@cf/qwen/qwen3-embedding-0.6b`. Keep `ROUTER_EMBEDDING_INPUT_MAX_CHARS`
-bounded and package `cache/route-embeddings.json`; cloud traffic must not
+bounded and package `cache/route-embeddings.json`; hosted traffic should not
 rebuild the route bank on first request.
 
 Embedding availability is fail-closed at readiness and fail-soft at routing:
@@ -122,10 +123,10 @@ uv run python scripts/check_route_error_budget.py \
   --max-embedding-error-rate 0
 ```
 
-If Cloudflare quota, auth, or availability fails, do not silently switch to a
-new embedding provider during production traffic. Keep LiteLLM reachable,
-disable public cutover if `/ready` is false, and rebuild the route cache with
-the reviewed replacement provider before resuming hosted traffic.
+If embedding quota, auth, or availability fails, do not silently switch to a new
+embedding provider during production traffic. Keep LiteLLM reachable, disable
+public cutover if `/ready` is false, and rebuild the route cache with the
+reviewed replacement provider before resuming hosted traffic.
 
 ## Runtime Artifacts
 
@@ -189,8 +190,9 @@ Before exposing a hosted IntentMux endpoint:
 11. Confirm unauthenticated `/ready`, `/v1/models`, and chat requests return
    `401`, while `/health` still returns `200`. For a direct IntentMux endpoint,
    include `--require-unauth-rejected` in `scripts/preflight.py`.
-12. Confirm Cloudflare Workers AI embeddings use the OpenAI-compatible
-   `/ai/v1/embeddings` endpoint shape, not native `/ai/run/...`.
+12. Confirm hosted embeddings use an OpenAI-compatible embeddings endpoint
+    shape. For Cloudflare Workers AI, this means `/ai/v1/embeddings`, not
+    native `/ai/run/...`.
 13. Confirm `scripts/check_cloud_runtime.py --require-route-cache` passes for
     the runtime directory that will be mounted or copied into the hosted
     container.
@@ -200,7 +202,7 @@ Before exposing a hosted IntentMux endpoint:
     and route-bank-missing/cache-miss/embedding-failure startup cases are
     tested.
 16. Confirm public LiteLLM E2E can call `lite`, `deep`, and `intentmux`, and
-    that Azure IntentMux logs strictly match the returned router request ids
+    that hosted IntentMux logs strictly match the returned router request ids
     with `upstream_status=200`.
 
 Keep provider routing, fallback, budget, and key distribution in the upstream

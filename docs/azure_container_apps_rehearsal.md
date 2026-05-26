@@ -1,79 +1,57 @@
 # Azure Container Apps Rehearsal
 
-This is a staging rehearsal for the IntentMux container. The whole gateway
-cloud target is LiteLLM + IntentMux + managed Postgres + hosted monitoring +
-hosted embedding; this runbook proves only the IntentMux piece. Do not point
-production clients at the hosted endpoint until the full gateway rollout gate
-passes.
+This is a generic staging rehearsal template for the IntentMux container. It
+proves only the IntentMux cloud surface. Keep account-specific domains, resource
+names, budget alerts, email addresses, and live verification notes in private
+operations docs outside this repository.
 
 ## Cost Guardrails
 
-- Azure for Students credit is infrastructure-only for this rehearsal. Do not
-  run model or embedding inference workloads on Azure under this budget.
-- DigitalOcean credit is reserved for model calls and is not part of the
-  IntentMux infrastructure rehearsal.
+- Use an isolated resource group so all rehearsal resources can be deleted
+  together.
+- Do not run model or embedding inference workloads on the infrastructure
+  rehearsal budget unless that is an explicit deployment decision.
 - Use Azure Container Apps consumption with `--min-replicas 0` and
-  `--max-replicas 1`.
-- Create the environment with `--logs-destination none` for rehearsal. Default
-  Log Analytics workspaces can add cost.
-- Prefer an ephemeral ACR Basic registry only for image transfer. Delete the
-  rehearsal resource group after the run if it is not needed.
-- Do not create Azure Files, Storage Accounts, VNETs, private endpoints, or
-  always-on replicas in the first rehearsal.
-- Set a budget alert on the subscription before leaving resources running.
+  `--max-replicas 1` for a first rehearsal.
+- Use `--logs-destination none` unless a reviewed hosted log sink is part of the
+  rehearsal.
+- Prefer an ephemeral ACR Basic registry only for image transfer.
+- Set a budget alert in the subscription before leaving resources running.
+- Delete the rehearsal resource group after the run if it is not needed.
 
-Current rehearsal budget alert:
-
-```text
-resource group: intentmux-rg-staging
-action group: intentmux-budget-action-group
-receiver: ops@example.com
-budget: intentmux-monthly-budget
-amount: USD 20 monthly
-thresholds: 50%, 80%, 100%
-period: 2026-05-01T00:00:00Z to 2027-06-01T00:00:00Z
-```
-
-Azure CLI accepts the budget time period reliably with ISO timestamps:
+Example variables:
 
 ```bash
-az monitor action-group create \
-  --resource-group intentmux-rg-staging \
-  --name intentmux-budget-action-group \
-  --short-name imuxbudg \
-  --action email budget-email ops@example.com
-
-az consumption budget create-with-rg \
-  --resource-group intentmux-rg-staging \
-  --budget-name intentmux-monthly-budget \
-  --amount 20 \
-  --category Cost \
-  --time-grain Monthly \
-  --time-period '{"startDate":"2026-05-01T00:00:00Z","endDate":"2027-06-01T00:00:00Z"}'
+export AZURE_RESOURCE_GROUP=intentmux-rg-staging
+export AZURE_LOCATION=eastus
+export AZURE_CONTAINERAPP_ENV=intentmux-env-staging
+export AZURE_CONTAINERAPP_NAME=intentmux-staging
+export AZURE_ACR_NAME=intentmuxacr$(date +%m%d%H%M)
+export INTENTMUX_IMAGE_TAG=rehearsal-$(git rev-parse --short HEAD)
 ```
 
-## Local Runtime Bundle
+## Runtime Bundle
 
 Build a cloud-safe runtime under the ignored `.intentmux-cloud/runtime` path:
 
 ```bash
 uv run python scripts/build_cloud_runtime.py \
-  --source-runtime /path/to/intentmux-runtime \
+  --source-runtime /path/to/local-intentmux-runtime \
   --output-runtime .intentmux-cloud/runtime \
-  --litellm-base-url https://configured-by-env.invalid \
-  --embedding-url https://api.cloudflare.com/client/v4/accounts/configured-by-env/ai/v1/embeddings \
+  --litellm-base-url https://litellm.internal.example \
+  --embedding-url https://embedding.example.com/v1/embeddings \
   --include-route-cache \
   --force
 ```
 
-Then verify the bundled cache matches the hosted embedding model before
-building the image:
+Verify the bundled cache matches the hosted embedding model before building the
+image:
 
 ```bash
 uv run python scripts/check_cloud_runtime.py .intentmux-cloud/runtime \
   --require-route-cache \
-  --expected-embedding-model @cf/qwen/qwen3-embedding-0.6b \
-  --expected-embedding-input-max-chars 8192
+  --expected-embedding-model "$ROUTER_EMBEDDING_MODEL" \
+  --expected-embedding-input-max-chars "$ROUTER_EMBEDDING_INPUT_MAX_CHARS"
 ```
 
 The Azure Dockerfile embeds only this checked runtime into `/data`. Hosted
@@ -93,8 +71,8 @@ docker run --rm -p 4001:4001 \
   -e ROUTER_INBOUND_API_KEY=dev-intentmux-key \
   -e ROUTER_LITELLM_BASE_URL=https://litellm.example.invalid \
   -e ROUTER_EXPOSE_TARGET_MODEL_HEADER=false \
-  -e ROUTER_EMBEDDING_URL=https://api.cloudflare.com/client/v4/accounts/example/ai/v1/embeddings \
-  -e ROUTER_EMBEDDING_MODEL=@cf/qwen/qwen3-embedding-0.6b \
+  -e ROUTER_EMBEDDING_URL=https://embedding.example.invalid/v1/embeddings \
+  -e ROUTER_EMBEDDING_MODEL=example-embedding-model \
   intentmux-azure-rehearsal:local
 ```
 
@@ -107,18 +85,18 @@ Expected local probe:
 
 ## Azure Staging Shape
 
-Recommended first rehearsal values:
+Recommended first rehearsal shape:
 
 ```text
-resource group: intentmux-rg-staging
-location: eastus
-container app env: intentmux-env-staging
-container app: intentmux-staging
-registry: intentmuxacr<shortsuffix>
+resource group: $AZURE_RESOURCE_GROUP
+location: $AZURE_LOCATION
+container app env: $AZURE_CONTAINERAPP_ENV
+container app: $AZURE_CONTAINERAPP_NAME
+registry: $AZURE_ACR_NAME
 cpu/memory: 0.25 CPU / 0.5Gi
 replicas: min 0 / max 1
-ingress: external, target port 4001
-logs: none
+ingress: external for isolated IntentMux rehearsal, internal behind LiteLLM for full gateway rehearsal
+logs: none unless a reviewed log sink is configured
 ```
 
 The container app should set:
@@ -135,62 +113,63 @@ ROUTER_INBOUND_API_KEY=secretref:intentmux-inbound-api-key
 ROUTER_EXPOSE_TARGET_MODEL_HEADER=false
 ROUTER_LITELLM_BASE_URL=<hosted LiteLLM URL>
 ROUTER_LITELLM_API_KEY=secretref:litellm-api-key
-ROUTER_EMBEDDING_URL=https://api.cloudflare.com/client/v4/accounts/<account-id>/ai/v1/embeddings
-ROUTER_EMBEDDING_MODEL=@cf/qwen/qwen3-embedding-0.6b
+ROUTER_EMBEDDING_URL=<OpenAI-compatible embedding URL>
+ROUTER_EMBEDDING_MODEL=<embedding model>
+ROUTER_EMBEDDING_API_KEY=secretref:embedding-api-key
 ROUTER_EMBEDDING_TIMEOUT=60
 ROUTER_EMBEDDING_INPUT_MAX_CHARS=8192
 ```
 
 Keep LiteLLM, databases, and monitoring out of this repository's deployment
-scripts. This runbook only proves the IntentMux container surface and its
-hosted embedding integration.
+scripts. This runbook only proves the IntentMux container surface and hosted
+embedding integration.
 
 ## Azure Rehearsal Commands
 
-Use one isolated resource group so all rehearsal costs can be removed at once:
+Create the resource group:
 
 ```bash
 az group create \
-  --name intentmux-rg-staging \
-  --location eastus \
-  --tags project=intentmux env=rehearsal cost_guard=delete_when_done
+  --name "$AZURE_RESOURCE_GROUP" \
+  --location "$AZURE_LOCATION" \
+  --tags project=intentmux env=staging cost_guard=delete_when_done
 ```
 
 Create a Basic ACR for image transfer:
 
 ```bash
 az acr create \
-  --name intentmuxacr0000 \
-  --resource-group intentmux-rg-staging \
-  --location eastus \
+  --name "$AZURE_ACR_NAME" \
+  --resource-group "$AZURE_RESOURCE_GROUP" \
+  --location "$AZURE_LOCATION" \
   --sku Basic \
   --admin-enabled false \
-  --tags project=intentmux env=rehearsal cost_guard=delete_when_done
+  --tags project=intentmux env=staging cost_guard=delete_when_done
 ```
 
 Create the Container Apps environment without Log Analytics:
 
 ```bash
 az containerapp env create \
-  --name intentmux-env-staging \
-  --resource-group intentmux-rg-staging \
-  --location eastus \
+  --name "$AZURE_CONTAINERAPP_ENV" \
+  --resource-group "$AZURE_RESOURCE_GROUP" \
+  --location "$AZURE_LOCATION" \
   --logs-destination none \
   --enable-workload-profiles false \
-  --tags project=intentmux env=rehearsal cost_guard=delete_when_done
+  --tags project=intentmux env=staging cost_guard=delete_when_done
 ```
 
 Push the locally tested image:
 
 ```bash
-az acr login --name intentmuxacr0000 --expose-token --query accessToken -o tsv \
-  | docker login intentmuxacr0000.azurecr.io \
+az acr login --name "$AZURE_ACR_NAME" --expose-token --query accessToken -o tsv \
+  | docker login "$AZURE_ACR_NAME.azurecr.io" \
       --username 00000000-0000-0000-0000-000000000000 \
       --password-stdin
 
 docker tag intentmux-azure-rehearsal:local \
-  intentmuxacr0000.azurecr.io/intentmux:rehearsal-<git-sha>
-docker push intentmuxacr0000.azurecr.io/intentmux:rehearsal-<git-sha>
+  "$AZURE_ACR_NAME.azurecr.io/intentmux:$INTENTMUX_IMAGE_TAG"
+docker push "$AZURE_ACR_NAME.azurecr.io/intentmux:$INTENTMUX_IMAGE_TAG"
 ```
 
 Create the staging app with scale-to-zero and a system-assigned identity for
@@ -198,10 +177,10 @@ ACR pull:
 
 ```bash
 az containerapp create \
-  --name intentmux-staging \
-  --resource-group intentmux-rg-staging \
-  --environment intentmux-env-staging \
-  --image intentmuxacr0000.azurecr.io/intentmux:rehearsal-<git-sha> \
+  --name "$AZURE_CONTAINERAPP_NAME" \
+  --resource-group "$AZURE_RESOURCE_GROUP" \
+  --environment "$AZURE_CONTAINERAPP_ENV" \
+  --image "$AZURE_ACR_NAME.azurecr.io/intentmux:$INTENTMUX_IMAGE_TAG" \
   --target-port 4001 \
   --ingress external \
   --transport http \
@@ -210,9 +189,12 @@ az containerapp create \
   --cpu 0.25 \
   --memory 0.5Gi \
   --system-assigned \
-  --registry-server intentmuxacr0000.azurecr.io \
+  --registry-server "$AZURE_ACR_NAME.azurecr.io" \
   --registry-identity system \
-  --secrets intentmux-inbound-api-key="$INTENTMUX_REHEARSAL_KEY" \
+  --secrets \
+    intentmux-inbound-api-key="$INTENTMUX_REHEARSAL_KEY" \
+    litellm-api-key="$LITELLM_UPSTREAM_KEY" \
+    embedding-api-key="$ROUTER_EMBEDDING_API_KEY" \
   --env-vars \
     INTENTMUX_HOME=/data \
     ROUTER_CONFIG=/data/config/routes.yaml \
@@ -223,12 +205,14 @@ az containerapp create \
     ROUTER_AUDIT_LOG_DIR= \
     ROUTER_INBOUND_API_KEY=secretref:intentmux-inbound-api-key \
     ROUTER_EXPOSE_TARGET_MODEL_HEADER=false \
-    ROUTER_LITELLM_BASE_URL=https://litellm.example.invalid \
-    ROUTER_EMBEDDING_URL=https://api.cloudflare.com/client/v4/accounts/example/ai/v1/embeddings \
-    ROUTER_EMBEDDING_MODEL=@cf/qwen/qwen3-embedding-0.6b \
+    ROUTER_LITELLM_BASE_URL="$ROUTER_LITELLM_BASE_URL" \
+    ROUTER_LITELLM_API_KEY=secretref:litellm-api-key \
+    ROUTER_EMBEDDING_URL="$ROUTER_EMBEDDING_URL" \
+    ROUTER_EMBEDDING_MODEL="$ROUTER_EMBEDDING_MODEL" \
+    ROUTER_EMBEDDING_API_KEY=secretref:embedding-api-key \
     ROUTER_EMBEDDING_TIMEOUT=60 \
     ROUTER_EMBEDDING_INPUT_MAX_CHARS=8192 \
-  --tags project=intentmux env=rehearsal cost_guard=delete_when_done
+  --tags project=intentmux env=staging cost_guard=delete_when_done
 ```
 
 ## Hosted Probe
@@ -238,15 +222,15 @@ after a successful `HTTP 200 Connection established`, retry with
 `--noproxy '*'`.
 
 ```bash
-FQDN=intentmux-staging.example.azurecontainerapps.io
+export INTENTMUX_FQDN=<container-app-fqdn>
 
-curl --noproxy '*' -i "https://$FQDN/health"
-curl --noproxy '*' -i "https://$FQDN/ready"
+curl --noproxy '*' -i "https://$INTENTMUX_FQDN/health"
+curl --noproxy '*' -i "https://$INTENTMUX_FQDN/ready"
 curl --noproxy '*' -i -H "Authorization: Bearer $INTENTMUX_REHEARSAL_KEY" \
-  "https://$FQDN/ready"
-curl --noproxy '*' -i "https://$FQDN/v1/models"
+  "https://$INTENTMUX_FQDN/ready"
+curl --noproxy '*' -i "https://$INTENTMUX_FQDN/v1/models"
 curl --noproxy '*' -i -H "Authorization: Bearer $INTENTMUX_REHEARSAL_KEY" \
-  "https://$FQDN/v1/models"
+  "https://$INTENTMUX_FQDN/v1/models"
 ```
 
 Expected staging result before real upstreams are wired:
@@ -264,5 +248,5 @@ Delete the whole rehearsal resource group when the staging environment is no
 longer needed:
 
 ```bash
-az group delete --name intentmux-rg-staging
+az group delete --name "$AZURE_RESOURCE_GROUP"
 ```

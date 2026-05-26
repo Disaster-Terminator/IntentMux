@@ -22,7 +22,7 @@ for IntentMux.
 2. Keep the local LiteLLM sidecar model entry named `semantic-router`.
 3. Keep direct gateway behavior for `model=auto|lite|deep`.
 4. Add `ruff` to the development dependency group and run it in validation.
-5. Sync `/path/to/intentmux-runtime/config/routes.yaml`.
+5. Sync the operator's untracked runtime `config/routes.yaml`.
 6. Rebuild only the `intentmux` service and run production smoke checks.
 
 ## Non-goals

@@ -576,7 +576,7 @@ State:
 
 - Tracked examples use generic paths and generic model names.
 - Local runtime logs, prompt review logs, generated route banks, and production compose overrides remain outside git.
-- A local rollout may use `/path/to/docker-compose.yml`, but the public deployment instructions must not hardcode that path.
+- A local rollout may use an operator-specific Compose file, but the public deployment instructions must not hardcode that path.
 
 - [ ] **Step 4: Run docs-adjacent checks**
 

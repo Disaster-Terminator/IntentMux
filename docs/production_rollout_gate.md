@@ -101,8 +101,8 @@ LITELLM_MASTER_KEY="$CLOUD_LITELLM_KEY" \
 uv run python scripts/e2e_litellm_entry.py \
   --litellm-base-url https://litellm.example.com \
   --log-source azure \
-  --azure-containerapp-name intentmux-staging \
-  --azure-resource-group intentmux-rg-staging \
+  --azure-containerapp-name "$AZURE_INTENTMUX_APP" \
+  --azure-resource-group "$AZURE_RESOURCE_GROUP" \
   --expected-lite-target-model lite \
   --expected-deep-target-model deep \
   --skip-outer-model-check \
