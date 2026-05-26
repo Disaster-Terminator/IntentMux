@@ -20,7 +20,22 @@ gateway services out of scope for this hardening pass.
 Keep API keys in the platform secret manager or environment variables. Do not
 put provider keys, bearer tokens, or local-only endpoints in tracked config.
 Replace workstation-only hosts such as `host.docker.internal` before rollout.
-Before mounting a runtime directory, run:
+Build a sanitized runtime bundle from the reviewed local runtime:
+
+```bash
+uv run python scripts/build_cloud_runtime.py \
+  --source-runtime /path/to/local-intentmux-runtime \
+  --output-runtime /path/to/cloud-intentmux-runtime \
+  --litellm-base-url https://litellm.internal \
+  --embedding-url https://embedding.internal/v1/embeddings
+```
+
+The builder copies only `config/routes.yaml` and the configured route bank,
+normalizes `listen_host` to `0.0.0.0`, rewrites `route_bank_path` to the bundled
+route bank, and then runs the cloud runtime gate. It does not copy prompt logs,
+quality reports, reviews, backups, stdout files, or caches.
+
+Before mounting any runtime directory, run:
 
 ```bash
 uv run python scripts/check_cloud_runtime.py /path/to/intentmux-home
@@ -114,6 +129,8 @@ Before exposing a hosted IntentMux endpoint:
    `401`, while `/health` still returns `200`.
 9. Confirm `scripts/check_cloud_runtime.py` passes for the runtime directory
    that will be mounted or copied into the hosted container.
+10. Confirm the mounted runtime was produced by `scripts/build_cloud_runtime.py`
+    or reviewed to the same allowlist: config plus route bank only.
 
 Keep provider routing, fallback, budget, and key distribution in the upstream
 gateway. IntentMux owns only intent routing and metadata audit.

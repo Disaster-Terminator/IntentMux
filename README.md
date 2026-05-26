@@ -154,6 +154,8 @@ routes:
 的 utterance 数量。不要盲信文档或旧状态文件，先看 live `/ready` 和最新日志。
 云端模式下 `/ready` 和 `/v1/models` 都需要 `ROUTER_INBOUND_API_KEY`；`/health`
 保留为无鉴权平台探活。
+上云前用 `scripts/build_cloud_runtime.py` 生成只含配置和 route bank 的干净 runtime，
+再用 `scripts/check_cloud_runtime.py` 做门控；不要把本机 runtime 目录原样上传。
 云端运行时资产边界见 [docs/cloud_hosting.md](docs/cloud_hosting.md)。
 
 ## API

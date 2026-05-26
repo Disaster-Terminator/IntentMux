@@ -9,8 +9,13 @@ import yaml
 
 
 FORBIDDEN_ARTIFACT_PATTERNS = (
+    ".env",
+    "**/.env",
+    "*.env",
+    "**/*.env",
     "logs/prompts/*.jsonl",
     "logs/quality/**",
+    "logs/**/*",
     "reports/**",
     "reviews/**",
     "config/*.bak",
@@ -18,6 +23,17 @@ FORBIDDEN_ARTIFACT_PATTERNS = (
     "config/*.old",
     "config/routes.yaml.*",
     "*.stdout",
+    "**/*.stdout",
+    "**/*.tmp",
+    "**/*.swp",
+    ".git/**/*",
+    "**/.git/**/*",
+    "**/.DS_Store",
+    "**/__pycache__/**/*",
+    "pids/**/*",
+    "secrets/**/*",
+    "private/**/*",
+    "state/**/*",
 )
 LOCAL_ONLY_PATTERNS = (
     re.compile(r"\b127\.0\.0\.1\b"),
@@ -33,7 +49,11 @@ SECRET_LIKE_PATTERNS = (
     re.compile(r"\bAIza[A-Za-z0-9_-]{20,}"),
     re.compile(r"\bark-[A-Za-z0-9-]{20,}"),
     re.compile(r"\bms-[A-Za-z0-9_-]{8,}"),
+    re.compile(r"\bgh[pousr]_[A-Za-z0-9_]{20,}"),
+    re.compile(r"\bxox[abprs]-[A-Za-z0-9-]{20,}"),
+    re.compile(r"\bA[KS]IA[0-9A-Z]{16}\b"),
 )
+TEXT_SCAN_SUFFIXES = {".env", ".json", ".jsonl", ".md", ".txt", ".yaml", ".yml"}
 
 
 @dataclass(frozen=True)
@@ -48,6 +68,7 @@ def check_cloud_runtime(runtime_home: Path) -> list[CheckResult]:
     config_path = runtime_home / "config" / "routes.yaml"
     raw_config = load_config(config_path)
     route_bank_path = resolve_route_bank_path(runtime_home, config_path, raw_config)
+    forbidden_paths = forbidden_artifact_paths(runtime_home)
     results = [
         CheckResult(
             "runtime_home",
@@ -65,11 +86,12 @@ def check_cloud_runtime(runtime_home: Path) -> list[CheckResult]:
             relative_detail(route_bank_path, runtime_home),
         ),
     ]
-    results.append(forbidden_artifacts_result(runtime_home))
+    results.append(route_bank_inside_runtime_result(route_bank_path, runtime_home))
+    results.append(unsafe_symlinks_result(runtime_home))
+    results.append(forbidden_artifacts_result(runtime_home, forbidden_paths))
+    results.append(local_only_hosts_result(runtime_home, forbidden_paths))
+    results.append(secret_like_values_result(runtime_home, forbidden_paths))
     if raw_config is not None:
-        config_text = config_path.read_text(encoding="utf-8")
-        results.append(local_only_hosts_result(config_text))
-        results.append(secret_like_config_result(config_text))
         results.append(placeholder_targets_result(raw_config))
     return results
 
@@ -93,15 +115,51 @@ def resolve_route_bank_path(runtime_home: Path, config_path: Path, raw_config: d
     return runtime_home / "semantic_sets" / "route_bank.yaml"
 
 
-def forbidden_artifacts_result(runtime_home: Path) -> CheckResult:
-    matches: list[str] = []
-    for pattern in FORBIDDEN_ARTIFACT_PATTERNS:
-        matches.extend(
-            relative_detail(path, runtime_home)
-            for path in runtime_home.glob(pattern)
-            if path.is_file()
+def route_bank_inside_runtime_result(route_bank_path: Path, runtime_home: Path) -> CheckResult:
+    try:
+        route_bank_path.resolve(strict=False).relative_to(runtime_home.resolve(strict=False))
+    except ValueError:
+        return CheckResult(
+            "route_bank_inside_runtime",
+            False,
+            str(route_bank_path),
         )
-    matches = sorted(set(matches))
+    return CheckResult(
+        "route_bank_inside_runtime",
+        True,
+        relative_detail(route_bank_path, runtime_home),
+    )
+
+
+def unsafe_symlinks_result(runtime_home: Path) -> CheckResult:
+    root = runtime_home.resolve(strict=False)
+    matches: list[str] = []
+    for path in runtime_home.rglob("*"):
+        if not path.is_symlink():
+            continue
+        try:
+            path.resolve(strict=False).relative_to(root)
+        except ValueError:
+            matches.append(relative_detail(path, runtime_home))
+    matches = sorted(matches)
+    return CheckResult(
+        "unsafe_symlinks",
+        not matches,
+        "none" if not matches else ",".join(matches[:20]),
+    )
+
+
+def forbidden_artifact_paths(runtime_home: Path) -> set[Path]:
+    matches: set[Path] = set()
+    for pattern in FORBIDDEN_ARTIFACT_PATTERNS:
+        for path in runtime_home.glob(pattern):
+            if path.is_file() or path.is_symlink():
+                matches.add(path)
+    return matches
+
+
+def forbidden_artifacts_result(runtime_home: Path, paths: set[Path]) -> CheckResult:
+    matches = sorted({relative_detail(path, runtime_home) for path in paths})
     return CheckResult(
         "forbidden_runtime_artifacts",
         not matches,
@@ -109,31 +167,66 @@ def forbidden_artifacts_result(runtime_home: Path) -> CheckResult:
     )
 
 
-def local_only_hosts_result(config_text: str) -> CheckResult:
+def local_only_hosts_result(runtime_home: Path, forbidden_paths: set[Path]) -> CheckResult:
     matches = sorted(
         {
-            match.group(0)
+            f"{relative_detail(path, runtime_home)}:{line_no}:{match.group(0)}"
+            for path, line_no, line in iter_config_lines(runtime_home, forbidden_paths)
             for pattern in LOCAL_ONLY_PATTERNS
-            for match in pattern.finditer(config_text)
+            for match in pattern.finditer(line)
         }
     )
     return CheckResult(
         "local_only_hosts",
         not matches,
-        "none" if not matches else ",".join(matches),
+        "none" if not matches else ",".join(matches[:20]),
     )
 
 
-def secret_like_config_result(config_text: str) -> CheckResult:
-    names = []
-    for line_no, line in enumerate(config_text.splitlines(), start=1):
-        if any(pattern.search(line) for pattern in SECRET_LIKE_PATTERNS):
-            names.append(f"config/routes.yaml:{line_no}")
+def secret_like_values_result(runtime_home: Path, forbidden_paths: set[Path]) -> CheckResult:
+    matches = sorted(
+        {
+            f"{relative_detail(path, runtime_home)}:{line_no}"
+            for path, line_no, line in iter_scannable_lines(runtime_home, forbidden_paths)
+            if any(pattern.search(line) for pattern in SECRET_LIKE_PATTERNS)
+        }
+    )
     return CheckResult(
-        "secret_like_config_values",
-        not names,
-        "none" if not names else ",".join(names[:20]),
+        "secret_like_values",
+        not matches,
+        "none" if not matches else ",".join(matches[:20]),
     )
+
+
+def iter_scannable_lines(
+    runtime_home: Path,
+    forbidden_paths: set[Path],
+) -> list[tuple[Path, int, str]]:
+    lines: list[tuple[Path, int, str]] = []
+    for path in sorted(runtime_home.rglob("*")):
+        if path in forbidden_paths or path.is_symlink() or not path.is_file():
+            continue
+        if path.name != ".env" and path.suffix.lower() not in TEXT_SCAN_SUFFIXES:
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            continue
+        lines.extend((path, line_no, line) for line_no, line in enumerate(text.splitlines(), start=1))
+    return lines
+
+
+def iter_config_lines(
+    runtime_home: Path,
+    forbidden_paths: set[Path],
+) -> list[tuple[Path, int, str]]:
+    config_dir = runtime_home / "config"
+    if not config_dir.is_dir():
+        return []
+    return [
+        item
+        for item in iter_scannable_lines(config_dir, {path for path in forbidden_paths if path.is_relative_to(config_dir)})
+    ]
 
 
 def placeholder_targets_result(raw: dict) -> CheckResult:
