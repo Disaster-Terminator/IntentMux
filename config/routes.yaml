@@ -14,8 +14,10 @@ threshold: 0.4
 margin: 0.04
 route_bank_path: examples/route_bank.sample.yaml
 embedding_url: http://127.0.0.1:1234/v1/embeddings
-embedding_model: text-embedding-jina-embeddings-v5-text-small-retrieval@q8_0
+embedding_model: text-embedding-qwen3-embedding-0.6b@f16
 embedding_batch_size: 128
+embedding_timeout: 60
+embedding_input_max_chars: 12000
 route_embedding_cache_enabled: true
 litellm_base_url: http://127.0.0.1:4000
 litellm_timeout: 120

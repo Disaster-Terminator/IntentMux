@@ -120,6 +120,8 @@ ROUTER_LITELLM_BASE_URL=<hosted LiteLLM URL>
 ROUTER_LITELLM_API_KEY=secretref:litellm-api-key
 ROUTER_EMBEDDING_URL=<hosted or private tunnel embedding URL>
 ROUTER_EMBEDDING_MODEL=<embedding model name>
+ROUTER_EMBEDDING_TIMEOUT=60
+ROUTER_EMBEDDING_INPUT_MAX_CHARS=12000
 ```
 
 Keep LiteLLM, embedding, databases, and monitoring out of this repository's
@@ -203,7 +205,9 @@ az containerapp create \
     ROUTER_INBOUND_API_KEY=secretref:intentmux-inbound-api-key \
     ROUTER_LITELLM_BASE_URL=https://litellm.example.invalid \
     ROUTER_EMBEDDING_URL=https://embedding.example.invalid/v1/embeddings \
-    ROUTER_EMBEDDING_MODEL=text-embedding-jina-embeddings-v5-text-small-retrieval@q8_0 \
+    ROUTER_EMBEDDING_MODEL=text-embedding-qwen3-embedding-0.6b@f16 \
+    ROUTER_EMBEDDING_TIMEOUT=60 \
+    ROUTER_EMBEDDING_INPUT_MAX_CHARS=12000 \
   --tags project=intentmux env=rehearsal cost_guard=delete_when_done
 ```
 

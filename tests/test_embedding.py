@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import pytest
 
-from router.embedding import OpenAIEmbeddingClient, batched, build_embedding_headers
+from router.embedding import (
+    OpenAIEmbeddingClient,
+    batched,
+    build_embedding_headers,
+    clip_embedding_input,
+)
 
 
 def test_build_embedding_headers_merges_api_key_and_custom_headers():
@@ -116,3 +121,60 @@ async def test_openai_embedding_client_batches_large_inputs(monkeypatch):
 def test_batched_rejects_non_positive_batch_size():
     with pytest.raises(ValueError, match="batch_size must be positive"):
         batched(["a"], 0)
+
+
+def test_clip_embedding_input_preserves_short_text():
+    assert clip_embedding_input("short", 10) == "short"
+    assert clip_embedding_input("short", None) == "short"
+
+
+def test_clip_embedding_input_keeps_head_and_tail():
+    assert clip_embedding_input("0123456789abcdef", 10) == "01234bcdef"
+
+
+@pytest.mark.asyncio
+async def test_openai_embedding_client_clips_inputs(monkeypatch):
+    captured: dict[str, object] = {}
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return {"data": [{"embedding": [0.1]}]}
+
+    class FakeAsyncClient:
+        def __init__(self, *, timeout: float):
+            self.timeout = timeout
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, traceback):
+            return None
+
+        async def post(self, url: str, *, json: dict, headers: dict[str, str]):
+            captured["json"] = json
+            return FakeResponse()
+
+    monkeypatch.setattr("router.embedding.httpx.AsyncClient", FakeAsyncClient)
+
+    client = OpenAIEmbeddingClient(
+        "http://embedding/v1/embeddings",
+        "embed-model",
+        input_max_chars=8,
+    )
+
+    vectors = await client.embed(["0123456789abcdef"])
+
+    assert vectors == [[0.1]]
+    assert captured["json"] == {"model": "embed-model", "input": ["0123cdef"]}
+
+
+def test_openai_embedding_client_rejects_non_positive_input_max_chars():
+    with pytest.raises(ValueError, match="input_max_chars must be positive"):
+        OpenAIEmbeddingClient(
+            "http://embedding/v1/embeddings",
+            "embed-model",
+            input_max_chars=0,
+        )

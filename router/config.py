@@ -114,8 +114,10 @@ class RouterSettings(BaseModel):
     route_embedding_cache_path: str | None = None
     hard_rules: list[HardRuleSpec] = Field(default_factory=list)
     embedding_url: str = "http://127.0.0.1:1234/v1/embeddings"
-    embedding_model: str = "text-embedding-jina-embeddings-v5-text-small-retrieval@q8_0"
+    embedding_model: str = "text-embedding-qwen3-embedding-0.6b@f16"
     embedding_batch_size: int = 128
+    embedding_timeout: float = 60.0
+    embedding_input_max_chars: int | None = 12_000
     embedding_api_key: str | None = None
     embedding_headers: dict[str, str] = Field(default_factory=dict)
     litellm_base_url: str = "http://127.0.0.1:4000"
@@ -192,6 +194,13 @@ class RouterSettings(BaseModel):
             raise ValueError("prompt_log_max_chars must be positive")
         if self.embedding_batch_size <= 0:
             raise ValueError("embedding_batch_size must be positive")
+        if self.embedding_timeout <= 0:
+            raise ValueError("embedding_timeout must be positive")
+        if (
+            self.embedding_input_max_chars is not None
+            and self.embedding_input_max_chars <= 0
+        ):
+            raise ValueError("embedding_input_max_chars must be positive")
         if self.listen_port <= 0:
             raise ValueError("listen_port must be positive")
         return self
@@ -251,6 +260,13 @@ def load_settings(path: str | Path | None = None) -> RouterSettings:
         "embedding_model": os.getenv("ROUTER_EMBEDDING_MODEL", settings.embedding_model),
         "embedding_batch_size": int(
             os.getenv("ROUTER_EMBEDDING_BATCH_SIZE", str(settings.embedding_batch_size))
+        ),
+        "embedding_timeout": float(
+            os.getenv("ROUTER_EMBEDDING_TIMEOUT", str(settings.embedding_timeout))
+        ),
+        "embedding_input_max_chars": optional_int_from_env(
+            "ROUTER_EMBEDDING_INPUT_MAX_CHARS",
+            settings.embedding_input_max_chars,
         ),
         "embedding_api_key": os.getenv("ROUTER_EMBEDDING_API_KEY")
         or settings.embedding_api_key,
@@ -459,6 +475,15 @@ def bool_from_env(name: str, default: bool) -> bool:
     if value is None:
         return default
     return value.lower() in {"1", "true", "yes", "on"}
+
+
+def optional_int_from_env(name: str, default: int | None) -> int | None:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    if value.strip().lower() in {"", "none", "null"}:
+        return None
+    return int(value)
 
 
 def listen_port_from_env(default: int) -> int:

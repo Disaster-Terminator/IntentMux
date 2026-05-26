@@ -657,6 +657,71 @@ routes:
     assert settings.embedding_batch_size == 32
 
 
+def test_embedding_timeout_can_come_from_environment(monkeypatch, tmp_path: Path):
+    routes_path = tmp_path / "routes.yaml"
+    routes_path.write_text(
+        """
+route_model: intentmux
+default_route: lite-upstream
+routes:
+  lite-upstream:
+    description: seed cheap
+    utterances:
+      - seed cheap utterance
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("ROUTER_EMBEDDING_TIMEOUT", "45")
+
+    settings = load_settings(routes_path)
+
+    assert settings.embedding_timeout == 45
+
+
+def test_embedding_input_max_chars_can_come_from_environment(monkeypatch, tmp_path: Path):
+    routes_path = tmp_path / "routes.yaml"
+    routes_path.write_text(
+        """
+route_model: intentmux
+default_route: lite-upstream
+routes:
+  lite-upstream:
+    description: seed cheap
+    utterances:
+      - seed cheap utterance
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("ROUTER_EMBEDDING_INPUT_MAX_CHARS", "8192")
+
+    settings = load_settings(routes_path)
+
+    assert settings.embedding_input_max_chars == 8192
+
+
+def test_embedding_input_max_chars_can_be_disabled_by_environment(
+    monkeypatch, tmp_path: Path
+):
+    routes_path = tmp_path / "routes.yaml"
+    routes_path.write_text(
+        """
+route_model: intentmux
+default_route: lite-upstream
+routes:
+  lite-upstream:
+    description: seed cheap
+    utterances:
+      - seed cheap utterance
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("ROUTER_EMBEDDING_INPUT_MAX_CHARS", "null")
+
+    settings = load_settings(routes_path)
+
+    assert settings.embedding_input_max_chars is None
+
+
 def test_route_embedding_cache_defaults_to_runtime_home(monkeypatch, tmp_path: Path):
     runtime_home = tmp_path / "intentmux-home"
     routes_path = runtime_home / "config" / "routes.yaml"

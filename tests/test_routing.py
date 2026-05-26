@@ -482,6 +482,53 @@ async def test_route_embedding_cache_misses_when_embedding_model_changes(tmp_pat
 
 
 @pytest.mark.asyncio
+async def test_route_embedding_cache_misses_when_embedding_input_max_chars_changes(
+    tmp_path: Path,
+):
+    route_settings = RouterSettings(
+        route_model="intentmux",
+        fallback_route_id="lite",
+        threshold=0.5,
+        margin=0.05,
+        embedding_input_max_chars=12000,
+        route_embedding_cache_path=str(tmp_path / "route-embeddings.json"),
+        routes={
+            "lite": RouteSpec(
+                target_model="local-lite-model",
+                description="low risk",
+                utterances=["翻译成中文"],
+            ),
+            "deep": RouteSpec(
+                target_model="local-deep-model",
+                description="high risk",
+                utterances=["分析这个线上 bug"],
+            ),
+        },
+    )
+    vectors = {
+        "翻译成中文": [1.0, 0.0, 0.0],
+        "分析这个线上 bug": [0.0, 1.0, 0.0],
+        "线上 bug 怎么修": [0.0, 1.0, 0.0],
+    }
+    first_router = Router(route_settings, FakeEmbeddingClient(vectors))
+    await first_router.decide(
+        {"model": "intentmux", "messages": [{"role": "user", "content": "线上 bug 怎么修"}]}
+    )
+    changed_settings = route_settings.model_copy(
+        update={"embedding_input_max_chars": 8192}
+    )
+    changed_client = FakeEmbeddingClient(vectors)
+    changed_router = Router(changed_settings, changed_client)
+
+    decision = await changed_router.decide(
+        {"model": "intentmux", "messages": [{"role": "user", "content": "线上 bug 怎么修"}]}
+    )
+
+    assert decision.route_id == "deep"
+    assert changed_client.calls[0] == ["翻译成中文", "分析这个线上 bug"]
+
+
+@pytest.mark.asyncio
 async def test_route_embedding_cache_misses_when_route_source_changes(tmp_path: Path):
     cache_path = tmp_path / "route-embeddings.json"
     base_settings = RouterSettings(

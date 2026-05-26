@@ -539,6 +539,7 @@ async def test_eval_routes_reuses_persisted_eval_query_embeddings(
             batch_size: int = 128,
             api_key: str | None = None,
             headers: dict[str, str] | None = None,
+            input_max_chars: int | None = 12000,
         ):
             pass
 
@@ -669,7 +670,7 @@ async def test_eval_query_embedding_cache_rejects_partial_embedding_response(
 async def test_eval_routes_passes_configured_embedding_batch_size(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ):
-    captured: dict[str, int] = {}
+    captured: dict[str, int | float | None] = {}
 
     class FakeOpenAIEmbeddingClient:
         def __init__(
@@ -680,8 +681,11 @@ async def test_eval_routes_passes_configured_embedding_batch_size(
             batch_size: int = 128,
             api_key: str | None = None,
             headers: dict[str, str] | None = None,
+            input_max_chars: int | None = 12000,
         ):
+            captured["timeout"] = timeout
             captured["batch_size"] = batch_size
+            captured["input_max_chars"] = input_max_chars
 
         async def embed(self, texts: list[str]) -> list[list[float]]:
             return [
@@ -703,6 +707,8 @@ margin: 0.0
 embedding_url: http://127.0.0.1:1234/v1/embeddings
 embedding_model: local-embedding
 embedding_batch_size: 7
+embedding_timeout: 45
+embedding_input_max_chars: 8192
 routes:
   lite:
     target_model: lite-upstream
@@ -732,3 +738,5 @@ cases:
 
     assert exit_code == 0
     assert captured["batch_size"] == 7
+    assert captured["timeout"] == 45
+    assert captured["input_max_chars"] == 8192

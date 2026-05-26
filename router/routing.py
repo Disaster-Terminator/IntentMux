@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import hashlib
 import json
+import logging
 from pathlib import Path
 import re
 from time import perf_counter
@@ -12,6 +13,9 @@ import numpy as np
 
 from router.config import RouterSettings
 from router.embedding import EmbeddingClient
+
+
+logger = logging.getLogger("intentmux.routing")
 
 
 AGENT_INSTRUCTION_BOILERPLATE_MARKERS = (
@@ -322,6 +326,8 @@ class Router:
         if (
             payload.get("version") != 1
             or payload.get("embedding_model") != self.settings.embedding_model
+            or payload.get("embedding_input_max_chars")
+            != self.settings.embedding_input_max_chars
             or payload.get("route_bank_sha256") != route_bank_fingerprint(entries)
         ):
             return None
@@ -366,6 +372,7 @@ class Router:
         payload = {
             "version": 1,
             "embedding_model": self.settings.embedding_model,
+            "embedding_input_max_chars": self.settings.embedding_input_max_chars,
             "route_bank_sha256": route_bank_fingerprint(entries),
             "items": [
                 {
@@ -386,7 +393,8 @@ class Router:
                 encoding="utf-8",
             )
             tmp_path.replace(cache_path)
-        except OSError:
+        except OSError as exc:
+            logger.warning("failed to write route embedding cache: %s", exc)
             return
 
     def _route_embedding_cache_path(self) -> Path | None:

@@ -54,9 +54,11 @@ def create_app(
             OpenAIEmbeddingClient(
                 settings.embedding_url,
                 settings.embedding_model,
+                timeout=settings.embedding_timeout,
                 batch_size=settings.embedding_batch_size,
                 api_key=settings.embedding_api_key,
                 headers=settings.embedding_headers,
+                input_max_chars=settings.embedding_input_max_chars,
             ),
         )
     if proxy is None:
