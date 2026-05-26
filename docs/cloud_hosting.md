@@ -98,8 +98,34 @@ Run preflight with the inbound key:
 ```bash
 uv run python scripts/preflight.py \
   --router-base-url https://your-intentmux-host \
-  --intentmux-api-key "$ROUTER_INBOUND_API_KEY"
+  --intentmux-api-key "$ROUTER_INBOUND_API_KEY" \
+  --require-unauth-rejected
 ```
+
+## Embedding Failure Policy
+
+The current hosted embedding choice is Cloudflare Workers AI through an
+OpenAI-compatible `/v1/embeddings` proxy using
+`@cf/qwen/qwen3-embedding-0.6b`. Keep `ROUTER_EMBEDDING_INPUT_MAX_CHARS`
+bounded and package `cache/route-embeddings.json`; cloud traffic must not
+rebuild the route bank on first request.
+
+Embedding availability is fail-closed at readiness and fail-soft at routing:
+authenticated `/ready` must return non-ready when the embedding endpoint is
+unreachable, while a live route request that hits a query-embedding failure
+falls back to `fallback_route_id` and records `reason=embedding_error`. The
+production gate should keep `embedding_error` at zero under normal conditions:
+
+```bash
+uv run python scripts/check_route_error_budget.py \
+  /path/to/intentmux-route-logs/*.jsonl \
+  --max-embedding-error-rate 0
+```
+
+If Cloudflare quota, auth, or availability fails, do not silently switch to a
+new embedding provider during production traffic. Keep LiteLLM reachable,
+disable public cutover if `/ready` is false, and rebuild the route cache with
+the reviewed replacement provider before resuming hosted traffic.
 
 ## Runtime Artifacts
 
