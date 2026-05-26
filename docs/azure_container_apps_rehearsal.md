@@ -5,6 +5,10 @@ at the hosted endpoint until the rollout gate in `docs/cloud_hosting.md` passes.
 
 ## Cost Guardrails
 
+- Azure for Students credit is infrastructure-only for this rehearsal. Do not
+  run model or embedding inference workloads on Azure under this budget.
+- DigitalOcean credit is reserved for model calls and is not part of the
+  IntentMux infrastructure rehearsal.
 - Use Azure Container Apps consumption with `--min-replicas 0` and
   `--max-replicas 1`.
 - Create the environment with `--logs-destination none` for rehearsal. Default
@@ -14,6 +18,36 @@ at the hosted endpoint until the rollout gate in `docs/cloud_hosting.md` passes.
 - Do not create Azure Files, Storage Accounts, VNETs, private endpoints, or
   always-on replicas in the first rehearsal.
 - Set a budget alert on the subscription before leaving resources running.
+
+Current rehearsal budget alert:
+
+```text
+resource group: intentmux-rg-staging
+action group: intentmux-budget-action-group
+receiver: ops@example.com
+budget: intentmux-monthly-budget
+amount: USD 20 monthly
+thresholds: 50%, 80%, 100%
+period: 2026-05-01T00:00:00Z to 2027-06-01T00:00:00Z
+```
+
+Azure CLI accepts the budget time period reliably with ISO timestamps:
+
+```bash
+az monitor action-group create \
+  --resource-group intentmux-rg-staging \
+  --name intentmux-budget-action-group \
+  --short-name imuxbudg \
+  --action email budget-email ops@example.com
+
+az consumption budget create-with-rg \
+  --resource-group intentmux-rg-staging \
+  --budget-name intentmux-monthly-budget \
+  --amount 20 \
+  --category Cost \
+  --time-grain Monthly \
+  --time-period '{"startDate":"2026-05-01T00:00:00Z","endDate":"2027-06-01T00:00:00Z"}'
+```
 
 ## Local Runtime Bundle
 

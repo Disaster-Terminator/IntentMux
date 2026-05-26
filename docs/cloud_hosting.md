@@ -7,6 +7,19 @@ bucket.
 This runbook covers IntentMux only. Keep LiteLLM, Hermes, OpenCode, and other
 gateway services out of scope for this hardening pass.
 
+## Deployment Boundary
+
+For the current cloud plan, Azure is used only for infrastructure rehearsal and
+hosting. Do not spend the Azure credit on model or embedding inference. Keep
+DigitalOcean credit reserved for model calls, not for IntentMux VPS or
+container infrastructure.
+
+Expose only IntentMux as the public OpenAI-compatible API. Keep LiteLLM
+protected as the upstream provider gateway for keys, fallback, budgets, and
+model pools. Use managed database services instead of a public `postgres:16`
+container. Do not self-host Prometheus in the first cloud phase; use platform
+logs and hosted monitoring instead.
+
 ## Required Settings
 
 - `ROUTER_CLOUD_MODE=true`
