@@ -4,6 +4,7 @@ import argparse
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlparse
 
 import yaml
 
@@ -93,6 +94,8 @@ def check_cloud_runtime(runtime_home: Path) -> list[CheckResult]:
     results.append(secret_like_values_result(runtime_home, forbidden_paths))
     if raw_config is not None:
         results.append(placeholder_targets_result(raw_config))
+        results.append(recursive_route_config_result(raw_config))
+        results.append(cloudflare_embedding_endpoint_result(raw_config))
     return results
 
 
@@ -243,6 +246,47 @@ def placeholder_targets_result(raw: dict) -> CheckResult:
         "placeholder_target_models",
         not placeholders,
         "none" if not placeholders else ",".join(placeholders),
+    )
+
+
+def recursive_route_config_result(raw: dict) -> CheckResult:
+    route_model = raw.get("route_model", raw.get("entry_model", "intentmux"))
+    routes = raw.get("routes") or {}
+    issues: list[str] = []
+    if isinstance(route_model, str) and isinstance(routes, dict):
+        if route_model in routes:
+            issues.append(f"route_model_is_route_id:{route_model}")
+        for route_id, route in routes.items():
+            if not isinstance(route, dict):
+                continue
+            target_model = route.get("target_model", route_id)
+            if target_model == route_model:
+                issues.append(f"{route_id}:target_model={target_model}")
+    return CheckResult(
+        "recursive_route_config",
+        not issues,
+        "none" if not issues else ",".join(issues),
+    )
+
+
+def cloudflare_embedding_endpoint_result(raw: dict) -> CheckResult:
+    embedding_url = raw.get("embedding_url")
+    if not isinstance(embedding_url, str) or not embedding_url:
+        return CheckResult("cloudflare_embedding_endpoint", True, "not_cloudflare")
+    parsed = urlparse(embedding_url)
+    if parsed.netloc != "api.cloudflare.com":
+        return CheckResult("cloudflare_embedding_endpoint", True, "not_cloudflare")
+    if "/ai/run/" in parsed.path:
+        return CheckResult(
+            "cloudflare_embedding_endpoint",
+            False,
+            "native_ai_run_endpoint_not_openai_compatible",
+        )
+    ok = parsed.path.endswith("/ai/v1/embeddings")
+    return CheckResult(
+        "cloudflare_embedding_endpoint",
+        ok,
+        "openai_compatible" if ok else f"unexpected_path:{parsed.path}",
     )
 
 

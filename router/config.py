@@ -127,6 +127,7 @@ class RouterSettings(BaseModel):
     cloud_mode: bool = False
     litellm_timeout: float = 120.0
     access_log: bool = False
+    expose_target_model_header: bool = True
     audit_log_enabled: bool = False
     audit_log_dir: str | None = None
     audit_log_timezone: str = "Asia/Shanghai"
@@ -255,6 +256,18 @@ def load_settings(path: str | Path | None = None) -> RouterSettings:
     raw = merge_route_bank(raw, config_path.parent, require_route_bank=require_route_bank)
     settings = RouterSettings.model_validate(raw)
     inbound_api_key = os.getenv("ROUTER_INBOUND_API_KEY") or settings.inbound_api_key
+    cloud_mode = bool_from_env("ROUTER_CLOUD_MODE", settings.cloud_mode)
+    expose_target_model_header = bool_from_env(
+        "ROUTER_EXPOSE_TARGET_MODEL_HEADER",
+        settings.expose_target_model_header,
+    )
+    if (
+        cloud_mode
+        and "ROUTER_EXPOSE_TARGET_MODEL_HEADER" not in os.environ
+        and "expose_target_model_header" not in raw
+    ):
+        expose_target_model_header = False
+
     overrides = {
         "embedding_url": os.getenv("ROUTER_EMBEDDING_URL", settings.embedding_url),
         "embedding_model": os.getenv("ROUTER_EMBEDDING_MODEL", settings.embedding_model),
@@ -316,11 +329,12 @@ def load_settings(path: str | Path | None = None) -> RouterSettings:
             inbound_api_key=inbound_api_key,
             existing=settings.inbound_api_keys,
         ),
-        "cloud_mode": bool_from_env("ROUTER_CLOUD_MODE", settings.cloud_mode),
+        "cloud_mode": cloud_mode,
         "litellm_timeout": float(
             os.getenv("ROUTER_LITELLM_TIMEOUT", str(settings.litellm_timeout))
         ),
         "access_log": bool_from_env("ROUTER_ACCESS_LOG", settings.access_log),
+        "expose_target_model_header": expose_target_model_header,
         "audit_log_enabled": bool_from_env(
             "ROUTER_AUDIT_LOG_ENABLED", settings.audit_log_enabled
         ),

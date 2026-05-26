@@ -189,3 +189,65 @@ def test_check_cloud_runtime_rejects_local_only_hosts(tmp_path: Path):
         for result in results
         if not result.ok
     )
+
+
+def test_check_cloud_runtime_rejects_recursive_route_config(tmp_path: Path):
+    write_minimal_runtime(tmp_path)
+    routes_path = tmp_path / "config" / "routes.yaml"
+    routes_path.write_text(
+        routes_path.read_text(encoding="utf-8").replace(
+            "target_model: lite",
+            "target_model: intentmux",
+        ),
+        encoding="utf-8",
+    )
+
+    results = check_cloud_runtime(tmp_path)
+
+    assert any(
+        result.name == "recursive_route_config"
+        and "lite:target_model=intentmux" in result.detail
+        for result in results
+        if not result.ok
+    )
+
+
+def test_check_cloud_runtime_accepts_cloudflare_openai_compatible_embedding_url(
+    tmp_path: Path,
+):
+    write_minimal_runtime(tmp_path)
+    routes_path = tmp_path / "config" / "routes.yaml"
+    routes_path.write_text(
+        routes_path.read_text(encoding="utf-8").replace(
+            "https://embedding.example/v1/embeddings",
+            "https://api.cloudflare.com/client/v4/accounts/abc/ai/v1/embeddings",
+        ),
+        encoding="utf-8",
+    )
+
+    results = check_cloud_runtime(tmp_path)
+
+    assert all(result.ok for result in results)
+
+
+def test_check_cloud_runtime_rejects_cloudflare_native_run_embedding_url(
+    tmp_path: Path,
+):
+    write_minimal_runtime(tmp_path)
+    routes_path = tmp_path / "config" / "routes.yaml"
+    routes_path.write_text(
+        routes_path.read_text(encoding="utf-8").replace(
+            "https://embedding.example/v1/embeddings",
+            "https://api.cloudflare.com/client/v4/accounts/abc/ai/run/@cf/qwen/qwen3-embedding-0.6b",
+        ),
+        encoding="utf-8",
+    )
+
+    results = check_cloud_runtime(tmp_path)
+
+    assert any(
+        result.name == "cloudflare_embedding_endpoint"
+        and "native_ai_run_endpoint" in result.detail
+        for result in results
+        if not result.ok
+    )

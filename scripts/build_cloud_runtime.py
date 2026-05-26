@@ -21,6 +21,7 @@ def build_cloud_runtime(
     *,
     litellm_base_url: str | None = None,
     embedding_url: str | None = None,
+    include_route_cache: bool = False,
     force: bool = False,
 ) -> list[CheckResult]:
     source_runtime = source_runtime.expanduser().resolve()
@@ -56,6 +57,16 @@ def build_cloud_runtime(
         encoding="utf-8",
     )
     shutil.copy2(route_bank_path, output_runtime / "semantic_sets" / "route_bank.yaml")
+    if include_route_cache:
+        route_cache_path = resolve_route_embedding_cache_path(
+            source_runtime,
+            config_path,
+            raw_config,
+        )
+        if not route_cache_path.is_file():
+            raise ValueError(f"source route embedding cache not found: {route_cache_path}")
+        (output_runtime / "cache").mkdir(parents=True)
+        shutil.copy2(route_cache_path, output_runtime / "cache" / "route-embeddings.json")
     return check_cloud_runtime(output_runtime)
 
 
@@ -70,6 +81,20 @@ def prepare_output_dir(output_runtime: Path, *, force: bool) -> None:
     output_runtime.mkdir(parents=True, exist_ok=True)
 
 
+def resolve_route_embedding_cache_path(
+    source_runtime: Path,
+    config_path: Path,
+    raw_config: dict,
+) -> Path:
+    configured_path = raw_config.get("route_embedding_cache_path")
+    if isinstance(configured_path, str) and configured_path:
+        path = Path(configured_path).expanduser()
+        if path.is_absolute():
+            return path
+        return (config_path.parent / path).resolve()
+    return source_runtime / "cache" / "route-embeddings.json"
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Build a sanitized IntentMux runtime directory for hosted deployments."
@@ -78,6 +103,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output-runtime", type=Path, required=True)
     parser.add_argument("--litellm-base-url")
     parser.add_argument("--embedding-url")
+    parser.add_argument(
+        "--include-route-cache",
+        action="store_true",
+        help="Copy cache/route-embeddings.json into the cloud runtime bundle.",
+    )
     parser.add_argument("--force", action="store_true", help="Replace a non-empty output directory.")
     args = parser.parse_args(argv)
 
@@ -86,6 +116,7 @@ def main(argv: list[str] | None = None) -> int:
         args.output_runtime,
         litellm_base_url=args.litellm_base_url,
         embedding_url=args.embedding_url,
+        include_route_cache=args.include_route_cache,
         force=args.force,
     )
     for result in results:

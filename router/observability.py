@@ -278,14 +278,16 @@ def route_headers(
     *,
     route_id: str | None = None,
     policy_id: str | None = None,
+    expose_target_model: bool = True,
 ) -> dict[str, str]:
     from urllib.parse import quote
 
     headers = {
         "x-router-request-id": quote(request_id, safe=":._-"),
-        "x-router-target-model": quote(target_model, safe=":._-"),
         "x-router-reason": quote(reason, safe=":._-"),
     }
+    if expose_target_model:
+        headers["x-router-target-model"] = quote(target_model, safe=":._-")
     if route_id is not None:
         headers["x-router-route-id"] = quote(route_id, safe=":._-")
     if policy_id is not None:

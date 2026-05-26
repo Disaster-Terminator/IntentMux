@@ -210,6 +210,7 @@ def create_app(
             request_id,
             route_id=decision.route_id,
             policy_id=decision.policy_id,
+            expose_target_model=settings.expose_target_model_header,
         )
         if stream:
             upstream_started_ms = now_ms()
@@ -237,6 +238,7 @@ def create_app(
                     request_id=request_id,
                     decision=decision,
                     error=exc,
+                    expose_target_model=settings.expose_target_model_header,
                 )
             if is_upstream_failure(upstream.status_code):
                 error = UpstreamStatusError(upstream.status_code)
@@ -262,6 +264,7 @@ def create_app(
                     request_id=request_id,
                     decision=decision,
                     error=error,
+                    expose_target_model=settings.expose_target_model_header,
                 )
             headers = streaming_response_headers(
                 dict(upstream.headers),
@@ -311,6 +314,7 @@ def create_app(
                 request_id=request_id,
                 decision=decision,
                 error=exc,
+                expose_target_model=settings.expose_target_model_header,
             )
         if is_upstream_failure(upstream.status_code):
             error = UpstreamStatusError(upstream.status_code)
@@ -334,6 +338,7 @@ def create_app(
                 request_id=request_id,
                 decision=decision,
                 error=error,
+                expose_target_model=settings.expose_target_model_header,
             )
         headers = dict(upstream.headers)
         headers.update(router_headers)
@@ -451,6 +456,7 @@ def upstream_error_response(
     request_id: str,
     decision,
     error: BaseException,
+    expose_target_model: bool = True,
 ) -> JSONResponse:
     return JSONResponse(
         {
@@ -466,6 +472,7 @@ def upstream_error_response(
             request_id,
             route_id=decision.route_id,
             policy_id=decision.policy_id,
+            expose_target_model=expose_target_model,
         ),
     )
 

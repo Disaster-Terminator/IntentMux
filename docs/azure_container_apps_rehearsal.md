@@ -1,7 +1,10 @@
 # Azure Container Apps Rehearsal
 
-This is a staging rehearsal for IntentMux only. Do not point production clients
-at the hosted endpoint until the rollout gate in `docs/cloud_hosting.md` passes.
+This is a staging rehearsal for the IntentMux container. The whole gateway
+cloud target is LiteLLM + IntentMux + managed Postgres + hosted monitoring +
+hosted embedding; this runbook proves only the IntentMux piece. Do not point
+production clients at the hosted endpoint until the full gateway rollout gate
+passes.
 
 ## Cost Guardrails
 
@@ -58,7 +61,8 @@ uv run python scripts/build_cloud_runtime.py \
   --source-runtime /path/to/intentmux-runtime \
   --output-runtime .intentmux-cloud/runtime \
   --litellm-base-url https://configured-by-env.invalid \
-  --embedding-url https://configured-by-env.invalid/v1/embeddings \
+  --embedding-url https://api.cloudflare.com/client/v4/accounts/configured-by-env/ai/v1/embeddings \
+  --include-route-cache \
   --force
 ```
 
@@ -78,7 +82,9 @@ docker build \
 docker run --rm -p 4001:4001 \
   -e ROUTER_INBOUND_API_KEY=dev-intentmux-key \
   -e ROUTER_LITELLM_BASE_URL=https://litellm.example.invalid \
-  -e ROUTER_EMBEDDING_URL=https://embedding.example.invalid/v1/embeddings \
+  -e ROUTER_EXPOSE_TARGET_MODEL_HEADER=false \
+  -e ROUTER_EMBEDDING_URL=https://api.cloudflare.com/client/v4/accounts/example/ai/v1/embeddings \
+  -e ROUTER_EMBEDDING_MODEL=@cf/qwen/qwen3-embedding-0.6b \
   intentmux-azure-rehearsal:local
 ```
 
@@ -116,16 +122,18 @@ ROUTER_PROMPT_LOG_MODE=off
 ROUTER_AUDIT_LOG_ENABLED=true
 ROUTER_AUDIT_LOG_DIR=
 ROUTER_INBOUND_API_KEY=secretref:intentmux-inbound-api-key
+ROUTER_EXPOSE_TARGET_MODEL_HEADER=false
 ROUTER_LITELLM_BASE_URL=<hosted LiteLLM URL>
 ROUTER_LITELLM_API_KEY=secretref:litellm-api-key
-ROUTER_EMBEDDING_URL=<hosted or private tunnel embedding URL>
-ROUTER_EMBEDDING_MODEL=<embedding model name>
+ROUTER_EMBEDDING_URL=https://api.cloudflare.com/client/v4/accounts/<account-id>/ai/v1/embeddings
+ROUTER_EMBEDDING_MODEL=@cf/qwen/qwen3-embedding-0.6b
 ROUTER_EMBEDDING_TIMEOUT=60
 ROUTER_EMBEDDING_INPUT_MAX_CHARS=8192
 ```
 
-Keep LiteLLM, embedding, databases, and monitoring out of this repository's
-deployment scripts. This runbook only proves the IntentMux container surface.
+Keep LiteLLM, databases, and monitoring out of this repository's deployment
+scripts. This runbook only proves the IntentMux container surface and its
+hosted embedding integration.
 
 ## Azure Rehearsal Commands
 
@@ -202,10 +210,12 @@ az containerapp create \
     ROUTER_REQUIRE_ROUTE_BANK=true \
     ROUTER_PROMPT_LOG_MODE=off \
     ROUTER_AUDIT_LOG_ENABLED=true \
+    ROUTER_AUDIT_LOG_DIR= \
     ROUTER_INBOUND_API_KEY=secretref:intentmux-inbound-api-key \
+    ROUTER_EXPOSE_TARGET_MODEL_HEADER=false \
     ROUTER_LITELLM_BASE_URL=https://litellm.example.invalid \
-    ROUTER_EMBEDDING_URL=https://embedding.example.invalid/v1/embeddings \
-    ROUTER_EMBEDDING_MODEL=text-embedding-qwen3-embedding-0.6b@f16 \
+    ROUTER_EMBEDDING_URL=https://api.cloudflare.com/client/v4/accounts/example/ai/v1/embeddings \
+    ROUTER_EMBEDDING_MODEL=@cf/qwen/qwen3-embedding-0.6b \
     ROUTER_EMBEDDING_TIMEOUT=60 \
     ROUTER_EMBEDDING_INPUT_MAX_CHARS=8192 \
   --tags project=intentmux env=rehearsal cost_guard=delete_when_done

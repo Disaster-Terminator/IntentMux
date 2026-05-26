@@ -93,6 +93,49 @@ def test_build_cloud_runtime_copies_only_reviewed_assets_and_passes_gate(tmp_pat
     assert not (output / "config" / "routes.yaml.backup-20260526").exists()
 
 
+def test_build_cloud_runtime_can_package_route_embedding_cache(tmp_path: Path):
+    source = tmp_path / "source"
+    output = tmp_path / "cloud"
+    write_source_runtime(source)
+    cache_path = source / "cache" / "route-embeddings.json"
+    cache_path.parent.mkdir()
+    cache_path.write_text(
+        '{"embedding_model":"text-embedding-qwen3-embedding-0.6b@f16","items":[]}\n',
+        encoding="utf-8",
+    )
+
+    results = build_cloud_runtime(
+        source,
+        output,
+        litellm_base_url="https://litellm.internal",
+        embedding_url="https://embedding.internal/v1/embeddings",
+        include_route_cache=True,
+    )
+
+    assert all(result.ok for result in results)
+    assert (output / "cache" / "route-embeddings.json").read_text(
+        encoding="utf-8"
+    ) == cache_path.read_text(encoding="utf-8")
+    assert all(result.ok for result in check_cloud_runtime(output))
+
+
+def test_build_cloud_runtime_requires_cache_when_cache_packaging_is_requested(
+    tmp_path: Path,
+):
+    source = tmp_path / "source"
+    output = tmp_path / "cloud"
+    write_source_runtime(source)
+
+    with pytest.raises(ValueError, match="source route embedding cache not found"):
+        build_cloud_runtime(
+            source,
+            output,
+            litellm_base_url="https://litellm.internal",
+            embedding_url="https://embedding.internal/v1/embeddings",
+            include_route_cache=True,
+        )
+
+
 def test_build_cloud_runtime_refuses_non_empty_output_without_force(tmp_path: Path):
     source = tmp_path / "source"
     output = tmp_path / "cloud"

@@ -32,3 +32,19 @@ def test_route_headers_omit_route_and_policy_when_absent():
 
     assert "x-router-route-id" not in headers
     assert "x-router-policy-id" not in headers
+
+
+def test_route_headers_can_hide_target_model_for_hosted_edges():
+    headers = route_headers(
+        target_model="deepseek-v4-pro",
+        reason="semantic",
+        request_id="req-3",
+        route_id="deep",
+        expose_target_model=False,
+    )
+
+    assert headers == {
+        "x-router-request-id": "req-3",
+        "x-router-reason": "semantic",
+        "x-router-route-id": "deep",
+    }

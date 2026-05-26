@@ -241,6 +241,58 @@ routes:
     assert settings.prompt_log_mode == "redacted"
 
 
+def test_load_settings_cloud_mode_hides_target_model_header_by_default(
+    tmp_path: Path, monkeypatch
+):
+    routes_path = tmp_path / "routes.yaml"
+    routes_path.write_text(
+        """
+route_model: intentmux
+fallback_route_id: lite
+routes:
+  lite:
+    target_model: lite-upstream
+    description: low risk
+    utterances:
+      - hi
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("ROUTER_CLOUD_MODE", "true")
+    monkeypatch.setenv("ROUTER_INBOUND_API_KEY", "sk-intentmux")
+    monkeypatch.delenv("ROUTER_EXPOSE_TARGET_MODEL_HEADER", raising=False)
+
+    settings = load_settings(routes_path)
+
+    assert settings.expose_target_model_header is False
+
+
+def test_load_settings_can_expose_target_model_header_in_cloud_when_explicit(
+    tmp_path: Path, monkeypatch
+):
+    routes_path = tmp_path / "routes.yaml"
+    routes_path.write_text(
+        """
+route_model: intentmux
+fallback_route_id: lite
+routes:
+  lite:
+    target_model: lite-upstream
+    description: low risk
+    utterances:
+      - hi
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("ROUTER_CLOUD_MODE", "true")
+    monkeypatch.setenv("ROUTER_INBOUND_API_KEY", "sk-intentmux")
+    monkeypatch.setenv("ROUTER_EXPOSE_TARGET_MODEL_HEADER", "true")
+
+    settings = load_settings(routes_path)
+
+    assert settings.expose_target_model_header is True
+
+
 def test_load_settings_cloud_mode_rejects_placeholder_target_models(
     tmp_path: Path, monkeypatch
 ):

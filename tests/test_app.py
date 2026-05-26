@@ -387,6 +387,55 @@ def test_chat_completion_rewrites_smart_router_before_forwarding():
     assert "x-router-policy-id" not in response.headers
 
 
+def test_cloud_chat_completion_hides_target_model_header_by_default():
+    proxy = FakeProxy()
+    app = create_app(
+        settings=RouterSettings(
+            route_model="intentmux",
+            fallback_route_id="lite",
+            inbound_api_key="sk-intentmux",
+            cloud_mode=True,
+            expose_target_model_header=False,
+            routes={
+                "lite": RouteSpec(
+                    target_model="lite-upstream",
+                    description="lite",
+                    utterances=["hi"],
+                ),
+                "deep": RouteSpec(
+                    target_model="deep-upstream",
+                    description="deep",
+                    utterances=["debug"],
+                ),
+            },
+        ),
+        router=FakeRouter(
+            RoutingDecision(
+                "deep-upstream",
+                "semantic",
+                rewrite=True,
+                route_id="deep",
+                source_model="intentmux",
+            )
+        ),
+        proxy=proxy,
+    )
+
+    response = TestClient(app).post(
+        "/v1/chat/completions",
+        headers={"Authorization": "Bearer sk-intentmux"},
+        json={
+            "model": "intentmux",
+            "messages": [{"role": "user", "content": "debug this"}],
+        },
+    )
+
+    assert response.status_code == 200
+    assert "x-router-target-model" not in response.headers
+    assert response.headers["x-router-route-id"] == "deep"
+    assert response.headers["x-router-reason"] == "semantic"
+
+
 def test_chat_completion_keeps_passthrough_model():
     proxy = FakeProxy()
     app = create_app(
