@@ -539,7 +539,7 @@ async def test_eval_routes_reuses_persisted_eval_query_embeddings(
             batch_size: int = 128,
             api_key: str | None = None,
             headers: dict[str, str] | None = None,
-            input_max_chars: int | None = 12000,
+            input_max_chars: int | None = 8192,
         ):
             pass
 
@@ -681,7 +681,7 @@ async def test_eval_routes_passes_configured_embedding_batch_size(
             batch_size: int = 128,
             api_key: str | None = None,
             headers: dict[str, str] | None = None,
-            input_max_chars: int | None = 12000,
+            input_max_chars: int | None = 8192,
         ):
             captured["timeout"] = timeout
             captured["batch_size"] = batch_size

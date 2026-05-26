@@ -10,7 +10,7 @@ class EmbeddingClient(Protocol):
         """Return one vector per input text."""
 
 
-DEFAULT_EMBEDDING_INPUT_MAX_CHARS = 12_000
+DEFAULT_EMBEDDING_INPUT_MAX_CHARS = 8_192
 
 
 class OpenAIEmbeddingClient:

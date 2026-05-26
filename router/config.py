@@ -117,7 +117,7 @@ class RouterSettings(BaseModel):
     embedding_model: str = "text-embedding-qwen3-embedding-0.6b@f16"
     embedding_batch_size: int = 128
     embedding_timeout: float = 60.0
-    embedding_input_max_chars: int | None = 12_000
+    embedding_input_max_chars: int | None = 8_192
     embedding_api_key: str | None = None
     embedding_headers: dict[str, str] = Field(default_factory=dict)
     litellm_base_url: str = "http://127.0.0.1:4000"
