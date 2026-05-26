@@ -206,6 +206,35 @@ def check_readiness(
     return last_results
 
 
+def require_unauthenticated_rejected(
+    *,
+    name: str,
+    response: httpx.Response,
+) -> CheckResult:
+    ok = response.status_code in {401, 403}
+    return CheckResult(name, ok, f"status={response.status_code}")
+
+
+def check_unauthenticated_rejections(
+    client: httpx.Client,
+    base_url: str,
+    *,
+    model: str,
+) -> list[CheckResult]:
+    ready = client.get(f"{base_url}/ready", headers={})
+    models = client.get(f"{base_url}/v1/models", headers={})
+    chat = client.post(
+        f"{base_url}/v1/chat/completions",
+        headers={},
+        json=chat_payload(stream=False, model=model),
+    )
+    return [
+        require_unauthenticated_rejected(name="unauth_ready", response=ready),
+        require_unauthenticated_rejected(name="unauth_models", response=models),
+        require_unauthenticated_rejected(name="unauth_chat", response=chat),
+    ]
+
+
 def summarize_results(results: list[CheckResult]) -> None:
     for result in results:
         status = "PASS" if result.ok else "FAIL"
@@ -236,6 +265,7 @@ def run_preflight(
     ready_interval: float = 1.0,
     expected_target_model: str | None = None,
     model: str = "auto",
+    require_unauth_rejected: bool = False,
 ) -> list[CheckResult]:
     base_url = router_base_url.rstrip("/")
     headers = (
@@ -258,6 +288,10 @@ def run_preflight(
                     key="status",
                     expected="ok",
                 )
+            )
+        if require_unauth_rejected:
+            results.extend(
+                check_unauthenticated_rejections(client, base_url, model=model)
             )
 
         results.extend(
@@ -335,6 +369,11 @@ def main(argv: list[str] | None = None) -> None:
     )
     parser.add_argument("--ready-attempts", type=int, default=3)
     parser.add_argument("--ready-interval", type=float, default=1.0)
+    parser.add_argument(
+        "--require-unauth-rejected",
+        action="store_true",
+        help="Require unauthenticated /ready, /v1/models, and chat probes to be rejected.",
+    )
     args = parser.parse_args(argv)
     intentmux_api_key = args.intentmux_api_key or args.legacy_api_key
     if args.legacy_api_key and not args.intentmux_api_key:
@@ -352,6 +391,7 @@ def main(argv: list[str] | None = None) -> None:
             ready_interval=args.ready_interval,
             expected_target_model=args.expected_target_model,
             model=args.model,
+            require_unauth_rejected=args.require_unauth_rejected,
         )
     )
 

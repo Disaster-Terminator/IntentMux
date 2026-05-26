@@ -122,6 +122,26 @@ class FlakyReadyClient(FakeClient):
         return FakeResponse(payload={"status": "ok"})
 
 
+class AuthRejectingClient(FakeClient):
+    def get(self, url: str, *, headers: dict[str, str] | None = None) -> FakeResponse:
+        self.urls.append(url)
+        headers = headers or {}
+        self.get_headers.append(headers)
+        if not headers and (url.endswith("/ready") or url.endswith("/v1/models")):
+            return FakeResponse(status_code=401, payload={"error": "unauthorized"})
+        if url.endswith("/ready"):
+            return FakeResponse(payload={"ready": True, "components": {}})
+        return FakeResponse(payload={"status": "ok"})
+
+    def post(self, url: str, *, headers: dict, json: dict) -> FakeResponse:
+        self.urls.append(url)
+        self.post_headers.append(headers)
+        self.post_payloads.append(json)
+        if not headers:
+            return FakeResponse(status_code=401, payload={"error": "unauthorized"})
+        return FakeResponse(headers={"x-router-target-model": "your-deep-model"})
+
+
 def test_require_header_returns_pass_for_expected_header():
     result = require_header(
         name="nonstream_route",
@@ -264,6 +284,33 @@ def test_run_preflight_retries_transient_readiness_failure(monkeypatch):
     assert fake_client.ready_calls == 2
     assert CheckResult("ready_status", True, "status=200") in results
     assert CheckResult("ready_payload", True, "ready=True") in results
+
+
+def test_run_preflight_can_require_unauthenticated_rejections(monkeypatch):
+    fake_client = AuthRejectingClient()
+
+    monkeypatch.setattr(
+        "scripts.preflight.httpx.Client",
+        lambda timeout: fake_client,
+    )
+
+    results = run_preflight(
+        "http://router.local",
+        intentmux_api_key="test-key",
+        timeout=5,
+        ready_attempts=1,
+        ready_interval=0,
+        require_unauth_rejected=True,
+    )
+
+    assert CheckResult("unauth_ready", True, "status=401") in results
+    assert CheckResult("unauth_models", True, "status=401") in results
+    assert CheckResult("unauth_chat", True, "status=401") in results
+    assert fake_client.post_headers == [
+        {},
+        {"Authorization": "Bearer test-key"},
+        {"Authorization": "Bearer test-key"},
+    ]
 
 
 def test_run_preflight_omits_authorization_when_intentmux_api_key_is_unset(monkeypatch):

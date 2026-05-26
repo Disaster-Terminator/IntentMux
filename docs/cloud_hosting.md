@@ -161,7 +161,8 @@ Before exposing a hosted IntentMux endpoint:
 9. Confirm prompt logging is `off` or `redacted`, never `raw_local`.
 10. Confirm platform logs do not receive raw prompt/review artifacts.
 11. Confirm unauthenticated `/ready`, `/v1/models`, and chat requests return
-   `401`, while `/health` still returns `200`.
+   `401`, while `/health` still returns `200`. For a direct IntentMux endpoint,
+   include `--require-unauth-rejected` in `scripts/preflight.py`.
 12. Confirm Cloudflare Workers AI embeddings use the OpenAI-compatible
    `/ai/v1/embeddings` endpoint shape, not native `/ai/run/...`.
 13. Confirm `scripts/check_cloud_runtime.py --require-route-cache` passes for
@@ -172,6 +173,9 @@ Before exposing a hosted IntentMux endpoint:
 15. Confirm the route cache is packaged or prewarmed before production traffic,
     and route-bank-missing/cache-miss/embedding-failure startup cases are
     tested.
+16. Confirm public LiteLLM E2E can call `lite`, `deep`, and `intentmux`, and
+    that Azure IntentMux logs strictly match the returned router request ids
+    with `upstream_status=200`.
 
 Keep provider routing, fallback, budget, and key distribution in the upstream
 gateway. IntentMux owns only intent routing and metadata audit.

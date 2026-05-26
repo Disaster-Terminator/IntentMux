@@ -3,11 +3,14 @@ from __future__ import annotations
 from scripts.e2e_litellm_entry import (
     CheckResult,
     Probe,
+    apply_target_model_overrides,
+    collect_logs,
     find_matching_route_log,
     find_route_log,
     format_route_failure_detail,
     parse_route_logs,
     print_progress,
+    probe_elapsed_results,
     resolve_probe_expectations,
     run_e2e,
     validate_nonstream_probe_response,
@@ -56,6 +59,33 @@ def test_parse_route_logs_ignores_non_json_lines():
         {"event": "route_complete", "request_id": "req-1", "target_model": "your-deep-model"},
         {"event": "route_error", "request_id": "req-2", "target_model": "your-lite-model"},
     ]
+
+
+def test_parse_route_logs_unwraps_azure_containerapp_log_lines():
+    logs = "\n".join(
+        [
+            (
+                '{"TimeStamp":"2026-05-26T13:39:41Z",'
+                '"Log":"{\\"event\\":\\"route_complete\\",'
+                '\\"request_id\\":\\"req-1\\",'
+                '\\"stream\\":false,\\"route_id\\":\\"lite\\",'
+                '\\"target_model\\":\\"lite\\",\\"upstream_status\\":200}"}'
+            ),
+            (
+                '{"TimeStamp":"2026-05-26T13:39:42Z",'
+                '"Log":"28661.29, \\"duration_ms\\": 30287.47, '
+                '\\"event\\": \\"route_complete\\", \\"request_id\\": \\"req-2\\", '
+                '\\"stream\\": false, \\"route_id\\": \\"lite\\", '
+                '\\"target_model\\": \\"lite\\", \\"upstream_status\\": 200}"}'
+            ),
+        ]
+    )
+
+    records = parse_route_logs(logs)
+
+    assert [record["request_id"] for record in records] == ["req-1", "req-2"]
+    assert records[1]["upstream_status"] == 200
+    assert records[1]["duration_ms"] == 30287.47
 
 
 def test_find_route_log_matches_request_id_and_stream_mode():
@@ -238,6 +268,46 @@ def test_validate_route_logs_require_request_id_match_fails_on_fallback():
     assert by_name["route_log_match_mode"].ok is False
 
 
+def test_validate_route_logs_can_enforce_duration_budget():
+    probe = Probe("p1", "safe prompt", "lite", "lite", stream=False)
+    raw_logs = _log_line(
+        {
+            "event": "route_complete",
+            "request_id": "rid-1",
+            "stream": False,
+            "source_model": "intentmux",
+            "route_id": "lite",
+            "target_model": "lite",
+            "upstream_status": 200,
+            "duration_ms": 30_001.0,
+        }
+    )
+
+    results = validate_route_logs(
+        raw_logs=raw_logs,
+        probes=[(probe, "rid-1")],
+        max_route_duration_ms=10_000.0,
+    )
+
+    by_name = {result.name: result for result in results}
+    assert by_name["p1_route_duration"].ok is False
+    assert "duration_ms=30001.0" in by_name["p1_route_duration"].detail
+
+
+def test_probe_elapsed_results_enforces_client_side_budget():
+    probe = Probe("p1", "prompt", "lite", "lite")
+
+    result = probe_elapsed_results(
+        probe=probe,
+        elapsed_ms=12_000.0,
+        max_probe_elapsed_ms=10_000.0,
+    )[0]
+
+    assert result.name == "p1_probe_elapsed"
+    assert result.ok is False
+    assert "elapsed_ms=12000.00" in result.detail
+
+
 def test_validate_route_logs_redaction_detects_prompt_and_bearer_token_leaks():
     probe = Probe("p1", "my secret prompt", "deep", "your-deep-model", stream=False)
     raw_logs = "\n".join(
@@ -288,7 +358,27 @@ def test_validate_nonstream_probe_response_detects_missing_model_field():
 
     assert pass_by_name["p1_outer_model"].ok is True
     assert fail_by_name["p1_outer_model"].ok is False
-    assert fail_by_name["p1_outer_model"].detail == "model=None"
+    assert fail_by_name["p1_outer_model"].detail == "model=None, expected=intentmux"
+
+
+def test_validate_nonstream_probe_response_can_skip_outer_model_check():
+    probe = Probe("p1", "prompt", "lite", "lite", stream=False)
+    response = FakeResponse(
+        status_code=200,
+        headers={"content-type": "application/json"},
+        payload={"model": "provider-model"},
+    )
+
+    by_name = {
+        result.name: result
+        for result in validate_nonstream_probe_response(
+            probe=probe,
+            response=response,
+            expected_outer_model=None,
+        )
+    }
+
+    assert by_name["p1_outer_model"].ok is True
 
 
 def test_validate_nonstream_probe_response_extracts_provider_router_request_id():
@@ -320,7 +410,7 @@ def test_validate_streaming_probe_response_detects_missing_sse_marker():
         for result in validate_streaming_probe_response(
             probe=probe,
             response=response,
-            first_chunk=b"data: chunk\n\n",
+            body_head=b"data: chunk\n\n",
         )
     }
     fail_by_name = {
@@ -328,12 +418,67 @@ def test_validate_streaming_probe_response_detects_missing_sse_marker():
         for result in validate_streaming_probe_response(
             probe=probe,
             response=response,
-            first_chunk=b'{"delta":"x"}',
+            body_head=b'{"delta":"x"}',
         )
     }
 
     assert pass_by_name["p1_sse"].ok is True
     assert fail_by_name["p1_sse"].ok is False
+
+
+def test_validate_streaming_probe_response_can_require_done_marker():
+    probe = Probe("p1", "prompt", "deep", "deep", stream=True)
+    response = FakeResponse(status_code=200)
+
+    incomplete = {
+        result.name: result
+        for result in validate_streaming_probe_response(
+            probe=probe,
+            response=response,
+            body_head=b"data: chunk\n\n",
+            require_stream_done=True,
+        )
+    }
+    complete = {
+        result.name: result
+        for result in validate_streaming_probe_response(
+            probe=probe,
+            response=response,
+            body_head=b"data: chunk\n\ndata: [DONE]\n\n",
+            require_stream_done=True,
+        )
+    }
+
+    assert incomplete["p1_stream_done"].ok is False
+    assert complete["p1_stream_done"].ok is True
+
+
+def test_apply_target_model_overrides_changes_cloud_route_targets():
+    probes = [
+        Probe("lite_case", "prompt", "lite", "your-lite-model"),
+        Probe("deep_case", "prompt", "deep", "your-deep-model"),
+    ]
+
+    overridden = apply_target_model_overrides(
+        probes,
+        lite_target_model="lite",
+        deep_target_model="deep",
+    )
+
+    assert [probe.expected_target_model for probe in overridden] == ["lite", "deep"]
+
+
+def test_collect_logs_requires_azure_details():
+    import pytest
+
+    with pytest.raises(ValueError, match="--azure-containerapp-name"):
+        collect_logs(
+            source="azure",
+            docker_container="unused",
+            azure_containerapp_name=None,
+            azure_resource_group="rg",
+            tail=1,
+        )
 
 
 def test_run_e2e_uses_provider_router_request_id_for_strict_log_match(monkeypatch):

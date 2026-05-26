@@ -79,6 +79,10 @@ uv run python scripts/preflight.py --router-base-url http://127.0.0.1:4001
 uv run python scripts/preflight.py \
   --router-base-url http://127.0.0.1:4001 \
   --intentmux-api-key "$ROUTER_INBOUND_API_KEY"
+uv run python scripts/preflight.py \
+  --router-base-url http://127.0.0.1:4001 \
+  --intentmux-api-key "$ROUTER_INBOUND_API_KEY" \
+  --require-unauth-rejected
 uv run python scripts/intentmux_daily_health.py \
   --repo /path/to/IntentMux \
   --log-dir /path/to/intentmux-home/logs \
@@ -86,6 +90,26 @@ uv run python scripts/intentmux_daily_health.py \
   --timezone Asia/Shanghai \
   --min-route-records 1 \
   --run-e2e
+```
+
+For the hosted LiteLLM + IntentMux gateway, run the same E2E through the public
+LiteLLM endpoint and verify the matched IntentMux route logs from the cloud
+container:
+
+```bash
+LITELLM_MASTER_KEY="$CLOUD_LITELLM_KEY" \
+uv run python scripts/e2e_litellm_entry.py \
+  --litellm-base-url https://litellm.example.com \
+  --log-source azure \
+  --azure-containerapp-name intentmux-staging \
+  --azure-resource-group intentmux-rg-staging \
+  --expected-lite-target-model lite \
+  --expected-deep-target-model deep \
+  --skip-outer-model-check \
+  --require-request-id-log-match \
+  --require-stream-done \
+  --max-probe-elapsed-ms 15000 \
+  --max-route-duration-ms 15000
 ```
 
 The gate passes only when:
@@ -97,6 +121,8 @@ The gate passes only when:
   report;
 - `/ready` is true;
 - strict E2E passes;
+- hosted E2E, when applicable, proves strict request-id log correlation plus
+  `upstream_status=200` for `lite`, `deep`, and `intentmux` paths;
 - latest health report has `not_ok=0` for today's logs;
 - latest health report has `traffic_evidence.ok=true` when a positive
   `--min-route-records` threshold is used; this counts valid route records, not

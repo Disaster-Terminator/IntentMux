@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import json
 import os
 import subprocess
+import time
 import uuid
 from collections.abc import Callable
 from collections.abc import Sequence
@@ -55,13 +56,55 @@ DEFAULT_PROBES = [
 def parse_route_logs(raw_logs: str) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
     for line in raw_logs.splitlines():
+        line = route_log_line_from_transport(line)
         try:
             record = json.loads(line)
         except json.JSONDecodeError:
-            continue
+            record = parse_route_log_fragment(line)
+            if record is None:
+                continue
+        if "Log" in record and isinstance(record["Log"], str):
+            nested = parse_route_log_fragment(record["Log"])
+            if nested is None:
+                continue
+            record = nested
         if record.get("event") in {"route_complete", "route_error"}:
             records.append(record)
     return records
+
+
+def route_log_line_from_transport(line: str) -> str:
+    try:
+        payload = json.loads(line)
+    except json.JSONDecodeError:
+        return line
+    if isinstance(payload, dict) and isinstance(payload.get("Log"), str):
+        return payload["Log"]
+    return line
+
+
+def parse_route_log_fragment(line: str) -> dict[str, Any] | None:
+    try:
+        payload = json.loads(line)
+    except json.JSONDecodeError:
+        payload = None
+    if isinstance(payload, dict):
+        return payload
+    candidate_indexes = [
+        index
+        for index in (line.find('"duration_ms"'), line.find('"event"'))
+        if index >= 0
+    ]
+    if not candidate_indexes:
+        return None
+    fragment = "{" + line[min(candidate_indexes) :]
+    try:
+        payload = json.loads(fragment)
+    except json.JSONDecodeError:
+        return None
+    if isinstance(payload, dict):
+        return payload
+    return None
 
 
 def find_route_log(
@@ -152,7 +195,10 @@ def format_route_failure_detail(record: dict[str, Any]) -> str:
 
 
 def validate_nonstream_probe_response(
-    *, probe: Probe, response: httpx.Response
+    *,
+    probe: Probe,
+    response: httpx.Response,
+    expected_outer_model: str | None = "intentmux",
 ) -> list[CheckResult]:
     model = None
     if response.headers.get("content-type", "").startswith("application/json"):
@@ -166,8 +212,8 @@ def validate_nonstream_probe_response(
         ),
         CheckResult(
             f"{probe.name}_outer_model",
-            model == "intentmux",
-            f"model={model}",
+            expected_outer_model is None or model == expected_outer_model,
+            f"model={model}, expected={expected_outer_model or 'any'}",
         ),
         CheckResult(
             f"{probe.name}_router_request_id",
@@ -178,11 +224,16 @@ def validate_nonstream_probe_response(
 
 
 def validate_streaming_probe_response(
-    *, probe: Probe, response: httpx.Response, first_chunk: bytes
+    *,
+    probe: Probe,
+    response: httpx.Response,
+    body_head: bytes,
+    require_stream_done: bool = False,
 ) -> list[CheckResult]:
-    starts_with_data = first_chunk.startswith(b"data:")
+    starts_with_data = body_head.startswith(b"data:")
+    has_done = b"data: [DONE]" in body_head
     router_request_id = router_request_id_from_response(response)
-    return [
+    results = [
         CheckResult(
             f"{probe.name}_status",
             response.status_code == 200,
@@ -199,6 +250,37 @@ def validate_streaming_probe_response(
             f"request_id={router_request_id}",
         ),
     ]
+    if require_stream_done:
+        results.append(
+            CheckResult(
+                f"{probe.name}_stream_done",
+                has_done,
+                f"has_done={has_done}",
+            )
+        )
+    return results
+
+
+def read_bounded_stream_body(
+    response: httpx.Response,
+    *,
+    max_chunks: int,
+    max_bytes: int,
+) -> bytes:
+    chunks: list[bytes] = []
+    total = 0
+    for index, chunk in enumerate(response.iter_bytes(), start=1):
+        if not chunk:
+            continue
+        remaining = max_bytes - total
+        if remaining <= 0:
+            break
+        chunks.append(chunk[:remaining])
+        total += min(len(chunk), remaining)
+        body = b"".join(chunks)
+        if b"data: [DONE]" in body or index >= max_chunks or total >= max_bytes:
+            return body
+    return b"".join(chunks)
 
 
 def router_request_id_from_response(response: httpx.Response) -> str | None:
@@ -215,6 +297,11 @@ def run_probe(
     api_key: str,
     probe: Probe,
     request_id: str,
+    expected_outer_model: str | None = "intentmux",
+    require_stream_done: bool = False,
+    stream_max_chunks: int = 200,
+    stream_max_bytes: int = 262_144,
+    max_probe_elapsed_ms: float | None = None,
 ) -> list[CheckResult]:
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -228,6 +315,7 @@ def run_probe(
         "max_tokens": 8,
         "stream": probe.stream,
     }
+    started = time.monotonic()
     if probe.stream:
         try:
             with client.stream(
@@ -236,11 +324,20 @@ def run_probe(
                 headers=headers,
                 json=payload,
             ) as response:
-                first_chunk = next(response.iter_bytes(), b"")
+                body_head = read_bounded_stream_body(
+                    response,
+                    max_chunks=stream_max_chunks,
+                    max_bytes=stream_max_bytes,
+                )
                 return validate_streaming_probe_response(
                     probe=probe,
                     response=response,
-                    first_chunk=first_chunk,
+                    body_head=body_head,
+                    require_stream_done=require_stream_done,
+                ) + probe_elapsed_results(
+                    probe=probe,
+                    elapsed_ms=(time.monotonic() - started) * 1000,
+                    max_probe_elapsed_ms=max_probe_elapsed_ms,
                 )
         except httpx.HTTPError as exc:
             return [
@@ -265,7 +362,32 @@ def run_probe(
                 f"{type(exc).__name__}: {exc}",
             )
         ]
-    return validate_nonstream_probe_response(probe=probe, response=response)
+    return validate_nonstream_probe_response(
+        probe=probe,
+        response=response,
+        expected_outer_model=expected_outer_model,
+    ) + probe_elapsed_results(
+        probe=probe,
+        elapsed_ms=(time.monotonic() - started) * 1000,
+        max_probe_elapsed_ms=max_probe_elapsed_ms,
+    )
+
+
+def probe_elapsed_results(
+    *,
+    probe: Probe,
+    elapsed_ms: float,
+    max_probe_elapsed_ms: float | None,
+) -> list[CheckResult]:
+    if max_probe_elapsed_ms is None:
+        return []
+    return [
+        CheckResult(
+            f"{probe.name}_probe_elapsed",
+            elapsed_ms <= max_probe_elapsed_ms,
+            f"elapsed_ms={elapsed_ms:.2f}, max={max_probe_elapsed_ms}",
+        )
+    ]
 
 
 def docker_logs(container: str, tail: int) -> str:
@@ -279,11 +401,54 @@ def docker_logs(container: str, tail: int) -> str:
     return completed.stdout
 
 
+def azure_containerapp_logs(name: str, resource_group: str, tail: int) -> str:
+    completed = subprocess.run(
+        [
+            "az",
+            "containerapp",
+            "logs",
+            "show",
+            "--name",
+            name,
+            "--resource-group",
+            resource_group,
+            "--tail",
+            str(tail),
+        ],
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    return completed.stdout
+
+
+def collect_logs(
+    *,
+    source: str,
+    docker_container: str,
+    azure_containerapp_name: str | None,
+    azure_resource_group: str | None,
+    tail: int,
+) -> str:
+    if source == "docker":
+        return docker_logs(docker_container, tail)
+    if source == "azure":
+        if not azure_containerapp_name or not azure_resource_group:
+            raise ValueError(
+                "--azure-containerapp-name and --azure-resource-group are required "
+                "when --log-source=azure"
+            )
+        return azure_containerapp_logs(azure_containerapp_name, azure_resource_group, tail)
+    raise ValueError(f"unsupported log source: {source}")
+
+
 def validate_route_logs(
     *,
     raw_logs: str,
     probes: list[tuple[Probe, str]],
     require_request_id_log_match: bool = False,
+    max_route_duration_ms: float | None = None,
 ) -> list[CheckResult]:
     route_logs = parse_route_logs(raw_logs)
     results: list[CheckResult] = []
@@ -348,6 +513,16 @@ def validate_route_logs(
                 ),
             ]
         )
+        if max_route_duration_ms is not None:
+            duration_ms = record.get("duration_ms")
+            duration_ok = not isinstance(duration_ms, int | float) or duration_ms <= max_route_duration_ms
+            results.append(
+                CheckResult(
+                    f"{probe.name}_route_duration",
+                    duration_ok,
+                    f"duration_ms={duration_ms or 'unavailable'}, max={max_route_duration_ms}",
+                )
+            )
     secret_or_prompt_leak = "Bearer " in raw_logs or any(
         probe.prompt in raw_logs for probe, _request_id in probes
     )
@@ -394,9 +569,18 @@ def run_e2e(
     api_key: str,
     timeout: float,
     log_container: str,
+    log_source: str = "docker",
     log_tail: int,
     skip_log_check: bool,
     require_request_id_log_match: bool,
+    azure_containerapp_name: str | None = None,
+    azure_resource_group: str | None = None,
+    expected_outer_model: str | None = "intentmux",
+    require_stream_done: bool = False,
+    stream_max_chunks: int = 200,
+    stream_max_bytes: int = 262_144,
+    max_probe_elapsed_ms: float | None = None,
+    max_route_duration_ms: float | None = None,
     probes: Sequence[Probe] = DEFAULT_PROBES,
     progress: Callable[[str], None] | None = None,
 ) -> list[CheckResult]:
@@ -418,6 +602,11 @@ def run_e2e(
                 api_key=api_key,
                 probe=probe,
                 request_id=request_id,
+                expected_outer_model=expected_outer_model,
+                require_stream_done=require_stream_done,
+                stream_max_chunks=stream_max_chunks,
+                stream_max_bytes=stream_max_bytes,
+                max_probe_elapsed_ms=max_probe_elapsed_ms,
             )
             results.extend(probe_results)
             if probe_request_succeeded(probe, probe_results):
@@ -438,12 +627,47 @@ def run_e2e(
             )
         results.extend(
             validate_route_logs(
-                raw_logs=docker_logs(log_container, log_tail),
+                raw_logs=collect_logs(
+                    source=log_source,
+                    docker_container=log_container,
+                    azure_containerapp_name=azure_containerapp_name,
+                    azure_resource_group=azure_resource_group,
+                    tail=log_tail,
+                ),
                 probes=successful_probes_with_ids,
                 require_request_id_log_match=require_request_id_log_match,
+                max_route_duration_ms=max_route_duration_ms,
             )
         )
     return results
+
+
+def apply_target_model_overrides(
+    probes: Sequence[Probe],
+    *,
+    lite_target_model: str | None,
+    deep_target_model: str | None,
+) -> list[Probe]:
+    overrides = {
+        route_id: target
+        for route_id, target in (
+            ("lite", lite_target_model),
+            ("deep", deep_target_model),
+        )
+        if target
+    }
+    return [
+        Probe(
+            name=probe.name,
+            prompt=probe.prompt,
+            expected_route=probe.expected_route,
+            expected_target_model=overrides.get(
+                probe.expected_route, probe.expected_target_model
+            ),
+            stream=probe.stream,
+        )
+        for probe in probes
+    ]
 
 
 def main() -> None:
@@ -455,6 +679,13 @@ def main() -> None:
     parser.add_argument("--api-key", default=os.getenv("LITELLM_MASTER_KEY"))
     parser.add_argument("--timeout", type=float, default=150.0)
     parser.add_argument("--log-container", default="intentmux")
+    parser.add_argument(
+        "--log-source",
+        choices=("docker", "azure"),
+        default=os.getenv("INTENTMUX_E2E_LOG_SOURCE", "docker"),
+    )
+    parser.add_argument("--azure-containerapp-name", default=os.getenv("AZURE_CONTAINERAPP_NAME"))
+    parser.add_argument("--azure-resource-group", default=os.getenv("AZURE_RESOURCE_GROUP"))
     parser.add_argument("--log-tail", type=int, default=300)
     parser.add_argument(
         "--router-base-url",
@@ -471,6 +702,18 @@ def main() -> None:
     )
     parser.add_argument("--skip-log-check", action="store_true")
     parser.add_argument("--require-request-id-log-match", action="store_true")
+    parser.add_argument("--expected-lite-target-model")
+    parser.add_argument("--expected-deep-target-model")
+    parser.add_argument(
+        "--skip-outer-model-check",
+        action="store_true",
+        help="Allow LiteLLM to return the final provider model name instead of intentmux.",
+    )
+    parser.add_argument("--require-stream-done", action="store_true")
+    parser.add_argument("--stream-max-chunks", type=int, default=200)
+    parser.add_argument("--stream-max-bytes", type=int, default=262_144)
+    parser.add_argument("--max-probe-elapsed-ms", type=float)
+    parser.add_argument("--max-route-duration-ms", type=float)
     parser.add_argument("--quiet-progress", action="store_true")
     args = parser.parse_args()
 
@@ -484,15 +727,29 @@ def main() -> None:
             intentmux_api_key=args.intentmux_api_key,
             timeout=args.timeout,
         )
+    probes = apply_target_model_overrides(
+        probes,
+        lite_target_model=args.expected_lite_target_model,
+        deep_target_model=args.expected_deep_target_model,
+    )
     summarize_results(
         run_e2e(
             litellm_base_url=args.litellm_base_url,
             api_key=args.api_key,
             timeout=args.timeout,
             log_container=args.log_container,
+            log_source=args.log_source,
             log_tail=args.log_tail,
             skip_log_check=args.skip_log_check,
             require_request_id_log_match=args.require_request_id_log_match,
+            azure_containerapp_name=args.azure_containerapp_name,
+            azure_resource_group=args.azure_resource_group,
+            expected_outer_model=None if args.skip_outer_model_check else "intentmux",
+            require_stream_done=args.require_stream_done,
+            stream_max_chunks=args.stream_max_chunks,
+            stream_max_bytes=args.stream_max_bytes,
+            max_probe_elapsed_ms=args.max_probe_elapsed_ms,
+            max_route_duration_ms=args.max_route_duration_ms,
             probes=probes,
             progress=None if args.quiet_progress else print_progress,
         )
