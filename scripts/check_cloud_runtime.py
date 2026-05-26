@@ -250,7 +250,10 @@ def relative_detail(path: Path, runtime_home: Path) -> str:
     try:
         return path.relative_to(runtime_home).as_posix()
     except ValueError:
-        return str(path)
+        try:
+            return path.resolve(strict=False).relative_to(runtime_home.resolve(strict=False)).as_posix()
+        except ValueError:
+            return str(path)
 
 
 def main(argv: list[str] | None = None) -> None:

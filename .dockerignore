@@ -14,6 +14,9 @@ cache
 logs
 .intentmux-home
 .intentmux-cloud
+!.intentmux-cloud/
+!.intentmux-cloud/runtime/
+!.intentmux-cloud/runtime/**
 examples/intentmux-home/logs
 data/cache
 data/downloads
