@@ -67,7 +67,7 @@ def build_cloud_runtime(
             raise ValueError(f"source route embedding cache not found: {route_cache_path}")
         (output_runtime / "cache").mkdir(parents=True)
         shutil.copy2(route_cache_path, output_runtime / "cache" / "route-embeddings.json")
-    return check_cloud_runtime(output_runtime)
+    return check_cloud_runtime(output_runtime, require_route_cache=include_route_cache)
 
 
 def prepare_output_dir(output_runtime: Path, *, force: bool) -> None:

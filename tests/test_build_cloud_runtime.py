@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -8,7 +9,7 @@ import pytest
 import yaml
 
 from scripts.build_cloud_runtime import build_cloud_runtime
-from scripts.check_cloud_runtime import check_cloud_runtime
+from scripts.check_cloud_runtime import check_cloud_runtime, route_bank_fingerprint, sha256_text
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -64,6 +65,49 @@ routes:
     (config_dir / "routes.yaml.backup-20260526").write_text("backup", encoding="utf-8")
 
 
+def write_source_route_cache(runtime_home: Path, *, route_bank_sha256: str | None = None) -> Path:
+    cache_path = runtime_home / "cache" / "route-embeddings.json"
+    cache_path.parent.mkdir()
+    entries = [
+        {
+            "route_id": "lite",
+            "text": "hi",
+            "source": "inline_config",
+            "index": 0,
+            "text_sha256": sha256_text("hi"),
+        },
+        {
+            "route_id": "deep",
+            "text": "debug this outage",
+            "source": "inline_config",
+            "index": 0,
+            "text_sha256": sha256_text("debug this outage"),
+        },
+    ]
+    cache_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "embedding_model": "text-embedding-qwen3-embedding-0.6b@f16",
+                "embedding_input_max_chars": 8192,
+                "route_bank_sha256": route_bank_sha256 or route_bank_fingerprint(entries),
+                "items": [
+                    {
+                        "route_id": entry["route_id"],
+                        "source": entry["source"],
+                        "index": entry["index"],
+                        "text_sha256": entry["text_sha256"],
+                        "vector": [1.0, 0.0],
+                    }
+                    for entry in entries
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    return cache_path
+
+
 def test_build_cloud_runtime_copies_only_reviewed_assets_and_passes_gate(tmp_path: Path):
     source = tmp_path / "source"
     output = tmp_path / "cloud"
@@ -97,12 +141,7 @@ def test_build_cloud_runtime_can_package_route_embedding_cache(tmp_path: Path):
     source = tmp_path / "source"
     output = tmp_path / "cloud"
     write_source_runtime(source)
-    cache_path = source / "cache" / "route-embeddings.json"
-    cache_path.parent.mkdir()
-    cache_path.write_text(
-        '{"embedding_model":"text-embedding-qwen3-embedding-0.6b@f16","items":[]}\n',
-        encoding="utf-8",
-    )
+    cache_path = write_source_route_cache(source)
 
     results = build_cloud_runtime(
         source,
@@ -116,7 +155,29 @@ def test_build_cloud_runtime_can_package_route_embedding_cache(tmp_path: Path):
     assert (output / "cache" / "route-embeddings.json").read_text(
         encoding="utf-8"
     ) == cache_path.read_text(encoding="utf-8")
-    assert all(result.ok for result in check_cloud_runtime(output))
+    assert all(result.ok for result in check_cloud_runtime(output, require_route_cache=True))
+
+
+def test_build_cloud_runtime_rejects_invalid_route_embedding_cache(tmp_path: Path):
+    source = tmp_path / "source"
+    output = tmp_path / "cloud"
+    write_source_runtime(source)
+    write_source_route_cache(source, route_bank_sha256="stale")
+
+    results = build_cloud_runtime(
+        source,
+        output,
+        litellm_base_url="https://litellm.internal",
+        embedding_url="https://embedding.internal/v1/embeddings",
+        include_route_cache=True,
+    )
+
+    assert any(
+        result.name == "route_embedding_cache"
+        and "route_bank_sha256_mismatch" in result.detail
+        for result in results
+        if not result.ok
+    )
 
 
 def test_build_cloud_runtime_requires_cache_when_cache_packaging_is_requested(

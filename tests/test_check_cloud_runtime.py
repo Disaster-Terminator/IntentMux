@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
-from scripts.check_cloud_runtime import check_cloud_runtime
+from scripts.check_cloud_runtime import check_cloud_runtime, route_bank_fingerprint, sha256_text
 
 
 def write_minimal_runtime(runtime_home: Path) -> None:
@@ -37,12 +38,111 @@ routes:
     )
 
 
+def write_minimal_route_cache(
+    runtime_home: Path,
+    *,
+    embedding_model: str = "embed-model",
+    route_bank_sha256: str | None = None,
+) -> None:
+    cache_path = runtime_home / "cache" / "route-embeddings.json"
+    cache_path.parent.mkdir()
+    entries = [
+        {
+            "route_id": "lite",
+            "text": "hi",
+            "source": "inline_config",
+            "index": 0,
+            "text_sha256": sha256_text("hi"),
+        }
+    ]
+    cache_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "embedding_model": embedding_model,
+                "embedding_input_max_chars": 8192,
+                "route_bank_sha256": route_bank_sha256 or route_bank_fingerprint(entries),
+                "items": [
+                    {
+                        "route_id": "lite",
+                        "source": "inline_config",
+                        "index": 0,
+                        "text_sha256": sha256_text("hi"),
+                        "vector": [1.0, 0.0],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
 def test_check_cloud_runtime_accepts_minimal_reviewed_runtime(tmp_path: Path):
     write_minimal_runtime(tmp_path)
 
     results = check_cloud_runtime(tmp_path)
 
     assert all(result.ok for result in results)
+
+
+def test_check_cloud_runtime_requires_route_cache_when_requested(tmp_path: Path):
+    write_minimal_runtime(tmp_path)
+
+    results = check_cloud_runtime(tmp_path, require_route_cache=True)
+
+    assert any(
+        result.name == "route_embedding_cache" and "missing" in result.detail
+        for result in results
+        if not result.ok
+    )
+
+
+def test_check_cloud_runtime_accepts_valid_required_route_cache(tmp_path: Path):
+    write_minimal_runtime(tmp_path)
+    write_minimal_route_cache(tmp_path)
+
+    results = check_cloud_runtime(
+        tmp_path,
+        require_route_cache=True,
+        expected_embedding_model="embed-model",
+        expected_embedding_input_max_chars=8192,
+    )
+
+    assert all(result.ok for result in results)
+
+
+def test_check_cloud_runtime_rejects_stale_route_cache_fingerprint(tmp_path: Path):
+    write_minimal_runtime(tmp_path)
+    write_minimal_route_cache(tmp_path, route_bank_sha256="stale")
+
+    results = check_cloud_runtime(tmp_path, require_route_cache=True)
+
+    assert any(
+        result.name == "route_embedding_cache"
+        and "route_bank_sha256_mismatch" in result.detail
+        for result in results
+        if not result.ok
+    )
+
+
+def test_check_cloud_runtime_rejects_route_cache_embedding_model_mismatch(
+    tmp_path: Path,
+):
+    write_minimal_runtime(tmp_path)
+    write_minimal_route_cache(tmp_path, embedding_model="old-model")
+
+    results = check_cloud_runtime(
+        tmp_path,
+        require_route_cache=True,
+        expected_embedding_model="new-model",
+    )
+
+    assert any(
+        result.name == "route_embedding_cache"
+        and "embedding_model_mismatch" in result.detail
+        for result in results
+        if not result.ok
+    )
 
 
 def test_check_cloud_runtime_rejects_private_prompt_logs(tmp_path: Path):

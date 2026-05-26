@@ -63,7 +63,10 @@ hosted embedding endpoint.
 Before mounting any runtime directory, run:
 
 ```bash
-uv run python scripts/check_cloud_runtime.py /path/to/intentmux-home
+uv run python scripts/check_cloud_runtime.py /path/to/intentmux-home \
+  --require-route-cache \
+  --expected-embedding-model "$ROUTER_EMBEDDING_MODEL" \
+  --expected-embedding-input-max-chars "$ROUTER_EMBEDDING_INPUT_MAX_CHARS"
 ```
 
 Port precedence is:
@@ -104,7 +107,7 @@ uv run python scripts/preflight.py \
 | --- | --- |
 | `config/routes.yaml` | Mount or inject as reviewed config. No placeholders or secrets. |
 | `semantic_sets/*.yaml` | Mount reviewed route/eval/calibration assets. |
-| `cache/route-embeddings.json` | Optional derived cache. Rebuildable, but preferred for hosted startup/prewarm. |
+| `cache/route-embeddings.json` | Required for production cloud rollout. Rebuildable, but should be packaged or prewarmed before traffic. |
 | `logs/routes/*.jsonl` | Metadata-only route audit. Prefer stdout in hosted mode. |
 | `logs/prompts/*.jsonl` | Private local data. Do not ship raw. |
 | `reviews/*` and `reports/*` | Treat as private unless manually redacted. |
@@ -161,8 +164,9 @@ Before exposing a hosted IntentMux endpoint:
    `401`, while `/health` still returns `200`.
 12. Confirm Cloudflare Workers AI embeddings use the OpenAI-compatible
    `/ai/v1/embeddings` endpoint shape, not native `/ai/run/...`.
-13. Confirm `scripts/check_cloud_runtime.py` passes for the runtime directory
-   that will be mounted or copied into the hosted container.
+13. Confirm `scripts/check_cloud_runtime.py --require-route-cache` passes for
+    the runtime directory that will be mounted or copied into the hosted
+    container.
 14. Confirm the mounted runtime was produced by `scripts/build_cloud_runtime.py`
     or reviewed to the same allowlist: config plus route bank only.
 15. Confirm the route cache is packaged or prewarmed before production traffic,

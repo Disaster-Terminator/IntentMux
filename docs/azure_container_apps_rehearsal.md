@@ -66,6 +66,16 @@ uv run python scripts/build_cloud_runtime.py \
   --force
 ```
 
+Then verify the bundled cache matches the hosted embedding model before
+building the image:
+
+```bash
+uv run python scripts/check_cloud_runtime.py .intentmux-cloud/runtime \
+  --require-route-cache \
+  --expected-embedding-model @cf/qwen/qwen3-embedding-0.6b \
+  --expected-embedding-input-max-chars 8192
+```
+
 The Azure Dockerfile embeds only this checked runtime into `/data`. Hosted
 upstream URLs and keys are still provided by Container Apps environment
 variables or secrets, so endpoint rotation does not require editing

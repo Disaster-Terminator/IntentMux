@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlparse
 
 import yaml
@@ -64,7 +67,13 @@ class CheckResult:
     detail: str
 
 
-def check_cloud_runtime(runtime_home: Path) -> list[CheckResult]:
+def check_cloud_runtime(
+    runtime_home: Path,
+    *,
+    require_route_cache: bool = False,
+    expected_embedding_model: str | None = None,
+    expected_embedding_input_max_chars: int | None = None,
+) -> list[CheckResult]:
     runtime_home = runtime_home.expanduser()
     config_path = runtime_home / "config" / "routes.yaml"
     raw_config = load_config(config_path)
@@ -96,6 +105,17 @@ def check_cloud_runtime(runtime_home: Path) -> list[CheckResult]:
         results.append(placeholder_targets_result(raw_config))
         results.append(recursive_route_config_result(raw_config))
         results.append(cloudflare_embedding_endpoint_result(raw_config))
+        results.append(
+            route_embedding_cache_result(
+                runtime_home,
+                config_path,
+                raw_config,
+                route_bank_path,
+                require_route_cache=require_route_cache,
+                expected_embedding_model=expected_embedding_model,
+                expected_embedding_input_max_chars=expected_embedding_input_max_chars,
+            )
+        )
     return results
 
 
@@ -116,6 +136,206 @@ def resolve_route_bank_path(runtime_home: Path, config_path: Path, raw_config: d
             return path
         return (config_path.parent / path).resolve()
     return runtime_home / "semantic_sets" / "route_bank.yaml"
+
+
+def resolve_route_embedding_cache_path(
+    runtime_home: Path,
+    config_path: Path,
+    raw_config: dict,
+) -> Path:
+    configured_path = raw_config.get("route_embedding_cache_path")
+    if isinstance(configured_path, str) and configured_path:
+        path = Path(configured_path).expanduser()
+        if path.is_absolute():
+            return path
+        return (config_path.parent / path).resolve()
+    return runtime_home / "cache" / "route-embeddings.json"
+
+
+def route_embedding_cache_result(
+    runtime_home: Path,
+    config_path: Path,
+    raw_config: dict,
+    route_bank_path: Path,
+    *,
+    require_route_cache: bool,
+    expected_embedding_model: str | None,
+    expected_embedding_input_max_chars: int | None,
+) -> CheckResult:
+    enabled = bool_from_value(raw_config.get("route_embedding_cache_enabled", True))
+    cache_path = resolve_route_embedding_cache_path(runtime_home, config_path, raw_config)
+    if not enabled:
+        return CheckResult(
+            "route_embedding_cache",
+            not require_route_cache,
+            "disabled",
+        )
+    if not cache_path.is_file():
+        return CheckResult(
+            "route_embedding_cache",
+            not require_route_cache,
+            f"{'missing' if require_route_cache else 'optional_missing'}:{relative_detail(cache_path, runtime_home)}",
+        )
+    try:
+        payload = json.loads(cache_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return CheckResult(
+            "route_embedding_cache",
+            False,
+            f"unreadable:{type(exc).__name__}:{relative_detail(cache_path, runtime_home)}",
+        )
+    issues = route_embedding_cache_issues(
+        payload,
+        raw_config,
+        route_bank_path,
+        expected_embedding_model=expected_embedding_model,
+        expected_embedding_input_max_chars=expected_embedding_input_max_chars,
+    )
+    return CheckResult(
+        "route_embedding_cache",
+        not issues,
+        f"ok:{relative_detail(cache_path, runtime_home)}" if not issues else ",".join(issues[:20]),
+    )
+
+
+def route_embedding_cache_issues(
+    payload: Any,
+    raw_config: dict,
+    route_bank_path: Path,
+    *,
+    expected_embedding_model: str | None,
+    expected_embedding_input_max_chars: int | None,
+) -> list[str]:
+    if not isinstance(payload, dict):
+        return ["payload_not_object"]
+    issues: list[str] = []
+    if payload.get("version") != 1:
+        issues.append(f"version:{payload.get('version')}")
+    if (
+        expected_embedding_model
+        and payload.get("embedding_model") != expected_embedding_model
+    ):
+        issues.append("embedding_model_mismatch")
+    if (
+        expected_embedding_input_max_chars is not None
+        and payload.get("embedding_input_max_chars") != expected_embedding_input_max_chars
+    ):
+        issues.append("embedding_input_max_chars_mismatch")
+
+    entries = route_corpus_entries(raw_config, route_bank_path)
+    expected_fingerprint = route_bank_fingerprint(entries)
+    if payload.get("route_bank_sha256") != expected_fingerprint:
+        issues.append("route_bank_sha256_mismatch")
+
+    items = payload.get("items")
+    if not isinstance(items, list):
+        issues.append("items_not_list")
+        return issues
+    if len(items) != len(entries):
+        issues.append(f"items_count:{len(items)}!=expected:{len(entries)}")
+        return issues
+    for index, (entry, item) in enumerate(zip(entries, items)):
+        if not isinstance(item, dict):
+            issues.append(f"item_not_object:{index}")
+            break
+        vector = item.get("vector")
+        if (
+            item.get("route_id") != entry["route_id"]
+            or item.get("source") != entry["source"]
+            or item.get("index") != entry["index"]
+            or item.get("text_sha256") != entry["text_sha256"]
+            or not isinstance(vector, list)
+        ):
+            issues.append(f"item_mismatch:{index}")
+            break
+    return issues
+
+
+def route_corpus_entries(raw_config: dict, route_bank_path: Path) -> list[dict[str, Any]]:
+    routes = raw_config.get("routes") or {}
+    if not isinstance(routes, dict):
+        return []
+    merged_routes = {
+        route_id: dict(route_config)
+        for route_id, route_config in routes.items()
+        if isinstance(route_config, dict)
+    }
+    merge_route_bank_utterances(merged_routes, route_bank_path)
+    entries: list[dict[str, Any]] = []
+    for route_id, route_config in merged_routes.items():
+        utterances = route_config.get("utterances") or []
+        sources = route_config.get("utterance_sources") or {}
+        if not isinstance(utterances, list):
+            continue
+        if not isinstance(sources, dict):
+            sources = {}
+        for index, text in enumerate(utterances):
+            if not isinstance(text, str):
+                continue
+            entries.append(
+                {
+                    "route_id": route_id,
+                    "text": text,
+                    "source": sources.get(text) or "inline_config",
+                    "index": index,
+                    "text_sha256": sha256_text(text),
+                }
+            )
+    return entries
+
+
+def merge_route_bank_utterances(
+    routes: dict[str, dict[str, Any]],
+    route_bank_path: Path,
+) -> None:
+    if not route_bank_path.is_file():
+        return
+    raw_bank = yaml.safe_load(route_bank_path.read_text(encoding="utf-8")) or {}
+    if not isinstance(raw_bank, dict):
+        return
+    bank_routes = raw_bank.get("routes") or {}
+    if not isinstance(bank_routes, dict):
+        return
+    for route_id, route_bank in bank_routes.items():
+        if route_id not in routes or not isinstance(route_bank, dict):
+            continue
+        route_config = routes[route_id]
+        utterances = list(route_config.get("utterances") or [])
+        sources = dict(route_config.get("utterance_sources") or {})
+        seen = set(utterances)
+        for item in route_bank.get("utterances", []):
+            text = item.get("text") if isinstance(item, dict) else item
+            if not isinstance(text, str) or not text:
+                continue
+            if text not in seen:
+                utterances.append(text)
+                seen.add(text)
+            if isinstance(item, dict) and isinstance(item.get("source"), str):
+                sources[text] = item["source"]
+        route_config["utterances"] = utterances
+        route_config["utterance_sources"] = sources
+
+
+def route_bank_fingerprint(entries: list[dict[str, Any]]) -> str:
+    lines = [
+        json.dumps(
+            {
+                "route_id": entry["route_id"],
+                "source": entry["source"],
+                "index": entry["index"],
+                "text_sha256": entry["text_sha256"],
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        for entry in entries
+    ]
+    return sha256_text("\n".join(lines))
+
+
+def sha256_text(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def route_bank_inside_runtime_result(route_bank_path: Path, runtime_home: Path) -> CheckResult:
@@ -290,6 +510,20 @@ def cloudflare_embedding_endpoint_result(raw: dict) -> CheckResult:
     )
 
 
+def bool_from_value(value: Any) -> bool:
+    if isinstance(value, str):
+        return value.lower() in {"1", "true", "yes", "on"}
+    return bool(value)
+
+
+def optional_int(value: str | None) -> int | None:
+    if value is None:
+        return None
+    if value.strip().lower() in {"", "none", "null"}:
+        return None
+    return int(value)
+
+
 def relative_detail(path: Path, runtime_home: Path) -> str:
     try:
         return path.relative_to(runtime_home).as_posix()
@@ -303,8 +537,27 @@ def relative_detail(path: Path, runtime_home: Path) -> str:
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("runtime_home", type=Path)
+    parser.add_argument(
+        "--require-route-cache",
+        action="store_true",
+        help="Fail when the route embedding cache is disabled or missing.",
+    )
+    parser.add_argument(
+        "--expected-embedding-model",
+        help="Expected embedding_model metadata for cache validation.",
+    )
+    parser.add_argument(
+        "--expected-embedding-input-max-chars",
+        type=optional_int,
+        help="Expected embedding_input_max_chars metadata for cache validation.",
+    )
     args = parser.parse_args(argv)
-    results = check_cloud_runtime(args.runtime_home)
+    results = check_cloud_runtime(
+        args.runtime_home,
+        require_route_cache=args.require_route_cache,
+        expected_embedding_model=args.expected_embedding_model,
+        expected_embedding_input_max_chars=args.expected_embedding_input_max_chars,
+    )
     for result in results:
         status = "PASS" if result.ok else "FAIL"
         print(f"{status}\t{result.name}\t{result.detail}")
