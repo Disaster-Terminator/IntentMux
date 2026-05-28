@@ -54,6 +54,7 @@ dev-debug.log
 .DS_Store
 
 # Beads / Dolt files (added by bd init)
+.beads
 .beads/
 .dolt/
 *.db
