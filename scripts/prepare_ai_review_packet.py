@@ -115,6 +115,9 @@ def build_ai_review_packet(
                 "group": group,
                 "request_id": request_id,
                 "timestamp": candidate.get("timestamp"),
+                "config_source": candidate.get("config_source"),
+                "config_sha256": candidate.get("config_sha256"),
+                "route_bank_sha256": candidate.get("route_bank_sha256"),
                 "route_id": candidate.get("route_id"),
                 "target_model": candidate.get("target_model"),
                 "reason": candidate.get("reason"),
@@ -131,6 +134,9 @@ def build_ai_review_packet(
                 "match_text_sha256": candidate.get("match_text_sha256"),
                 "match_score": candidate.get("match_score"),
                 "match_provenance": candidate.get("match_provenance"),
+                "prompt_tokens": candidate.get("prompt_tokens"),
+                "completion_tokens": candidate.get("completion_tokens"),
+                "total_tokens": candidate.get("total_tokens"),
                 "duration_ms": candidate.get("duration_ms"),
                 "upstream_status": candidate.get("upstream_status"),
                 "format_signals": candidate.get("format_signals")
@@ -186,8 +192,8 @@ def render_markdown(packet: dict[str, Any]) -> str:
         "",
         "## Candidate Clusters",
         "",
-        "| count | route_id | target_model | reason | review_reasons | top_route | second_route | match_source | match_index | match_text_sha256 | max_duration_ms |",
-        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+        "| count | route_id | target_model | reason | config_source | config_sha256 | route_bank_sha256 | review_reasons | top_route | second_route | match_source | match_index | match_text_sha256 | max_duration_ms |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     for cluster in (
         summary.get("candidate_clusters", []) if isinstance(summary, dict) else []
@@ -200,6 +206,9 @@ def render_markdown(packet: dict[str, Any]) -> str:
                     markdown_cell(cluster.get("route_id")),
                     markdown_cell(cluster.get("target_model")),
                     markdown_cell(cluster.get("reason")),
+                    markdown_cell(cluster.get("config_source")),
+                    markdown_cell(cluster.get("config_sha256")),
+                    markdown_cell(cluster.get("route_bank_sha256")),
                     markdown_cell(format_counts(cluster.get("review_reasons", {}))),
                     markdown_cell(cluster.get("top_route_id")),
                     markdown_cell(cluster.get("second_route_id")),
@@ -229,8 +238,8 @@ def render_markdown(packet: dict[str, Any]) -> str:
             "",
             "## Candidates",
             "",
-            "| group | request_id | route_id | target_model | reason | review_reasons | top_route | second_route | score | second_score | threshold | margin | match_source | match_index | prompt_review | duration_ms | upstream_status |",
-            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+            "| group | request_id | route_id | target_model | reason | config_source | config_sha256 | route_bank_sha256 | review_reasons | top_route | second_route | score | second_score | threshold | margin | match_source | match_index | prompt_tokens | completion_tokens | total_tokens | prompt_review | duration_ms | upstream_status |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
         ]
     )
     for candidate in packet.get("candidates", []):
@@ -257,6 +266,9 @@ def render_markdown(packet: dict[str, Any]) -> str:
                     markdown_cell(candidate.get("route_id")),
                     markdown_cell(candidate.get("target_model")),
                     markdown_cell(candidate.get("reason")),
+                    markdown_cell(candidate.get("config_source")),
+                    markdown_cell(candidate.get("config_sha256")),
+                    markdown_cell(candidate.get("route_bank_sha256")),
                     markdown_cell(",".join(candidate.get("review_reasons") or [])),
                     markdown_cell(candidate.get("top_route_id")),
                     markdown_cell(candidate.get("second_route_id")),
@@ -266,6 +278,9 @@ def render_markdown(packet: dict[str, Any]) -> str:
                     markdown_cell(candidate.get("margin")),
                     markdown_cell(candidate.get("match_source")),
                     markdown_cell(candidate.get("match_index")),
+                    markdown_cell(candidate.get("prompt_tokens")),
+                    markdown_cell(candidate.get("completion_tokens")),
+                    markdown_cell(candidate.get("total_tokens")),
                     markdown_cell(prompt_review_label),
                     markdown_cell(candidate.get("duration_ms")),
                     markdown_cell(candidate.get("upstream_status")),

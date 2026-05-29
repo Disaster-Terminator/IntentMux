@@ -80,6 +80,7 @@ def create_app(
         timezone_name=settings.audit_log_timezone,
         max_chars=settings.prompt_log_max_chars,
     )
+    audit_metadata = route_audit_metadata(settings)
 
     app = FastAPI(title="IntentMux")
 
@@ -232,6 +233,7 @@ def create_app(
                         "upstream_ms": now_ms() - upstream_started_ms,
                     },
                     format_signals=format_signals,
+                    audit_metadata=audit_metadata,
                     audit_logger=audit_logger,
                 )
                 return upstream_error_response(
@@ -257,6 +259,7 @@ def create_app(
                         "upstream_headers_ms": upstream_headers_ms,
                     },
                     format_signals=format_signals,
+                    audit_metadata=audit_metadata,
                     audit_logger=audit_logger,
                 )
                 await stream_context.__aexit__(None, None, None)
@@ -283,6 +286,7 @@ def create_app(
                     upstream_started_ms=upstream_started_ms,
                     upstream_headers_ms=upstream_headers_ms,
                     format_signals=format_signals,
+                    audit_metadata=audit_metadata,
                     audit_logger=audit_logger,
                 ),
                 status_code=upstream.status_code,
@@ -308,6 +312,7 @@ def create_app(
                     "upstream_ms": now_ms() - upstream_started_ms,
                 },
                 format_signals=format_signals,
+                audit_metadata=audit_metadata,
                 audit_logger=audit_logger,
             )
             return upstream_error_response(
@@ -332,6 +337,7 @@ def create_app(
                     "upstream_ms": upstream_ms,
                 },
                 format_signals=format_signals,
+                audit_metadata=audit_metadata,
                 audit_logger=audit_logger,
             )
             return upstream_error_response(
@@ -355,6 +361,8 @@ def create_app(
                 "upstream_ms": upstream_ms,
             },
             format_signals=format_signals,
+            audit_metadata=audit_metadata,
+            usage=usage_from_response_content(upstream.content),
             audit_logger=audit_logger,
         )
         return Response(
@@ -367,7 +375,9 @@ def create_app(
     return app
 
 
-def sanitize_forwarded_payload(payload: dict[str, Any], target_model: str) -> dict[str, Any]:
+def sanitize_forwarded_payload(
+    payload: dict[str, Any], target_model: str
+) -> dict[str, Any]:
     forwarded = dict(payload)
     forwarded["model"] = target_model
     metadata = forwarded.get("metadata")
@@ -380,6 +390,33 @@ def sanitize_forwarded_payload(payload: dict[str, Any], target_model: str) -> di
         else:
             forwarded.pop("metadata", None)
     return forwarded
+
+
+def route_audit_metadata(settings: RouterSettings) -> dict[str, str]:
+    metadata: dict[str, str] = {}
+    for key in ("config_source", "config_sha256", "route_bank_sha256"):
+        value = getattr(settings, key)
+        if isinstance(value, str) and value:
+            metadata[key] = value
+    return metadata
+
+
+def usage_from_response_content(content: bytes) -> dict[str, int] | None:
+    try:
+        payload = json.loads(content)
+    except (TypeError, json.JSONDecodeError, UnicodeDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    usage = payload.get("usage")
+    if not isinstance(usage, dict):
+        return None
+    safe_usage = {
+        key: value
+        for key in ("prompt_tokens", "completion_tokens", "total_tokens")
+        if isinstance((value := usage.get(key)), int) and value >= 0
+    }
+    return safe_usage or None
 
 
 async def stream_with_context(
@@ -395,6 +432,7 @@ async def stream_with_context(
     upstream_started_ms: float | None = None,
     upstream_headers_ms: float | None = None,
     format_signals: dict[str, Any] | None = None,
+    audit_metadata: dict[str, Any] | None = None,
     audit_logger: AuditLogger | None = None,
 ):
     if upstream_started_ms is None:
@@ -423,6 +461,7 @@ async def stream_with_context(
                 "upstream_body_ms": now_ms() - body_started_ms,
             },
             format_signals=format_signals,
+            audit_metadata=audit_metadata,
             audit_logger=audit_logger,
         )
         return
@@ -447,6 +486,7 @@ async def stream_with_context(
                     "upstream_body_ms": now_ms() - body_started_ms,
                 },
                 format_signals=format_signals,
+                audit_metadata=audit_metadata,
                 audit_logger=audit_logger,
             )
 

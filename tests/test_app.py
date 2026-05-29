@@ -9,7 +9,12 @@ from typing import Any
 
 from fastapi.testclient import TestClient
 
-from router.app import create_app, main, stream_with_context
+from router.app import (
+    create_app,
+    main,
+    stream_with_context,
+    usage_from_response_content,
+)
 from router.config import RouteSpec, RouterSettings
 from router.readiness import ComponentStatus, ReadinessReport
 from router.routing import Router, RoutingDecision
@@ -54,11 +59,31 @@ def decision_router_settings() -> RouterSettings:
         threshold=0.5,
         margin=0.05,
         routes={
-            "lite": RouteSpec(target_model="lite-upstream", description="lite", utterances=["翻译", "总结"]),
-            "deep": RouteSpec(target_model="deep-upstream", description="deep", utterances=["线上", "PR审查"]),
+            "lite": RouteSpec(
+                target_model="lite-upstream",
+                description="lite",
+                utterances=["翻译", "总结"],
+            ),
+            "deep": RouteSpec(
+                target_model="deep-upstream",
+                description="deep",
+                utterances=["线上", "PR审查"],
+            ),
         },
         hard_rules=[{"route_id": "deep", "keywords": ["线上", "PR"]}],
     )
+
+
+def test_usage_from_response_content_extracts_safe_openai_usage_only():
+    assert usage_from_response_content(
+        b'{"usage":{"prompt_tokens":3,"completion_tokens":4,"total_tokens":7,"text":"no"}}'
+    ) == {
+        "prompt_tokens": 3,
+        "completion_tokens": 4,
+        "total_tokens": 7,
+    }
+    assert usage_from_response_content(b'{"usage":{"prompt_tokens":-1}}') is None
+    assert usage_from_response_content(b"not json") is None
 
 
 @dataclass
@@ -89,7 +114,10 @@ class FakeProxy:
         self.headers.append(headers)
         return FakeProxyResponse(
             status_code=200,
-            content=b'{"id":"chatcmpl-test","choices":[]}',
+            content=(
+                b'{"id":"chatcmpl-test","choices":[],'
+                b'"usage":{"prompt_tokens":11,"completion_tokens":7,"total_tokens":18}}'
+            ),
             headers={"content-type": "application/json"},
         )
 
@@ -115,8 +143,6 @@ class FakeProxy:
             self.stream_context_closed = True
 
 
-
-
 class NoUpstreamProxy:
     def __init__(self):
         self.forward_called = False
@@ -131,6 +157,7 @@ class NoUpstreamProxy:
         self.stream_called = True
         raise AssertionError("/v1/intentmux/decision must not call stream_chat")
         yield
+
 
 class FailingProxy(FakeProxy):
     async def forward_chat(self, payload: dict[str, Any], headers: dict[str, str]):
@@ -197,7 +224,9 @@ class UpstreamStatusStreamProxy(FakeProxy):
 def test_health_reports_ready():
     app = create_app(
         router=FakeRouter(
-            RoutingDecision("lite-upstream", "test", rewrite=True, source_model="intentmux")
+            RoutingDecision(
+                "lite-upstream", "test", rewrite=True, source_model="intentmux"
+            )
         ),
         proxy=FakeProxy(),
     )
@@ -226,7 +255,9 @@ def test_models_lists_only_canonical_synthetic_entries_without_targets():
                 ),
             },
         ),
-        router=FakeRouter(RoutingDecision("local-lite-model", "test", rewrite=True, route_id="lite")),
+        router=FakeRouter(
+            RoutingDecision("local-lite-model", "test", rewrite=True, route_id="lite")
+        ),
         proxy=FakeProxy(),
     )
 
@@ -254,18 +285,27 @@ def test_models_requires_inbound_api_key_when_configured():
             route_model="intentmux",
             fallback_route_id="lite",
             inbound_api_key="sk-intentmux",
-            routes={"lite": RouteSpec(target_model="lite-upstream", description="lite", utterances=["hi"])},
+            routes={
+                "lite": RouteSpec(
+                    target_model="lite-upstream", description="lite", utterances=["hi"]
+                )
+            },
         ),
-        router=FakeRouter(RoutingDecision("lite-upstream", "test", rewrite=True, route_id="lite")),
+        router=FakeRouter(
+            RoutingDecision("lite-upstream", "test", rewrite=True, route_id="lite")
+        ),
         proxy=FakeProxy(),
     )
     client = TestClient(app)
 
     assert client.get("/v1/models").status_code == 401
-    assert client.get(
-        "/v1/models",
-        headers={"Authorization": "Bearer sk-intentmux"},
-    ).status_code == 200
+    assert (
+        client.get(
+            "/v1/models",
+            headers={"Authorization": "Bearer sk-intentmux"},
+        ).status_code
+        == 200
+    )
 
 
 def test_intentmux_decision_endpoint_alias_matches_legacy_contract():
@@ -513,7 +553,10 @@ def test_decision_endpoint_hard_rule_returns_contract_without_forwarding():
 
 def test_decision_endpoint_explicit_route_override_returns_explicit_policy():
     proxy = NoUpstreamProxy()
-    app = create_app(router=Router(decision_router_settings(), FakeDecisionEmbeddingClient({})), proxy=proxy)
+    app = create_app(
+        router=Router(decision_router_settings(), FakeDecisionEmbeddingClient({})),
+        proxy=proxy,
+    )
 
     response = TestClient(app).post(
         "/v1/intentmux/decision",
@@ -538,9 +581,15 @@ def test_decision_endpoint_requires_inbound_api_key_when_configured():
             route_model="intentmux",
             fallback_route_id="lite",
             inbound_api_key="sk-intentmux",
-            routes={"lite": RouteSpec(target_model="lite-upstream", description="lite", utterances=["hi"])},
+            routes={
+                "lite": RouteSpec(
+                    target_model="lite-upstream", description="lite", utterances=["hi"]
+                )
+            },
         ),
-        router=FakeRouter(RoutingDecision("lite-upstream", "test", rewrite=True, route_id="lite")),
+        router=FakeRouter(
+            RoutingDecision("lite-upstream", "test", rewrite=True, route_id="lite")
+        ),
         proxy=FakeProxy(),
     )
     client = TestClient(app)
@@ -568,9 +617,15 @@ def test_chat_completion_requires_inbound_api_key_when_configured():
             route_model="intentmux",
             fallback_route_id="lite",
             inbound_api_key="sk-intentmux",
-            routes={"lite": RouteSpec(target_model="lite-upstream", description="lite", utterances=["hi"])},
+            routes={
+                "lite": RouteSpec(
+                    target_model="lite-upstream", description="lite", utterances=["hi"]
+                )
+            },
         ),
-        router=FakeRouter(RoutingDecision("lite-upstream", "test", rewrite=True, route_id="lite")),
+        router=FakeRouter(
+            RoutingDecision("lite-upstream", "test", rewrite=True, route_id="lite")
+        ),
         proxy=FakeProxy(),
     )
     client = TestClient(app)
@@ -602,9 +657,15 @@ def test_chat_completion_accepts_inbound_api_key_rotation_slots():
             fallback_route_id="lite",
             inbound_api_key="sk-current",
             inbound_api_keys=["sk-current", "sk-next"],
-            routes={"lite": RouteSpec(target_model="lite-upstream", description="lite", utterances=["hi"])},
+            routes={
+                "lite": RouteSpec(
+                    target_model="lite-upstream", description="lite", utterances=["hi"]
+                )
+            },
         ),
-        router=FakeRouter(RoutingDecision("lite-upstream", "test", rewrite=True, route_id="lite")),
+        router=FakeRouter(
+            RoutingDecision("lite-upstream", "test", rewrite=True, route_id="lite")
+        ),
         proxy=FakeProxy(),
     )
     client = TestClient(app)
@@ -631,9 +692,15 @@ def test_chat_completion_does_not_write_prompt_review_log_by_default(tmp_path: P
             route_model="intentmux",
             fallback_route_id="lite",
             prompt_log_dir=str(prompt_dir),
-            routes={"lite": RouteSpec(target_model="lite-upstream", description="lite", utterances=["hi"])},
+            routes={
+                "lite": RouteSpec(
+                    target_model="lite-upstream", description="lite", utterances=["hi"]
+                )
+            },
         ),
-        router=FakeRouter(RoutingDecision("lite-upstream", "test", rewrite=True, route_id="lite")),
+        router=FakeRouter(
+            RoutingDecision("lite-upstream", "test", rewrite=True, route_id="lite")
+        ),
         proxy=FakeProxy(),
     )
 
@@ -657,9 +724,15 @@ def test_chat_completion_writes_raw_local_prompt_review_log(tmp_path: Path):
             fallback_route_id="lite",
             prompt_log_mode="raw_local",
             prompt_log_dir=str(prompt_dir),
-            routes={"lite": RouteSpec(target_model="lite-upstream", description="lite", utterances=["hi"])},
+            routes={
+                "lite": RouteSpec(
+                    target_model="lite-upstream", description="lite", utterances=["hi"]
+                )
+            },
         ),
-        router=FakeRouter(RoutingDecision("lite-upstream", "test", rewrite=True, route_id="lite")),
+        router=FakeRouter(
+            RoutingDecision("lite-upstream", "test", rewrite=True, route_id="lite")
+        ),
         proxy=FakeProxy(),
     )
 
@@ -673,7 +746,9 @@ def test_chat_completion_writes_raw_local_prompt_review_log(tmp_path: Path):
     )
 
     assert response.status_code == 200
-    log_lines = list(prompt_dir.glob("*.jsonl"))[0].read_text(encoding="utf-8").splitlines()
+    log_lines = (
+        list(prompt_dir.glob("*.jsonl"))[0].read_text(encoding="utf-8").splitlines()
+    )
     record = json.loads(log_lines[0])
     assert record["event"] == "prompt_review"
     assert record["request_id"] == "req-prompt"
@@ -691,9 +766,15 @@ def test_chat_completion_redacted_prompt_review_log_masks_credentials(tmp_path: 
             fallback_route_id="lite",
             prompt_log_mode="redacted",
             prompt_log_dir=str(prompt_dir),
-            routes={"lite": RouteSpec(target_model="lite-upstream", description="lite", utterances=["hi"])},
+            routes={
+                "lite": RouteSpec(
+                    target_model="lite-upstream", description="lite", utterances=["hi"]
+                )
+            },
         ),
-        router=FakeRouter(RoutingDecision("lite-upstream", "test", rewrite=True, route_id="lite")),
+        router=FakeRouter(
+            RoutingDecision("lite-upstream", "test", rewrite=True, route_id="lite")
+        ),
         proxy=FakeProxy(),
     )
 
@@ -707,7 +788,9 @@ def test_chat_completion_redacted_prompt_review_log_masks_credentials(tmp_path: 
     )
 
     assert response.status_code == 200
-    log_lines = list(prompt_dir.glob("*.jsonl"))[0].read_text(encoding="utf-8").splitlines()
+    log_lines = (
+        list(prompt_dir.glob("*.jsonl"))[0].read_text(encoding="utf-8").splitlines()
+    )
     record = json.loads(log_lines[0])
     assert record["latest_user_text"] == "use [REDACTED]"
 
@@ -718,9 +801,15 @@ def test_health_and_local_ready_do_not_require_inbound_api_key():
             route_model="intentmux",
             fallback_route_id="lite",
             inbound_api_key="sk-intentmux",
-            routes={"lite": RouteSpec(target_model="lite-upstream", description="lite", utterances=["hi"])},
+            routes={
+                "lite": RouteSpec(
+                    target_model="lite-upstream", description="lite", utterances=["hi"]
+                )
+            },
         ),
-        router=FakeRouter(RoutingDecision("lite-upstream", "test", rewrite=True, route_id="lite")),
+        router=FakeRouter(
+            RoutingDecision("lite-upstream", "test", rewrite=True, route_id="lite")
+        ),
         proxy=FakeProxy(),
         readiness_checker=FakeReadinessChecker(
             ReadinessReport(
@@ -746,9 +835,15 @@ def test_cloud_ready_requires_inbound_api_key():
             fallback_route_id="lite",
             inbound_api_key="sk-intentmux",
             cloud_mode=True,
-            routes={"lite": RouteSpec(target_model="lite-upstream", description="lite", utterances=["hi"])},
+            routes={
+                "lite": RouteSpec(
+                    target_model="lite-upstream", description="lite", utterances=["hi"]
+                )
+            },
         ),
-        router=FakeRouter(RoutingDecision("lite-upstream", "test", rewrite=True, route_id="lite")),
+        router=FakeRouter(
+            RoutingDecision("lite-upstream", "test", rewrite=True, route_id="lite")
+        ),
         proxy=FakeProxy(),
         readiness_checker=FakeReadinessChecker(
             ReadinessReport(
@@ -765,20 +860,35 @@ def test_cloud_ready_requires_inbound_api_key():
 
     assert client.get("/health").status_code == 200
     assert client.get("/ready").status_code == 401
-    assert client.get(
-        "/ready",
-        headers={"Authorization": "Bearer sk-intentmux"},
-    ).status_code == 200
+    assert (
+        client.get(
+            "/ready",
+            headers={"Authorization": "Bearer sk-intentmux"},
+        ).status_code
+        == 200
+    )
 
 
 def test_decision_endpoint_low_confidence_uses_fallback_route_id():
     proxy = NoUpstreamProxy()
-    vectors = {"翻译": [1.0, 0.0], "总结": [1.0, 0.0], "线上": [0.0, 1.0], "PR审查": [0.0, 1.0], "天气怎么样": [0.3, 0.3]}
-    app = create_app(router=Router(decision_router_settings(), FakeDecisionEmbeddingClient(vectors)), proxy=proxy)
+    vectors = {
+        "翻译": [1.0, 0.0],
+        "总结": [1.0, 0.0],
+        "线上": [0.0, 1.0],
+        "PR审查": [0.0, 1.0],
+        "天气怎么样": [0.3, 0.3],
+    }
+    app = create_app(
+        router=Router(decision_router_settings(), FakeDecisionEmbeddingClient(vectors)),
+        proxy=proxy,
+    )
 
     response = TestClient(app).post(
         "/v1/intentmux/decision",
-        json={"model": "intentmux", "messages": [{"role": "user", "content": "天气怎么样"}]},
+        json={
+            "model": "intentmux",
+            "messages": [{"role": "user", "content": "天气怎么样"}],
+        },
     )
 
     assert response.status_code == 200
@@ -791,11 +901,19 @@ def test_decision_endpoint_low_confidence_uses_fallback_route_id():
 
 def test_decision_endpoint_embedding_error_uses_fallback_route_id_and_policy():
     proxy = NoUpstreamProxy()
-    app = create_app(router=Router(decision_router_settings(), FakeDecisionEmbeddingClient({}, fail=True)), proxy=proxy)
+    app = create_app(
+        router=Router(
+            decision_router_settings(), FakeDecisionEmbeddingClient({}, fail=True)
+        ),
+        proxy=proxy,
+    )
 
     response = TestClient(app).post(
         "/v1/intentmux/decision",
-        json={"model": "intentmux", "messages": [{"role": "user", "content": "解释一下这个概念"}]},
+        json={
+            "model": "intentmux",
+            "messages": [{"role": "user", "content": "解释一下这个概念"}],
+        },
     )
 
     assert response.status_code == 200
@@ -808,7 +926,10 @@ def test_decision_endpoint_embedding_error_uses_fallback_route_id_and_policy():
 
 def test_decision_endpoint_passthrough_keeps_model_without_inventing_route_id_and_stable_shape():
     proxy = NoUpstreamProxy()
-    app = create_app(router=Router(decision_router_settings(), FakeDecisionEmbeddingClient({})), proxy=proxy)
+    app = create_app(
+        router=Router(decision_router_settings(), FakeDecisionEmbeddingClient({})),
+        proxy=proxy,
+    )
 
     response = TestClient(app).post(
         "/v1/intentmux/decision",
@@ -874,7 +995,9 @@ def test_decision_endpoint_passthrough_keeps_model_without_inventing_route_id_an
 def test_decision_endpoint_returns_400_for_invalid_json_without_leaking_input():
     proxy = NoUpstreamProxy()
     app = create_app(
-        router=FakeRouter(RoutingDecision("lite-upstream", "passthrough", rewrite=False)),
+        router=FakeRouter(
+            RoutingDecision("lite-upstream", "passthrough", rewrite=False)
+        ),
         proxy=proxy,
     )
     client = TestClient(app)
@@ -899,7 +1022,9 @@ def test_decision_endpoint_returns_400_for_invalid_json_without_leaking_input():
 def test_chat_completion_returns_400_for_invalid_json_without_leaking_input():
     proxy = NoUpstreamProxy()
     app = create_app(
-        router=FakeRouter(RoutingDecision("lite-upstream", "passthrough", rewrite=False)),
+        router=FakeRouter(
+            RoutingDecision("lite-upstream", "passthrough", rewrite=False)
+        ),
         proxy=proxy,
     )
     client = TestClient(app)
@@ -924,7 +1049,9 @@ def test_chat_completion_returns_400_for_invalid_json_without_leaking_input():
 def test_chat_completion_returns_400_for_non_object_payload_without_leaking_input():
     proxy = NoUpstreamProxy()
     app = create_app(
-        router=FakeRouter(RoutingDecision("lite-upstream", "passthrough", rewrite=False)),
+        router=FakeRouter(
+            RoutingDecision("lite-upstream", "passthrough", rewrite=False)
+        ),
         proxy=proxy,
     )
     client = TestClient(app)
@@ -946,7 +1073,9 @@ def test_chat_completion_returns_400_for_non_object_payload_without_leaking_inpu
 def test_decision_endpoint_returns_400_for_non_object_payload_without_leaking_input():
     proxy = NoUpstreamProxy()
     app = create_app(
-        router=FakeRouter(RoutingDecision("lite-upstream", "passthrough", rewrite=False)),
+        router=FakeRouter(
+            RoutingDecision("lite-upstream", "passthrough", rewrite=False)
+        ),
         proxy=proxy,
     )
     client = TestClient(app)
@@ -1087,47 +1216,58 @@ def test_chat_completion_emits_structured_log_without_sensitive_payload(caplog):
     route_logs = [record for record in records if record["event"] == "route_complete"]
     assert route_logs == [
         {
-                "decision_ms": route_logs[0]["decision_ms"],
-                "duration_ms": route_logs[0]["duration_ms"],
-                "event": "route_complete",
-                "format_signals": {
-                    "approx_input_chars": 27,
-                    "assistant_message_count": 0,
-                    "function_count": 0,
-                    "functions_present": False,
-                    "message_count": 1,
-                    "multimodal_content": False,
-                    "response_format_present": False,
-                    "system_message_count": 0,
-                    "tool_call_count": 0,
-                    "tool_choice_present": False,
-                    "tool_count": 0,
-                    "tool_history": False,
-                    "tool_message_count": 0,
-                    "tools_present": False,
-                    "user_message_count": 1,
-                },
-                "ok": True,
-                "outcome": "success",
-                "policy_id": "hard_rule",
-                "reason": "hard_rule:线上",
-                "request_id": "external-request-1",
-                "request_id_source": "x-request-id",
-                "rewrite": True,
-                "route_id": "deep",
-                "score": None,
-                "second_score": None,
-                "source_model": "intentmux",
-                "status": 200,
-                "stream": False,
-                "target_model": "deep-upstream",
-                "ts": route_logs[0]["ts"],
-                "upstream_ms": route_logs[0]["upstream_ms"],
-                "upstream_status": 200,
-            }
-        ]
+            "config_sha256": route_logs[0]["config_sha256"],
+            "config_source": route_logs[0]["config_source"],
+            "completion_tokens": 7,
+            "decision_ms": route_logs[0]["decision_ms"],
+            "duration_ms": route_logs[0]["duration_ms"],
+            "event": "route_complete",
+            "format_signals": {
+                "approx_input_chars": 27,
+                "assistant_message_count": 0,
+                "function_count": 0,
+                "functions_present": False,
+                "message_count": 1,
+                "multimodal_content": False,
+                "response_format_present": False,
+                "system_message_count": 0,
+                "tool_call_count": 0,
+                "tool_choice_present": False,
+                "tool_count": 0,
+                "tool_history": False,
+                "tool_message_count": 0,
+                "tools_present": False,
+                "user_message_count": 1,
+            },
+            "ok": True,
+            "outcome": "success",
+            "policy_id": "hard_rule",
+            "prompt_tokens": 11,
+            "reason": "hard_rule:线上",
+            "request_id": "external-request-1",
+            "request_id_source": "x-request-id",
+            "rewrite": True,
+            "route_bank_sha256": route_logs[0]["route_bank_sha256"],
+            "route_id": "deep",
+            "score": None,
+            "second_score": None,
+            "source_model": "intentmux",
+            "status": 200,
+            "stream": False,
+            "target_model": "deep-upstream",
+            "total_tokens": 18,
+            "ts": route_logs[0]["ts"],
+            "upstream_ms": route_logs[0]["upstream_ms"],
+            "upstream_status": 200,
+        }
+    ]
     assert route_logs[0]["decision_ms"] >= 0
     assert route_logs[0]["upstream_ms"] >= 0
+    assert route_logs[0]["config_source"]
+    assert len(route_logs[0]["config_sha256"]) == 64
+    assert len(route_logs[0]["route_bank_sha256"]) == 64
+    assert "config_path" not in route_logs[0]
+    assert "runtime_home" not in route_logs[0]
     serialized = "\n".join(record.message for record in caplog.records)
     assert "敏感 prompt" not in serialized
     assert "Bearer litellm-test" not in serialized
@@ -1135,7 +1275,9 @@ def test_chat_completion_emits_structured_log_without_sensitive_payload(caplog):
 
 def test_chat_completion_audit_log_includes_format_signals_without_content(caplog):
     proxy = FakeProxy()
-    router = FakeRouter(RoutingDecision("lite-upstream", "test", rewrite=True, route_id="lite"))
+    router = FakeRouter(
+        RoutingDecision("lite-upstream", "test", rewrite=True, route_id="lite")
+    )
     app = create_app(
         router=router,
         proxy=proxy,
@@ -1160,7 +1302,9 @@ def test_chat_completion_audit_log_includes_format_signals_without_content(caplo
 
     assert response.status_code == 200
     records = [json.loads(record.message) for record in caplog.records]
-    route_log = next(record for record in records if record["event"] == "route_complete")
+    route_log = next(
+        record for record in records if record["event"] == "route_complete"
+    )
     assert route_log["format_signals"] == {
         "approx_input_chars": 20,
         "assistant_message_count": 1,
@@ -1256,6 +1400,8 @@ def test_chat_completion_writes_redacted_audit_log(tmp_path):
             "ok": True,
             "outcome": "success",
             "policy_id": "embedding",
+            "completion_tokens": 7,
+            "prompt_tokens": 11,
             "reason": "embedding",
             "request_id": "audit-request-1",
             "request_id_source": "metadata.semantic_router_request_id",
@@ -1270,6 +1416,7 @@ def test_chat_completion_writes_redacted_audit_log(tmp_path):
             "status": 200,
             "stream": False,
             "target_model": "lite-upstream",
+            "total_tokens": 18,
             "ts": records[0]["ts"],
             "upstream_ms": records[0]["upstream_ms"],
             "upstream_status": 200,
@@ -1282,7 +1429,9 @@ def test_chat_completion_writes_redacted_audit_log(tmp_path):
     assert "Bearer litellm-test" not in serialized
 
 
-def test_chat_completion_marks_upstream_4xx_as_unhealthy_without_gateway_rewrite(caplog):
+def test_chat_completion_marks_upstream_4xx_as_unhealthy_without_gateway_rewrite(
+    caplog,
+):
     app = create_app(
         router=FakeRouter(
             RoutingDecision(
@@ -1387,8 +1536,6 @@ def test_chat_completion_strips_router_private_metadata_before_forwarding():
 
     assert response.status_code == 200
     assert proxy.payloads[0]["metadata"] == {"tenant": "kept"}
-
-
 
 
 def test_chat_completion_does_not_use_user_field_as_request_id(caplog):
@@ -1551,7 +1698,9 @@ def test_embedding_degraded_readiness_but_chat_falls_back_to_default_route(caplo
     assert proxy.payloads[0]["model"] == "lite-upstream"
     assert response.headers["x-router-target-model"] == "lite-upstream"
     records = [json.loads(record.message) for record in caplog.records]
-    route_complete = [record for record in records if record["event"] == "route_complete"]
+    route_complete = [
+        record for record in records if record["event"] == "route_complete"
+    ]
     route_errors = [record for record in records if record["event"] == "route_error"]
     assert route_errors == []
     assert len(route_complete) == 1
@@ -1642,7 +1791,9 @@ def test_chat_completion_maps_upstream_5xx_to_redacted_route_error(caplog):
         }
     }
     records = [json.loads(record.message) for record in caplog.records]
-    route_complete = [record for record in records if record["event"] == "route_complete"]
+    route_complete = [
+        record for record in records if record["event"] == "route_complete"
+    ]
     route_errors = [record for record in records if record["event"] == "route_error"]
     assert route_complete == []
     assert len(route_errors) == 1
@@ -1659,7 +1810,9 @@ def test_chat_completion_maps_upstream_5xx_to_redacted_route_error(caplog):
     assert "upstream leaked sensitive body" not in serialized
 
 
-def test_streaming_chat_completion_returns_gateway_error_when_upstream_disconnects(caplog):
+def test_streaming_chat_completion_returns_gateway_error_when_upstream_disconnects(
+    caplog,
+):
     app = create_app(
         router=FakeRouter(
             RoutingDecision(
@@ -1722,7 +1875,9 @@ def test_streaming_chat_completion_maps_upstream_5xx_to_redacted_route_error(cap
             json={
                 "model": "intentmux",
                 "stream": True,
-                "metadata": {"semantic_router_request_id": "stream-status-error-request-1"},
+                "metadata": {
+                    "semantic_router_request_id": "stream-status-error-request-1"
+                },
                 "messages": [{"role": "user", "content": "敏感 prompt"}],
             },
         )
@@ -1736,7 +1891,9 @@ def test_streaming_chat_completion_maps_upstream_5xx_to_redacted_route_error(cap
     assert response.json()["error"]["type"] == "UpstreamStatusError"
     assert proxy.stream_context_closed is True
     records = [json.loads(record.message) for record in caplog.records]
-    route_complete = [record for record in records if record["event"] == "route_complete"]
+    route_complete = [
+        record for record in records if record["event"] == "route_complete"
+    ]
     route_errors = [record for record in records if record["event"] == "route_error"]
     assert route_complete == []
     assert len(route_errors) == 1
@@ -1829,7 +1986,9 @@ async def test_streaming_chat_completion_logs_when_client_closes_early(caplog):
     assert route_logs[0]["stream"] is True
 
 
-async def test_streaming_chat_completion_logs_route_error_when_body_iteration_fails(caplog):
+async def test_streaming_chat_completion_logs_route_error_when_body_iteration_fails(
+    caplog,
+):
     class StreamContext:
         def __init__(self):
             self.exit_calls = 0
@@ -1865,7 +2024,9 @@ async def test_streaming_chat_completion_logs_route_error_when_body_iteration_fa
             pass
 
     records = [json.loads(record.message) for record in caplog.records]
-    route_complete = [record for record in records if record["event"] == "route_complete"]
+    route_complete = [
+        record for record in records if record["event"] == "route_complete"
+    ]
     route_errors = [record for record in records if record["event"] == "route_error"]
     assert stream_context.exit_calls == 1
     assert route_complete == []

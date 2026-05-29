@@ -70,6 +70,9 @@ LATIN_RE = re.compile(r"[A-Za-z]")
 
 SAFE_CANDIDATE_FIELDS = {
     "event",
+    "config_source",
+    "config_sha256",
+    "route_bank_sha256",
     "format_signals",
     "timestamp",
     "ts",
@@ -89,6 +92,9 @@ SAFE_CANDIDATE_FIELDS = {
     "match_text_sha256",
     "match_score",
     "match_provenance",
+    "prompt_tokens",
+    "completion_tokens",
+    "total_tokens",
     "duration_ms",
     "upstream_status",
     "outcome",
@@ -294,6 +300,9 @@ def candidate_from_record(record: dict[str, Any]) -> dict[str, Any]:
     safe = {key: record.get(key) for key in SAFE_CANDIDATE_FIELDS if key in record}
     candidate = {
         "timestamp": safe.get("timestamp") or safe.get("ts"),
+        "config_source": safe.get("config_source"),
+        "config_sha256": safe.get("config_sha256"),
+        "route_bank_sha256": safe.get("route_bank_sha256"),
         "request_id": safe.get("request_id"),
         "route_id": safe.get("route_id"),
         "target_model": safe.get("target_model"),
@@ -310,6 +319,9 @@ def candidate_from_record(record: dict[str, Any]) -> dict[str, Any]:
         "match_text_sha256": safe.get("match_text_sha256"),
         "match_score": number_or_none(safe.get("match_score")),
         "match_provenance": safe.get("match_provenance"),
+        "prompt_tokens": number_or_none(safe.get("prompt_tokens")),
+        "completion_tokens": number_or_none(safe.get("completion_tokens")),
+        "total_tokens": number_or_none(safe.get("total_tokens")),
         "duration_ms": number_or_none(safe.get("duration_ms")),
         "upstream_status": safe.get("upstream_status"),
         "outcome": safe.get("outcome"),
@@ -401,6 +413,21 @@ def build_review_candidate_report(
         for key, value in candidate["format_signals"].items()
         if value is True
     )
+    config_sources = Counter(
+        candidate.get("config_source")
+        for candidate in candidates
+        if candidate.get("config_source")
+    )
+    config_sha256s = Counter(
+        candidate.get("config_sha256")
+        for candidate in candidates
+        if candidate.get("config_sha256")
+    )
+    route_bank_sha256s = Counter(
+        candidate.get("route_bank_sha256")
+        for candidate in candidates
+        if candidate.get("route_bank_sha256")
+    )
     prompt_value_tiers = Counter(
         prompt_review.get("prompt_value_tier")
         for candidate in candidates
@@ -443,6 +470,9 @@ def build_review_candidate_report(
             )
         ),
         "hard_rules": dict(sorted(hard_rules.items())),
+        "config_sources": dict(sorted(config_sources.items())),
+        "config_sha256s": dict(sorted(config_sha256s.items())),
+        "route_bank_sha256s": dict(sorted(route_bank_sha256s.items())),
         "log_paths": log_paths or [],
         "prompt_log_paths": prompt_log_paths or [],
     }
@@ -461,6 +491,9 @@ CLUSTER_FIELDS = (
     "route_id",
     "target_model",
     "reason",
+    "config_source",
+    "config_sha256",
+    "route_bank_sha256",
     "top_route_id",
     "second_route_id",
     "match_source",
@@ -563,12 +596,15 @@ def render_markdown(report: dict[str, Any]) -> str:
         f"- routes: {format_counts(summary.get('routes', {}))}",
         f"- targets: {format_counts(summary.get('targets', {}))}",
         f"- hard_rules: {format_counts(summary.get('hard_rules', {}))}",
+        f"- config_sources: {format_counts(summary.get('config_sources', {}))}",
+        f"- config_sha256s: {format_counts(summary.get('config_sha256s', {}))}",
+        f"- route_bank_sha256s: {format_counts(summary.get('route_bank_sha256s', {}))}",
         f"- candidate_clusters: {len(summary.get('candidate_clusters', []))}",
         "",
         "## Candidate Clusters",
         "",
-        "| count | route_id | target_model | reason | review_reasons | top_route | second_route | match_source | match_index | match_text_sha256 | max_duration_ms |",
-        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+        "| count | route_id | target_model | reason | config_source | config_sha256 | route_bank_sha256 | review_reasons | top_route | second_route | match_source | match_index | match_text_sha256 | max_duration_ms |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     for cluster in summary.get("candidate_clusters", []):
         lines.append(
@@ -579,6 +615,9 @@ def render_markdown(report: dict[str, Any]) -> str:
                     markdown_cell(cluster.get("route_id")),
                     markdown_cell(cluster.get("target_model")),
                     markdown_cell(cluster.get("reason")),
+                    markdown_cell(cluster.get("config_source")),
+                    markdown_cell(cluster.get("config_sha256")),
+                    markdown_cell(cluster.get("route_bank_sha256")),
                     markdown_cell(format_counts(cluster.get("review_reasons", {}))),
                     markdown_cell(cluster.get("top_route_id")),
                     markdown_cell(cluster.get("second_route_id")),
@@ -595,8 +634,8 @@ def render_markdown(report: dict[str, Any]) -> str:
             "",
             "## Candidates",
             "",
-            "| timestamp | request_id | route_id | target_model | reason | review_reasons | top_route | second_route | score | second_score | threshold | margin | match_source | match_index | match_text_sha256 | prompt_review | prompt_kind | prompt_value | prompt_origin | prompt_truncated | duration_ms | upstream_status |",
-            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+            "| timestamp | request_id | route_id | target_model | reason | config_source | config_sha256 | route_bank_sha256 | review_reasons | top_route | second_route | score | second_score | threshold | margin | match_source | match_index | match_text_sha256 | prompt_tokens | completion_tokens | total_tokens | prompt_review | prompt_kind | prompt_value | prompt_origin | prompt_truncated | duration_ms | upstream_status |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
         ]
     )
     for candidate in report.get("candidates", []):
@@ -621,6 +660,9 @@ def render_markdown(report: dict[str, Any]) -> str:
                     markdown_cell(candidate.get("route_id")),
                     markdown_cell(candidate.get("target_model")),
                     markdown_cell(candidate.get("reason")),
+                    markdown_cell(candidate.get("config_source")),
+                    markdown_cell(candidate.get("config_sha256")),
+                    markdown_cell(candidate.get("route_bank_sha256")),
                     markdown_cell(",".join(candidate.get("review_reasons", []))),
                     markdown_cell(candidate.get("top_route_id")),
                     markdown_cell(candidate.get("second_route_id")),
@@ -631,6 +673,9 @@ def render_markdown(report: dict[str, Any]) -> str:
                     markdown_cell(candidate.get("match_source")),
                     markdown_cell(candidate.get("match_index")),
                     markdown_cell(candidate.get("match_text_sha256")),
+                    markdown_cell(candidate.get("prompt_tokens")),
+                    markdown_cell(candidate.get("completion_tokens")),
+                    markdown_cell(candidate.get("total_tokens")),
                     markdown_cell(prompt_matched),
                     markdown_cell(prompt_kind),
                     markdown_cell(prompt_value),

@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from collections import Counter
 from dataclasses import asdict, dataclass
+from datetime import UTC, datetime, timedelta
 import json
 import math
 from pathlib import Path
@@ -50,6 +51,10 @@ class RouteLogSummary:
     not_ok: int
     upstream_statuses: dict[str, int]
     upstream_non_200: dict[str, int]
+    config_sources: dict[str, int]
+    config_sha256s: dict[str, int]
+    route_bank_sha256s: dict[str, int]
+    token_totals: dict[str, int]
     max_duration_ms: float
     duration_percentiles_ms: dict[str, float]
     slow_requests: list[SlowRequest]
@@ -85,6 +90,30 @@ def parse_route_records(
         yield record
 
 
+def filter_records_by_window(
+    records: Iterable[dict[str, Any]],
+    *,
+    window_minutes: float | None = None,
+    now: datetime | None = None,
+) -> list[dict[str, Any]]:
+    record_list = list(records)
+    if window_minutes is None:
+        return record_list
+    timestamped = [(record, timestamp_from_record(record)) for record in record_list]
+    timestamps = [timestamp for _, timestamp in timestamped if timestamp is not None]
+    if not timestamps:
+        return []
+    anchor = now or max(timestamps)
+    if anchor.tzinfo is None:
+        anchor = anchor.replace(tzinfo=UTC)
+    cutoff = anchor - timedelta(minutes=window_minutes)
+    return [
+        record
+        for record, timestamp in timestamped
+        if timestamp is not None and timestamp >= cutoff
+    ]
+
+
 def summarize_records(
     records: Iterable[dict[str, Any]],
     parse_diagnostics: ParseDiagnostics | None = None,
@@ -103,6 +132,10 @@ def summarize_records(
     not_ok = 0
     upstream_statuses: Counter[str] = Counter()
     upstream_non_200: Counter[str] = Counter()
+    config_sources: Counter[str] = Counter()
+    config_sha256s: Counter[str] = Counter()
+    route_bank_sha256s: Counter[str] = Counter()
+    token_totals: Counter[str] = Counter()
     max_duration_ms = 0.0
     duration_samples: list[float] = []
     slow_requests: list[SlowRequest] = []
@@ -152,6 +185,19 @@ def summarize_records(
             upstream_statuses[str(upstream_status)] += 1
             if not 200 <= upstream_status <= 299:
                 upstream_non_200[upstream_status_key(record, upstream_status)] += 1
+        config_source = record.get("config_source")
+        if isinstance(config_source, str):
+            config_sources[config_source] += 1
+        config_sha256 = record.get("config_sha256")
+        if isinstance(config_sha256, str):
+            config_sha256s[config_sha256] += 1
+        route_bank_sha256 = record.get("route_bank_sha256")
+        if isinstance(route_bank_sha256, str):
+            route_bank_sha256s[route_bank_sha256] += 1
+        for token_field in ("prompt_tokens", "completion_tokens", "total_tokens"):
+            token_count = record.get(token_field)
+            if isinstance(token_count, int):
+                token_totals[token_field] += token_count
 
     return RouteLogSummary(
         total=total,
@@ -167,6 +213,10 @@ def summarize_records(
         not_ok=not_ok,
         upstream_statuses=dict(upstream_statuses),
         upstream_non_200=dict(upstream_non_200),
+        config_sources=dict(config_sources),
+        config_sha256s=dict(config_sha256s),
+        route_bank_sha256s=dict(route_bank_sha256s),
+        token_totals=dict(token_totals),
         max_duration_ms=max_duration_ms,
         duration_percentiles_ms=duration_percentiles(duration_samples),
         slow_requests=sorted(
@@ -215,6 +265,22 @@ def slow_request_from_record(record: dict[str, Any], duration_ms: float) -> Slow
         upstream_headers_ms=number_or_none(record.get("upstream_headers_ms")),
         upstream_body_ms=number_or_none(record.get("upstream_body_ms")),
     )
+
+
+def timestamp_from_record(record: dict[str, Any]) -> datetime | None:
+    value = record.get("timestamp")
+    if not isinstance(value, str):
+        value = record.get("ts")
+    if not isinstance(value, str):
+        return None
+    normalized = value.replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed
 
 
 def string_or_none(value: Any) -> str | None:
@@ -278,6 +344,10 @@ def format_summary(summary: RouteLogSummary) -> str:
         f"not_ok={summary.not_ok}",
         f"upstream_statuses: {format_counts(summary.upstream_statuses)}",
         f"upstream_non_200: {format_counts(summary.upstream_non_200)}",
+        f"config_sources: {format_counts(summary.config_sources)}",
+        f"config_sha256s: {format_counts(summary.config_sha256s)}",
+        f"route_bank_sha256s: {format_counts(summary.route_bank_sha256s)}",
+        f"token_totals: {format_counts(summary.token_totals)}",
         f"max_duration_ms={summary.max_duration_ms:.2f}",
         f"duration_percentiles_ms: {format_float_counts(summary.duration_percentiles_ms)}",
     ]
@@ -317,6 +387,10 @@ def format_summary_json(summary: RouteLogSummary) -> str:
         "not_ok": summary.not_ok,
         "upstream_statuses": summary.upstream_statuses,
         "upstream_non_200": summary.upstream_non_200,
+        "config_sources": summary.config_sources,
+        "config_sha256s": summary.config_sha256s,
+        "route_bank_sha256s": summary.route_bank_sha256s,
+        "token_totals": summary.token_totals,
         "max_duration_ms": summary.max_duration_ms,
         "duration_percentiles_ms": summary.duration_percentiles_ms,
         "slow_requests": [asdict(sample) for sample in summary.slow_requests],
@@ -365,7 +439,9 @@ def format_slow_request(sample: SlowRequest) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Summarize IntentMux route logs.")
-    parser.add_argument("paths", nargs="*", help="JSONL log files. Reads stdin when omitted.")
+    parser.add_argument(
+        "paths", nargs="*", help="JSONL log files. Reads stdin when omitted."
+    )
     parser.add_argument(
         "--output",
         choices=("text", "json"),
@@ -383,10 +459,21 @@ def main() -> None:
         default=5,
         help="Number of slowest requests to print/include (default: 5). Use 0 to disable.",
     )
+    parser.add_argument(
+        "--window-minutes",
+        type=float,
+        help=(
+            "Only summarize records within N minutes of the latest timestamp in "
+            "the selected input. Records without timestamp/ts are ignored when set."
+        ),
+    )
     args = parser.parse_args()
 
     diagnostics = ParseDiagnostics()
-    records = parse_route_records(iter_lines(args.paths), diagnostics=diagnostics)
+    records = filter_records_by_window(
+        parse_route_records(iter_lines(args.paths), diagnostics=diagnostics),
+        window_minutes=args.window_minutes,
+    )
     summary = summarize_records(
         records,
         parse_diagnostics=diagnostics,

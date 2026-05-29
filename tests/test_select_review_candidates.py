@@ -159,7 +159,7 @@ def test_select_review_candidates_prioritizes_reviewable_metadata_only():
     encoded = json.dumps(candidates, ensure_ascii=False)
     assert "must not leak" not in encoded
     assert "Bearer secret" not in encoded
-    assert "prompt" not in encoded
+    assert '"prompt":' not in encoded
     assert "body" not in encoded
     assert "authorization" not in encoded
 
@@ -202,6 +202,9 @@ def test_build_review_candidate_report_counts_reasons_and_inputs():
         "routes": {"lite": 1},
         "targets": {"lite-upstream": 1},
         "hard_rules": {},
+        "config_sources": {},
+        "config_sha256s": {},
+        "route_bank_sha256s": {},
         "log_paths": ["routes.jsonl"],
         "prompt_log_paths": [],
         "candidate_clusters": [
@@ -209,6 +212,9 @@ def test_build_review_candidate_report_counts_reasons_and_inputs():
                 "route_id": "lite",
                 "target_model": "lite-upstream",
                 "reason": "low_confidence",
+                "config_source": None,
+                "config_sha256": None,
+                "route_bank_sha256": None,
                 "top_route_id": None,
                 "second_route_id": None,
                 "match_source": None,
@@ -461,6 +467,9 @@ def test_build_review_candidate_report_clusters_repeated_metadata_patterns():
             {
                 "event": "route_complete",
                 "request_id": "req-1",
+                "config_source": "ROUTER_CONFIG",
+                "config_sha256": "a" * 64,
+                "route_bank_sha256": "b" * 64,
                 "route_id": "lite",
                 "target_model": "lite-upstream",
                 "reason": "low_confidence",
@@ -476,6 +485,9 @@ def test_build_review_candidate_report_clusters_repeated_metadata_patterns():
             {
                 "event": "route_complete",
                 "request_id": "req-2",
+                "config_source": "ROUTER_CONFIG",
+                "config_sha256": "a" * 64,
+                "route_bank_sha256": "b" * 64,
                 "route_id": "lite",
                 "target_model": "lite-upstream",
                 "reason": "low_confidence",
@@ -491,6 +503,9 @@ def test_build_review_candidate_report_clusters_repeated_metadata_patterns():
             {
                 "event": "route_complete",
                 "request_id": "req-3",
+                "config_source": "ROUTER_CONFIG",
+                "config_sha256": "a" * 64,
+                "route_bank_sha256": "b" * 64,
                 "route_id": "deep",
                 "target_model": "deep-upstream",
                 "reason": "embedding",
@@ -506,11 +521,17 @@ def test_build_review_candidate_report_clusters_repeated_metadata_patterns():
         ],
     )
 
+    assert report["summary"]["config_sources"] == {"ROUTER_CONFIG": 2}
+    assert report["summary"]["config_sha256s"] == {"a" * 64: 2}
+    assert report["summary"]["route_bank_sha256s"] == {"b" * 64: 2}
     assert report["summary"]["candidate_clusters"] == [
         {
             "route_id": "lite",
             "target_model": "lite-upstream",
             "reason": "low_confidence",
+            "config_source": "ROUTER_CONFIG",
+            "config_sha256": "a" * 64,
+            "route_bank_sha256": "b" * 64,
             "top_route_id": "deep",
             "second_route_id": "lite",
             "match_source": "swebench_issue_resolution",

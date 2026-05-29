@@ -176,6 +176,70 @@ def test_route_record_always_includes_status_alias():
     assert "upstream_status" not in record
 
 
+def test_route_record_includes_only_safe_audit_metadata():
+    record = route_record(
+        event="route_complete",
+        request_id="req-1",
+        request_id_source="generated",
+        decision=RoutingDecision(
+            target_model="local-lite-model",
+            reason="test",
+            rewrite=True,
+            route_id="lite",
+            policy_id="test",
+        ),
+        stream=False,
+        started_ms=0.0,
+        ok=True,
+        outcome="success",
+        upstream_status=200,
+        audit_metadata={
+            "config_source": "ROUTER_CONFIG",
+            "config_sha256": "a" * 64,
+            "route_bank_sha256": "b" * 64,
+            "config_path": "/private/runtime/config/routes.yaml",
+        },
+    )
+
+    assert record["config_source"] == "ROUTER_CONFIG"
+    assert record["config_sha256"] == "a" * 64
+    assert record["route_bank_sha256"] == "b" * 64
+    assert "config_path" not in record
+
+
+def test_route_record_includes_safe_token_usage_metadata():
+    record = route_record(
+        event="route_complete",
+        request_id="req-1",
+        request_id_source="generated",
+        decision=RoutingDecision(
+            target_model="local-lite-model",
+            reason="test",
+            rewrite=True,
+            route_id="lite",
+            policy_id="test",
+        ),
+        stream=False,
+        started_ms=0.0,
+        ok=True,
+        outcome="success",
+        upstream_status=200,
+        usage={
+            "prompt_tokens": 10,
+            "completion_tokens": 20,
+            "total_tokens": 30,
+            "bad_tokens": -1,
+            "text": "must not leak",
+        },
+    )
+
+    assert record["prompt_tokens"] == 10
+    assert record["completion_tokens"] == 20
+    assert record["total_tokens"] == 30
+    assert "bad_tokens" not in record
+    assert "text" not in record
+
+
 def test_route_record_includes_match_provenance_only_when_available():
     without_match = route_record(
         event="route_complete",

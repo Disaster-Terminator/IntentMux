@@ -7,6 +7,7 @@ from pathlib import Path
 
 from scripts.router_log_summary import (
     ParseDiagnostics,
+    filter_records_by_window,
     format_summary,
     format_summary_json,
     iter_lines,
@@ -114,6 +115,34 @@ def test_parse_route_records_reports_trailing_malformed_json_after_last_route():
 
     assert len(records) == 1
     assert diagnostics.malformed_json_lines == 1
+
+
+def test_filter_records_by_window_uses_latest_record_timestamp_as_anchor():
+    records = [
+        {
+            "event": "route_complete",
+            "request_id": "old",
+            "ts": "2026-05-29T10:00:00Z",
+        },
+        {
+            "event": "route_complete",
+            "request_id": "recent",
+            "timestamp": "2026-05-29T10:09:00+00:00",
+        },
+        {
+            "event": "route_complete",
+            "request_id": "latest",
+            "ts": "2026-05-29T10:10:00Z",
+        },
+        {
+            "event": "route_complete",
+            "request_id": "missing-ts",
+        },
+    ]
+
+    filtered = filter_records_by_window(records, window_minutes=2)
+
+    assert [record["request_id"] for record in filtered] == ["recent", "latest"]
 
 
 def test_summarize_records_counts_routes_errors_and_latency():
@@ -277,6 +306,54 @@ def test_summarize_records_limits_slow_request_samples_and_preserves_context():
     ]
 
 
+def test_summarize_records_counts_config_and_route_bank_versions():
+    summary = summarize_records(
+        [
+            {
+                "event": "route_complete",
+                "config_source": "ROUTER_CONFIG",
+                "config_sha256": "a" * 64,
+                "route_bank_sha256": "b" * 64,
+            },
+            {
+                "event": "route_complete",
+                "config_source": "ROUTER_CONFIG",
+                "config_sha256": "a" * 64,
+                "route_bank_sha256": "c" * 64,
+            },
+        ]
+    )
+
+    assert summary.config_sources == {"ROUTER_CONFIG": 2}
+    assert summary.config_sha256s == {"a" * 64: 2}
+    assert summary.route_bank_sha256s == {"b" * 64: 1, "c" * 64: 1}
+
+
+def test_summarize_records_totals_safe_token_usage():
+    summary = summarize_records(
+        [
+            {
+                "event": "route_complete",
+                "prompt_tokens": 10,
+                "completion_tokens": 5,
+                "total_tokens": 15,
+            },
+            {
+                "event": "route_complete",
+                "prompt_tokens": 3,
+                "completion_tokens": 7,
+                "total_tokens": 10,
+            },
+        ]
+    )
+
+    assert summary.token_totals == {
+        "prompt_tokens": 13,
+        "completion_tokens": 12,
+        "total_tokens": 25,
+    }
+
+
 def test_format_summary_is_stable_for_runbooks():
     summary = summarize_records(
         [
@@ -304,6 +381,10 @@ def test_format_summary_is_stable_for_runbooks():
             "not_ok=1",
             "upstream_statuses: 503=1",
             "upstream_non_200: status=503 target=deep-upstream reason=embedding_error stream=true=1",
+            "config_sources: none",
+            "config_sha256s: none",
+            "route_bank_sha256s: none",
+            "token_totals: none",
             "max_duration_ms=1400.00",
             "duration_percentiles_ms: p50=1400.00, p90=1400.00, p95=1400.00, p99=1400.00",
             "slow_requests:",
@@ -353,6 +434,10 @@ def test_format_summary_json_is_deterministic_and_includes_diagnostics():
     payload = json.loads(format_summary_json(summary))
     assert payload == {
         "error_types": {"RemoteProtocolError": 1},
+        "config_sources": {},
+        "config_sha256s": {},
+        "route_bank_sha256s": {},
+        "token_totals": {},
         "ignored_records": {
             "malformed_json": 1,
             "missing_event": 0,
@@ -456,7 +541,15 @@ INFO:     127.0.0.1:53000 - \"POST /v1/chat/completions HTTP/1.1\" 200 OK
     payload = json.loads(completed.stdout)
     assert payload == {
         "error_types": {"RemoteProtocolError": 1},
-        "ignored_records": {"malformed_json": 1, "missing_event": 1, "unknown_event": 1},
+        "config_sources": {},
+        "config_sha256s": {},
+        "route_bank_sha256s": {},
+        "token_totals": {},
+        "ignored_records": {
+            "malformed_json": 1,
+            "missing_event": 1,
+            "unknown_event": 1,
+        },
         "max_duration_ms": 40.0,
         "duration_percentiles_ms": {
             "p50": 40.0,
@@ -508,10 +601,13 @@ INFO:     127.0.0.1:53000 - \"POST /v1/chat/completions HTTP/1.1\" 200 OK
         ],
     }
 
+
 def test_contract_fixture_summary_separates_routes_and_targets():
     fixture = Path("tests/samples/router_logs_contract.ndjson")
     diagnostics = ParseDiagnostics()
-    records = list(parse_route_records(fixture.read_text().splitlines(), diagnostics=diagnostics))
+    records = list(
+        parse_route_records(fixture.read_text().splitlines(), diagnostics=diagnostics)
+    )
 
     summary = summarize_records(records, parse_diagnostics=diagnostics)
 
@@ -519,7 +615,11 @@ def test_contract_fixture_summary_separates_routes_and_targets():
     assert summary.completed == 2
     assert summary.errors == 2
     assert summary.routes == {"chat.deep": 2}
-    assert summary.targets == {"base-router": 1, "legacy-router": 1, "your-deep-model": 2}
+    assert summary.targets == {
+        "base-router": 1,
+        "legacy-router": 1,
+        "your-deep-model": 2,
+    }
     assert summary.error_types == {"RemoteProtocolError": 1, "UpstreamStatusError": 1}
     assert summary.parse_diagnostics.malformed_json_lines == 1
     assert summary.parse_diagnostics.unknown_event_records == 1
@@ -548,6 +648,37 @@ def test_main_accepts_log_file_paths(tmp_path: Path):
     assert payload["total"] == 2
     assert payload["not_ok"] == 1
     assert payload["outcomes"] == {"success": 1, "upstream_non_200": 1}
+
+
+def test_main_window_minutes_filters_to_recent_records(tmp_path: Path):
+    log_path = tmp_path / "routes.jsonl"
+    log_path.write_text(
+        "\n".join(
+            [
+                '{"event":"route_complete","request_id":"old","route_id":"lite","ts":"2026-05-29T10:00:00Z"}',
+                '{"event":"route_complete","request_id":"new","route_id":"deep","ts":"2026-05-29T10:05:00Z"}',
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "scripts/router_log_summary.py",
+            str(log_path),
+            "--json",
+            "--window-minutes",
+            "1",
+        ],
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+
+    payload = json.loads(completed.stdout)
+    assert payload["total"] == 1
+    assert payload["routes"] == {"deep": 1}
 
 
 def test_contract_fixture_has_no_sensitive_payload_fields():

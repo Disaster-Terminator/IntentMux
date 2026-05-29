@@ -21,8 +21,15 @@ background context.
 
 The route audit log is metadata only. It may contain `request_id`, `route_id`,
 `target_model`, `reason`, scores, upstream status, and timing fields. It must
-not contain raw prompts, completions, request bodies, token usage, bearer
-credentials, provider keys, or LiteLLM secrets.
+not contain raw prompts, completions, request bodies, bearer credentials,
+provider keys, or LiteLLM secrets. Non-streaming OpenAI-compatible `usage`
+counts such as `prompt_tokens`, `completion_tokens`, and `total_tokens` may be
+recorded as numeric metadata; IntentMux does not calculate provider cost.
+
+Route audit records also include safe configuration provenance when available:
+`config_source`, `config_sha256`, and `route_bank_sha256`. These hashes let
+operators attribute traffic changes to a specific runtime config and semantic
+route bank without logging local paths or private config contents.
 
 For accepted embedding decisions, the route audit log and decision endpoint may
 also contain `match_source`, `match_index`, and `match_text_sha256`. These fields
@@ -73,6 +80,16 @@ audit logs
 ```
 
 ## Review Candidate Selection
+
+Use `scripts/router_log_summary.py --window-minutes N` for sliding-window
+metadata triage before deeper review. The window is anchored to the latest
+timestamp in the selected input, so archived log slices remain reproducible:
+
+```bash
+uv run python scripts/router_log_summary.py /data/logs/routes/*.jsonl \
+  --window-minutes 15 \
+  --json
+```
 
 Use `scripts/select_review_candidates.py` to select metadata-only records that
 deserve AI review and possible human audit:
@@ -129,11 +146,17 @@ signals:
     {
       "request_id": "req-...",
       "timestamp": "2026-05-13T00:00:00Z",
+      "config_source": "ROUTER_CONFIG",
+      "config_sha256": "...",
+      "route_bank_sha256": "...",
       "route_id": "lite",
       "target_model": "lite-upstream",
       "reason": "low_confidence",
       "score": 0.53,
       "second_score": 0.51,
+      "prompt_tokens": 1000,
+      "completion_tokens": 250,
+      "total_tokens": 1250,
       "duration_ms": 1234.5,
       "upstream_status": 200,
       "format_signals": {

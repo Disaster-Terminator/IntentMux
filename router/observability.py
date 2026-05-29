@@ -63,7 +63,9 @@ class PromptReviewLogger:
         self.max_chars = max_chars
         if self.enabled:
             if self.log_dir is None:
-                raise ValueError("prompt_log_dir is required when prompt logging is enabled")
+                raise ValueError(
+                    "prompt_log_dir is required when prompt logging is enabled"
+                )
             self.log_dir.mkdir(parents=True, exist_ok=True)
 
     def write(
@@ -106,7 +108,10 @@ class PromptReviewLogger:
 
 SECRET_PATTERNS = (
     re.compile(r"\bBearer\s+[A-Za-z0-9._~+/=-]{8,}", re.IGNORECASE),
-    re.compile(r"\b[A-Z0-9_]*(?:API[_-]?KEY|TOKEN|SECRET|PASSWORD)\s*[:=]\s*\S{8,}", re.IGNORECASE),
+    re.compile(
+        r"\b[A-Z0-9_]*(?:API[_-]?KEY|TOKEN|SECRET|PASSWORD)\s*[:=]\s*\S{8,}",
+        re.IGNORECASE,
+    ),
     re.compile(r"\bsk-[A-Za-z0-9_-]{8,}"),
     re.compile(r"\bsk-proj-[A-Za-z0-9_-]{8,}"),
     re.compile(r"\bAIza[A-Za-z0-9_-]{20,}"),
@@ -236,7 +241,9 @@ def request_identity_from_request(
         return RequestIdentity(trace_id, "traceparent")
     metadata_request_id = safe_request_id(metadata_request_id)
     if metadata_request_id:
-        return RequestIdentity(metadata_request_id, "metadata.semantic_router_request_id")
+        return RequestIdentity(
+            metadata_request_id, "metadata.semantic_router_request_id"
+        )
     return RequestIdentity(str(uuid.uuid4()), "generated")
 
 
@@ -306,6 +313,8 @@ def log_route_complete(
     started_ms: float,
     timings_ms: dict[str, float] | None = None,
     format_signals: dict[str, Any] | None = None,
+    audit_metadata: dict[str, Any] | None = None,
+    usage: dict[str, Any] | None = None,
     audit_logger: AuditLogger | None = None,
 ) -> None:
     ok = 200 <= upstream_status <= 299
@@ -321,6 +330,8 @@ def log_route_complete(
         upstream_status=upstream_status,
         timings_ms=timings_ms,
         format_signals=format_signals,
+        audit_metadata=audit_metadata,
+        usage=usage,
     )
     emit_route_record(logger, record, audit_logger)
 
@@ -337,6 +348,7 @@ def log_route_error(
     upstream_status: int | None = None,
     timings_ms: dict[str, float] | None = None,
     format_signals: dict[str, Any] | None = None,
+    audit_metadata: dict[str, Any] | None = None,
     audit_logger: AuditLogger | None = None,
 ) -> None:
     record = route_record(
@@ -355,6 +367,7 @@ def log_route_error(
         upstream_status=upstream_status,
         timings_ms=timings_ms,
         format_signals=format_signals,
+        audit_metadata=audit_metadata,
     )
     record.update(
         {
@@ -396,6 +409,8 @@ def route_record(
     upstream_status: int | None = None,
     timings_ms: dict[str, float] | None = None,
     format_signals: dict[str, Any] | None = None,
+    audit_metadata: dict[str, Any] | None = None,
+    usage: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     record: dict[str, Any] = {
         "duration_ms": round(now_ms() - started_ms, 2),
@@ -423,13 +438,45 @@ def route_record(
     add_embedding_diagnostics(record, decision)
     if format_signals:
         record["format_signals"] = format_signals
+    if audit_metadata:
+        record.update(safe_audit_metadata(audit_metadata))
+    if usage:
+        record.update(safe_usage_metadata(usage))
     if timings_ms:
         for name, duration_ms in timings_ms.items():
             record[name] = round(duration_ms, 2)
     return record
 
 
-def add_decision_explainability(record: dict[str, Any], decision: RoutingDecision) -> None:
+SAFE_AUDIT_METADATA_FIELDS = {
+    "config_source",
+    "config_sha256",
+    "route_bank_sha256",
+}
+
+
+def safe_audit_metadata(metadata: dict[str, Any]) -> dict[str, str]:
+    return {
+        key: value
+        for key in SAFE_AUDIT_METADATA_FIELDS
+        if isinstance((value := metadata.get(key)), str) and value
+    }
+
+
+USAGE_FIELDS = ("prompt_tokens", "completion_tokens", "total_tokens")
+
+
+def safe_usage_metadata(usage: dict[str, Any]) -> dict[str, int]:
+    return {
+        key: value
+        for key in USAGE_FIELDS
+        if isinstance((value := usage.get(key)), int) and value >= 0
+    }
+
+
+def add_decision_explainability(
+    record: dict[str, Any], decision: RoutingDecision
+) -> None:
     if decision.score_margin is not None:
         record["score_margin"] = decision.score_margin
     if decision.threshold is not None:
@@ -455,7 +502,9 @@ def add_match_provenance(record: dict[str, Any], decision: RoutingDecision) -> N
         record["match_provenance"] = decision.match_provenance
 
 
-def add_embedding_diagnostics(record: dict[str, Any], decision: RoutingDecision) -> None:
+def add_embedding_diagnostics(
+    record: dict[str, Any], decision: RoutingDecision
+) -> None:
     if decision.route_vector_source is not None:
         record["route_vector_source"] = decision.route_vector_source
     if decision.route_vector_load_ms is not None:
