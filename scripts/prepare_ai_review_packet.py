@@ -11,7 +11,10 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from scripts.select_review_candidates import expand_log_paths, load_prompt_review_records  # noqa: E402
+from scripts.select_review_candidates import (  # noqa: E402
+    expand_log_paths,
+    load_prompt_review_records,
+)
 
 SCHEMA_VERSION = "intentmux.ai_review_packet.v1"
 ALLOWED_PROMPT_TEXT_MODES = {"off", "raw_local"}
@@ -50,7 +53,9 @@ def group_candidate(candidate: dict[str, Any]) -> str:
 
     if "hard_rule" in review_reasons:
         return "needs_human_decision"
-    if review_reasons.intersection({"route_error", "upstream_non_2xx", "embedding_error"}):
+    if review_reasons.intersection(
+        {"route_error", "upstream_non_2xx", "embedding_error"}
+    ):
         return "needs_human_decision"
     if isinstance(reason, str) and reason.startswith("hard_rule:"):
         return "needs_human_decision"
@@ -62,9 +67,15 @@ def group_candidate(candidate: dict[str, Any]) -> str:
         and prompt_review.get("prompt_value_tier") == "high"
     ):
         return "manual_zh_high_value"
-    if isinstance(prompt_review, dict) and prompt_review.get("prompt_value_tier") == "ignore":
+    if (
+        isinstance(prompt_review, dict)
+        and prompt_review.get("prompt_value_tier") == "ignore"
+    ):
         return "watch_only"
-    if isinstance(prompt_review, dict) and prompt_review.get("prompt_kind") == "agent_generated":
+    if (
+        isinstance(prompt_review, dict)
+        and prompt_review.get("prompt_kind") == "agent_generated"
+    ):
         return "watch_only"
     if review_reasons.intersection({"low_confidence", "near_margin", "near_threshold"}):
         if isinstance(prompt_review, dict) and prompt_review.get("matched") is True:
@@ -97,7 +108,7 @@ def build_ai_review_packet(
         if include_prompt_text == "raw_local" and isinstance(request_id, str):
             text = prompt_texts.get(request_id)
             if text is not None:
-                prompt_excerpt = text[:max(max_prompt_chars, 0)]
+                prompt_excerpt = text[: max(max_prompt_chars, 0)]
 
         packet_candidates.append(
             {
@@ -122,15 +133,21 @@ def build_ai_review_packet(
                 "match_provenance": candidate.get("match_provenance"),
                 "duration_ms": candidate.get("duration_ms"),
                 "upstream_status": candidate.get("upstream_status"),
-                "format_signals": candidate.get("format_signals") if isinstance(candidate.get("format_signals"), dict) else {},
-                "prompt_review": candidate.get("prompt_review") if isinstance(candidate.get("prompt_review"), dict) else None,
+                "format_signals": candidate.get("format_signals")
+                if isinstance(candidate.get("format_signals"), dict)
+                else {},
+                "prompt_review": candidate.get("prompt_review")
+                if isinstance(candidate.get("prompt_review"), dict)
+                else None,
                 "prompt_excerpt": prompt_excerpt,
             }
         )
 
     return {
         "schema_version": SCHEMA_VERSION,
-        "privacy_mode": "raw_local" if include_prompt_text == "raw_local" else "metadata_only",
+        "privacy_mode": "raw_local"
+        if include_prompt_text == "raw_local"
+        else "metadata_only",
         "instructions": {
             "language": "zh-CN",
             "task": "Review IntentMux route candidates and summarize only actionable routing-quality findings.",
@@ -144,7 +161,12 @@ def build_ai_review_packet(
         "summary": {
             "candidate_count": len(packet_candidates),
             "groups": {group: group_counts[group] for group in GROUPS},
-            "source_candidate_count": candidate_report.get("summary", {}).get("candidate_count"),
+            "source_candidate_count": candidate_report.get("summary", {}).get(
+                "candidate_count"
+            ),
+            "candidate_clusters": candidate_report.get("summary", {}).get(
+                "candidate_clusters", []
+            ),
         },
         "candidates": packet_candidates,
     }
@@ -162,9 +184,40 @@ def render_markdown(packet: dict[str, Any]) -> str:
         f"- candidate_count: {summary.get('candidate_count', 0) if isinstance(summary, dict) else 0}",
         f"- groups: {format_counts(groups)}",
         "",
-        "## Reviewer Instructions",
+        "## Candidate Clusters",
         "",
+        "| count | route_id | target_model | reason | review_reasons | top_route | second_route | match_source | match_index | match_text_sha256 | max_duration_ms |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
+    for cluster in (
+        summary.get("candidate_clusters", []) if isinstance(summary, dict) else []
+    ):
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    markdown_cell(cluster.get("count")),
+                    markdown_cell(cluster.get("route_id")),
+                    markdown_cell(cluster.get("target_model")),
+                    markdown_cell(cluster.get("reason")),
+                    markdown_cell(format_counts(cluster.get("review_reasons", {}))),
+                    markdown_cell(cluster.get("top_route_id")),
+                    markdown_cell(cluster.get("second_route_id")),
+                    markdown_cell(cluster.get("match_source")),
+                    markdown_cell(cluster.get("match_index")),
+                    markdown_cell(cluster.get("match_text_sha256")),
+                    markdown_cell(cluster.get("max_duration_ms")),
+                ]
+            )
+            + " |"
+        )
+    lines.extend(
+        [
+            "",
+            "## Reviewer Instructions",
+            "",
+        ]
+    )
     instructions = packet.get("instructions", {})
     if isinstance(instructions, dict):
         lines.append(str(instructions.get("task", "")))
@@ -181,12 +234,20 @@ def render_markdown(packet: dict[str, Any]) -> str:
         ]
     )
     for candidate in packet.get("candidates", []):
-        prompt_review = candidate.get("prompt_review") if isinstance(candidate, dict) else None
+        prompt_review = (
+            candidate.get("prompt_review") if isinstance(candidate, dict) else None
+        )
         prompt_review_label = ""
         if isinstance(prompt_review, dict):
             matched = "matched" if prompt_review.get("matched") is True else "unmatched"
-            truncated = "truncated" if prompt_review.get("truncated") is True else "not_truncated"
-            prompt_review_label = f"{matched},{truncated},chars={prompt_review.get('text_chars', '')}"
+            truncated = (
+                "truncated"
+                if prompt_review.get("truncated") is True
+                else "not_truncated"
+            )
+            prompt_review_label = (
+                f"{matched},{truncated},chars={prompt_review.get('text_chars', '')}"
+            )
         lines.append(
             "| "
             + " | ".join(
@@ -236,10 +297,25 @@ def markdown_cell(value: Any) -> str:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Prepare a local-only IntentMux AI review packet.")
-    parser.add_argument("--input", required=True, help="JSON output from scripts/select_review_candidates.py")
-    parser.add_argument("--prompt-path", action="append", default=[], help="Optional prompt review JSONL path or glob.")
-    parser.add_argument("--include-prompt-text", choices=sorted(ALLOWED_PROMPT_TEXT_MODES), default="off")
+    parser = argparse.ArgumentParser(
+        description="Prepare a local-only IntentMux AI review packet."
+    )
+    parser.add_argument(
+        "--input",
+        required=True,
+        help="JSON output from scripts/select_review_candidates.py",
+    )
+    parser.add_argument(
+        "--prompt-path",
+        action="append",
+        default=[],
+        help="Optional prompt review JSONL path or glob.",
+    )
+    parser.add_argument(
+        "--include-prompt-text",
+        choices=sorted(ALLOWED_PROMPT_TEXT_MODES),
+        default="off",
+    )
     parser.add_argument("--max-prompt-chars", type=int, default=2000)
     parser.add_argument("--json-output", required=True)
     parser.add_argument("--markdown-output", required=True)
@@ -257,7 +333,9 @@ def main() -> None:
 
     json_output = Path(args.json_output)
     json_output.parent.mkdir(parents=True, exist_ok=True)
-    json_output.write_text(json.dumps(packet, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    json_output.write_text(
+        json.dumps(packet, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
 
     markdown_output = Path(args.markdown_output)
     markdown_output.parent.mkdir(parents=True, exist_ok=True)

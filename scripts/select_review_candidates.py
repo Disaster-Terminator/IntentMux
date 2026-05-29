@@ -119,7 +119,9 @@ def select_review_candidates(
             continue
         candidate = candidate_from_record(record)
         candidate["review_reasons"] = review_reasons
-        candidate["_priority"] = max(REVIEW_REASON_PRIORITY[reason] for reason in review_reasons)
+        candidate["_priority"] = max(
+            REVIEW_REASON_PRIORITY[reason] for reason in review_reasons
+        )
         candidate["_index"] = index
         candidates.append(candidate)
 
@@ -159,7 +161,9 @@ def prompt_review_index(
         }
         if classify_prompts:
             prompt_review.update(
-                classify_prompt_review_text(text, agent_prompt_hashes=agent_prompt_hashes),
+                classify_prompt_review_text(
+                    text, agent_prompt_hashes=agent_prompt_hashes
+                ),
             )
         indexed[request_id] = prompt_review
     return indexed
@@ -446,10 +450,52 @@ def build_review_candidate_report(
         summary["prompt_value_tiers"] = dict(sorted(prompt_value_tiers.items()))
     if prompt_origins:
         summary["prompt_origins"] = dict(sorted(prompt_origins.items()))
+    summary["candidate_clusters"] = candidate_clusters(candidates)
     return {
         "summary": summary,
         "candidates": candidates,
     }
+
+
+CLUSTER_FIELDS = (
+    "route_id",
+    "target_model",
+    "reason",
+    "top_route_id",
+    "second_route_id",
+    "match_source",
+    "match_index",
+    "match_text_sha256",
+)
+
+
+def candidate_clusters(
+    candidates: list[dict[str, Any]], *, limit: int = 10
+) -> list[dict[str, Any]]:
+    clusters: Counter[tuple[Any, ...]] = Counter()
+    review_reasons_by_key: dict[tuple[Any, ...], Counter[str]] = {}
+    durations_by_key: dict[tuple[Any, ...], list[float]] = {}
+    for candidate in candidates:
+        key = tuple(candidate.get(field) for field in CLUSTER_FIELDS)
+        clusters[key] += 1
+        review_reasons = review_reasons_by_key.setdefault(key, Counter())
+        review_reasons.update(candidate.get("review_reasons", []))
+        duration_ms = number_or_none(candidate.get("duration_ms"))
+        if duration_ms is not None:
+            durations_by_key.setdefault(key, []).append(duration_ms)
+
+    rows: list[dict[str, Any]] = []
+    for key, count in clusters.most_common(max(limit, 0)):
+        row = {field: value for field, value in zip(CLUSTER_FIELDS, key, strict=True)}
+        durations = durations_by_key.get(key, [])
+        row["count"] = count
+        row["review_reasons"] = dict(
+            sorted(review_reasons_by_key.get(key, Counter()).items())
+        )
+        if durations:
+            row["max_duration_ms"] = max(durations)
+        rows.append(row)
+    return rows
 
 
 def prompt_review_matches_filters(
@@ -468,7 +514,10 @@ def prompt_review_matches_filters(
         and prompt_review.get("prompt_language") != prompt_language_filter
     ):
         return False
-    if prompt_kind_filter is not None and prompt_review.get("prompt_kind") != prompt_kind_filter:
+    if (
+        prompt_kind_filter is not None
+        and prompt_review.get("prompt_kind") != prompt_kind_filter
+    ):
         return False
     if (
         prompt_origin_filter is not None
@@ -476,16 +525,24 @@ def prompt_review_matches_filters(
     ):
         return False
     text_chars = number_or_none(prompt_review.get("text_chars"))
-    if min_prompt_chars is not None and (text_chars is None or text_chars < min_prompt_chars):
+    if min_prompt_chars is not None and (
+        text_chars is None or text_chars < min_prompt_chars
+    ):
         return False
-    if max_prompt_chars is not None and (text_chars is None or text_chars > max_prompt_chars):
+    if max_prompt_chars is not None and (
+        text_chars is None or text_chars > max_prompt_chars
+    ):
         return False
     return True
 
 
 def prompt_value_sort_key(candidate: dict[str, Any]) -> tuple[int, float]:
     prompt_review = candidate.get("prompt_review")
-    tier = prompt_review.get("prompt_value_tier") if isinstance(prompt_review, dict) else None
+    tier = (
+        prompt_review.get("prompt_value_tier")
+        if isinstance(prompt_review, dict)
+        else None
+    )
     tier_rank = {"high": 0, "baseline": 1, "ignore": 2}.get(str(tier), 3)
     return (tier_rank, -float(candidate.get("duration_ms") or 0.0))
 
@@ -506,12 +563,42 @@ def render_markdown(report: dict[str, Any]) -> str:
         f"- routes: {format_counts(summary.get('routes', {}))}",
         f"- targets: {format_counts(summary.get('targets', {}))}",
         f"- hard_rules: {format_counts(summary.get('hard_rules', {}))}",
+        f"- candidate_clusters: {len(summary.get('candidate_clusters', []))}",
         "",
-        "## Candidates",
+        "## Candidate Clusters",
         "",
-        "| timestamp | request_id | route_id | target_model | reason | review_reasons | top_route | second_route | score | second_score | threshold | margin | match_source | match_index | match_text_sha256 | prompt_review | prompt_kind | prompt_value | prompt_origin | prompt_truncated | duration_ms | upstream_status |",
-        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+        "| count | route_id | target_model | reason | review_reasons | top_route | second_route | match_source | match_index | match_text_sha256 | max_duration_ms |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
+    for cluster in summary.get("candidate_clusters", []):
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    markdown_cell(cluster.get("count")),
+                    markdown_cell(cluster.get("route_id")),
+                    markdown_cell(cluster.get("target_model")),
+                    markdown_cell(cluster.get("reason")),
+                    markdown_cell(format_counts(cluster.get("review_reasons", {}))),
+                    markdown_cell(cluster.get("top_route_id")),
+                    markdown_cell(cluster.get("second_route_id")),
+                    markdown_cell(cluster.get("match_source")),
+                    markdown_cell(cluster.get("match_index")),
+                    markdown_cell(cluster.get("match_text_sha256")),
+                    markdown_cell(cluster.get("max_duration_ms")),
+                ]
+            )
+            + " |"
+        )
+    lines.extend(
+        [
+            "",
+            "## Candidates",
+            "",
+            "| timestamp | request_id | route_id | target_model | reason | review_reasons | top_route | second_route | score | second_score | threshold | margin | match_source | match_index | match_text_sha256 | prompt_review | prompt_kind | prompt_value | prompt_origin | prompt_truncated | duration_ms | upstream_status |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+        ]
+    )
     for candidate in report.get("candidates", []):
         prompt_review = candidate.get("prompt_review")
         prompt_matched = ""
@@ -638,7 +725,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Select metadata-only IntentMux route log records for human review.",
     )
-    parser.add_argument("paths", nargs="*", help="Route audit JSONL files or globs. Reads stdin when omitted.")
+    parser.add_argument(
+        "paths",
+        nargs="*",
+        help="Route audit JSONL files or globs. Reads stdin when omitted.",
+    )
     parser.add_argument(
         "--routes",
         default=str(REPO_ROOT / "config/routes.yaml"),
@@ -706,8 +797,12 @@ def main() -> None:
     prompt_log_paths = expand_log_paths(args.prompt_path)
     agent_prompt_paths = expand_log_paths(args.agent_prompt_path)
     records = list(parse_route_records(iter_lines(log_paths)))
-    prompt_records = load_prompt_review_records(prompt_log_paths) if prompt_log_paths else None
-    agent_prompt_hashes = load_agent_prompt_hashes(agent_prompt_paths) if agent_prompt_paths else None
+    prompt_records = (
+        load_prompt_review_records(prompt_log_paths) if prompt_log_paths else None
+    )
+    agent_prompt_hashes = (
+        load_agent_prompt_hashes(agent_prompt_paths) if agent_prompt_paths else None
+    )
     report = build_review_candidate_report(
         records,
         prompt_records=prompt_records,
@@ -731,7 +826,9 @@ def main() -> None:
     if args.json_output:
         json_path = Path(args.json_output)
         json_path.parent.mkdir(parents=True, exist_ok=True)
-        json_path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        json_path.write_text(
+            json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        )
     if args.markdown_output:
         markdown_path = Path(args.markdown_output)
         markdown_path.parent.mkdir(parents=True, exist_ok=True)

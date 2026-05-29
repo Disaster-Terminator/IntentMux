@@ -204,6 +204,21 @@ def test_build_review_candidate_report_counts_reasons_and_inputs():
         "hard_rules": {},
         "log_paths": ["routes.jsonl"],
         "prompt_log_paths": [],
+        "candidate_clusters": [
+            {
+                "route_id": "lite",
+                "target_model": "lite-upstream",
+                "reason": "low_confidence",
+                "top_route_id": None,
+                "second_route_id": None,
+                "match_source": None,
+                "match_index": None,
+                "match_text_sha256": None,
+                "count": 1,
+                "review_reasons": {"low_confidence": 1},
+                "max_duration_ms": 100.0,
+            }
+        ],
     }
     assert report["candidates"][0]["request_id"] == "req-low"
     assert report["candidates"][0]["format_signals"] == {
@@ -267,7 +282,9 @@ def test_build_review_candidate_report_joins_prompt_reviews_without_inferring_so
 
 
 def test_classify_prompt_review_text_separates_manual_zh_from_agent_noise():
-    assert classify_prompt_review_text("今天这个路由为什么把中文 debug 请求走 lite") == {
+    assert classify_prompt_review_text(
+        "今天这个路由为什么把中文 debug 请求走 lite"
+    ) == {
         "prompt_language": "zh-CN",
         "prompt_kind": "manual_zh",
         "prompt_value_tier": "high",
@@ -282,14 +299,16 @@ def test_classify_prompt_review_text_separates_manual_zh_from_agent_noise():
         "prompt_origin": "agent_prompt_pattern",
     }
     assert classify_prompt_review_text(
-        "[IMPORTANT: The user has invoked the \"wsl-runtime-update-watch\" skill]"
+        '[IMPORTANT: The user has invoked the "wsl-runtime-update-watch" skill]'
     ) == {
         "prompt_language": "en",
         "prompt_kind": "system_boilerplate",
         "prompt_value_tier": "ignore",
         "prompt_origin": "system_boilerplate",
     }
-    assert classify_prompt_review_text("Retinue 并发验证这个判断，至少两个子代理认可后再采信") == {
+    assert classify_prompt_review_text(
+        "Retinue 并发验证这个判断，至少两个子代理认可后再采信"
+    ) == {
         "prompt_language": "zh-CN",
         "prompt_kind": "manual_zh",
         "prompt_value_tier": "high",
@@ -309,7 +328,9 @@ def test_classify_prompt_review_text_uses_exact_retinue_prompt_hash_before_langu
     retinue_prompt = "Retinue 并发验证这个判断，至少两个子代理认可后再采信"
     prompt_hash = hashlib.sha256(retinue_prompt.encode("utf-8")).hexdigest()
 
-    assert classify_prompt_review_text(retinue_prompt, agent_prompt_hashes={prompt_hash}) == {
+    assert classify_prompt_review_text(
+        retinue_prompt, agent_prompt_hashes={prompt_hash}
+    ) == {
         "prompt_language": "zh-CN",
         "prompt_kind": "agent_generated",
         "prompt_value_tier": "baseline",
@@ -434,6 +455,74 @@ def test_build_review_candidate_report_counts_hard_rule_keywords():
     assert report["summary"]["hard_rules"] == {"安全": 1, "token": 1}
 
 
+def test_build_review_candidate_report_clusters_repeated_metadata_patterns():
+    report = build_review_candidate_report(
+        [
+            {
+                "event": "route_complete",
+                "request_id": "req-1",
+                "route_id": "lite",
+                "target_model": "lite-upstream",
+                "reason": "low_confidence",
+                "top_route_id": "deep",
+                "second_route_id": "lite",
+                "match_source": "swebench_issue_resolution",
+                "match_index": 970,
+                "match_text_sha256": "abc123",
+                "score": 0.66,
+                "second_score": 0.63,
+                "duration_ms": 100,
+            },
+            {
+                "event": "route_complete",
+                "request_id": "req-2",
+                "route_id": "lite",
+                "target_model": "lite-upstream",
+                "reason": "low_confidence",
+                "top_route_id": "deep",
+                "second_route_id": "lite",
+                "match_source": "swebench_issue_resolution",
+                "match_index": 970,
+                "match_text_sha256": "abc123",
+                "score": 0.67,
+                "second_score": 0.64,
+                "duration_ms": 250,
+            },
+            {
+                "event": "route_complete",
+                "request_id": "req-3",
+                "route_id": "deep",
+                "target_model": "deep-upstream",
+                "reason": "embedding",
+                "top_route_id": "deep",
+                "second_route_id": "lite",
+                "match_source": "other_source",
+                "match_index": 1,
+                "match_text_sha256": "def456",
+                "score": 0.9,
+                "second_score": 0.1,
+                "duration_ms": 50,
+            },
+        ],
+    )
+
+    assert report["summary"]["candidate_clusters"] == [
+        {
+            "route_id": "lite",
+            "target_model": "lite-upstream",
+            "reason": "low_confidence",
+            "top_route_id": "deep",
+            "second_route_id": "lite",
+            "match_source": "swebench_issue_resolution",
+            "match_index": 970,
+            "match_text_sha256": "abc123",
+            "count": 2,
+            "review_reasons": {"low_confidence": 2, "near_margin": 2},
+            "max_duration_ms": 250.0,
+        }
+    ]
+
+
 def test_load_route_thresholds_reads_routes_config(tmp_path: Path):
     routes_path = tmp_path / "routes.yaml"
     routes_path.write_text(
@@ -534,7 +623,9 @@ def test_main_writes_json_and_markdown(tmp_path: Path):
 
     payload = json.loads(json_path.read_text(encoding="utf-8"))
     assert payload["summary"]["candidate_count"] == 1
-    assert md_path.read_text(encoding="utf-8").startswith("# IntentMux Review Candidates")
+    assert md_path.read_text(encoding="utf-8").startswith(
+        "# IntentMux Review Candidates"
+    )
 
 
 def test_main_uses_default_routes_threshold(tmp_path: Path):

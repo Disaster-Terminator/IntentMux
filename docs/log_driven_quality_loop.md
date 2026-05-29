@@ -95,6 +95,12 @@ The script selects records for signals such as:
 - score margins close to the configured margin;
 - slow requests above the configured duration threshold.
 
+The report also includes `candidate_clusters`, grouped by safe route metadata
+such as route, reason, top/second route, `match_source`, `match_index`, and
+`match_text_sha256`. Start triage from these clusters before reading individual
+candidate rows: a repeated cluster is stronger evidence than a one-off near
+threshold request, and it keeps review focused without exposing prompt text.
+
 When prompt review logs are passed with `--prompt-path`, the script joins them
 by `request_id` and only reports whether a candidate has matching local review
 evidence, whether that evidence was truncated, and the prompt character count.
@@ -105,27 +111,45 @@ signals:
 
 ```json
 {
-  "request_id": "req-...",
-  "timestamp": "2026-05-13T00:00:00Z",
-  "route_id": "lite",
-  "target_model": "lite-upstream",
-  "reason": "low_confidence",
-  "score": 0.53,
-  "second_score": 0.51,
-  "duration_ms": 1234.5,
-  "upstream_status": 200,
-  "format_signals": {
-    "tools_present": true,
-    "tool_history": false,
-    "message_count": 8,
-    "approx_input_chars": 12000
+  "summary": {
+    "candidate_clusters": [
+      {
+        "count": 12,
+        "route_id": "lite",
+        "reason": "low_confidence",
+        "top_route_id": "deep",
+        "second_route_id": "lite",
+        "match_source": "swebench_issue_resolution",
+        "match_index": 970,
+        "match_text_sha256": "..."
+      }
+    ]
   },
-  "prompt_review": {
-    "matched": true,
-    "truncated": false,
-    "text_chars": 12000
-  },
-  "review_reasons": ["low_confidence", "near_margin"]
+  "candidates": [
+    {
+      "request_id": "req-...",
+      "timestamp": "2026-05-13T00:00:00Z",
+      "route_id": "lite",
+      "target_model": "lite-upstream",
+      "reason": "low_confidence",
+      "score": 0.53,
+      "second_score": 0.51,
+      "duration_ms": 1234.5,
+      "upstream_status": 200,
+      "format_signals": {
+        "tools_present": true,
+        "tool_history": false,
+        "message_count": 8,
+        "approx_input_chars": 12000
+      },
+      "prompt_review": {
+        "matched": true,
+        "truncated": false,
+        "text_chars": 12000
+      },
+      "review_reasons": ["low_confidence", "near_margin"]
+    }
+  ]
 }
 ```
 

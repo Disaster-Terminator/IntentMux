@@ -8,7 +8,24 @@ from scripts.prepare_ai_review_packet import build_ai_review_packet
 
 def test_build_ai_review_packet_groups_candidates_without_prompt_text():
     candidate_report = {
-        "summary": {"candidate_count": 4},
+        "summary": {
+            "candidate_count": 4,
+            "candidate_clusters": [
+                {
+                    "route_id": "lite",
+                    "target_model": "cheap",
+                    "reason": "low_confidence",
+                    "top_route_id": "deep",
+                    "second_route_id": "lite",
+                    "match_source": "swebench_dev_eval",
+                    "match_index": 12,
+                    "match_text_sha256": "abc123",
+                    "count": 2,
+                    "review_reasons": {"low_confidence": 2, "near_margin": 1},
+                    "max_duration_ms": 250.0,
+                }
+            ],
+        },
         "candidates": [
             {
                 "request_id": "hard",
@@ -16,7 +33,11 @@ def test_build_ai_review_packet_groups_candidates_without_prompt_text():
                 "target_model": "pro",
                 "reason": "hard_rule:token",
                 "review_reasons": ["hard_rule"],
-                "prompt_review": {"matched": True, "truncated": False, "text_chars": 20},
+                "prompt_review": {
+                    "matched": True,
+                    "truncated": False,
+                    "text_chars": 20,
+                },
             },
             {
                 "request_id": "low",
@@ -36,7 +57,11 @@ def test_build_ai_review_packet_groups_candidates_without_prompt_text():
                 "match_text_sha256": "abc123",
                 "match_score": 0.51,
                 "match_provenance": "aurelio_hybrid_exact",
-                "prompt_review": {"matched": True, "truncated": False, "text_chars": 30},
+                "prompt_review": {
+                    "matched": True,
+                    "truncated": False,
+                    "text_chars": 30,
+                },
             },
             {
                 "request_id": "watch",
@@ -51,7 +76,11 @@ def test_build_ai_review_packet_groups_candidates_without_prompt_text():
                 "target_model": "cheap",
                 "reason": "low_confidence",
                 "review_reasons": ["low_confidence"],
-                "prompt_review": {"matched": True, "truncated": True, "text_chars": 20000},
+                "prompt_review": {
+                    "matched": True,
+                    "truncated": True,
+                    "text_chars": 20000,
+                },
             },
         ],
     }
@@ -67,6 +96,10 @@ def test_build_ai_review_packet_groups_candidates_without_prompt_text():
         "privacy_blocked": 1,
         "watch_only": 1,
     }
+    assert (
+        packet["summary"]["candidate_clusters"]
+        == candidate_report["summary"]["candidate_clusters"]
+    )
     assert [item["group"] for item in packet["candidates"]] == [
         "needs_human_decision",
         "likely_regression_case",
@@ -98,7 +131,11 @@ def test_build_ai_review_packet_includes_excerpt_only_when_raw_local_enabled():
                 "target_model": "cheap",
                 "reason": "low_confidence",
                 "review_reasons": ["low_confidence"],
-                "prompt_review": {"matched": True, "truncated": False, "text_chars": 12},
+                "prompt_review": {
+                    "matched": True,
+                    "truncated": False,
+                    "text_chars": 12,
+                },
             }
         ],
     }
@@ -110,7 +147,9 @@ def test_build_ai_review_packet_includes_excerpt_only_when_raw_local_enabled():
         }
     ]
 
-    metadata_only = build_ai_review_packet(candidate_report, prompt_records=prompt_records)
+    metadata_only = build_ai_review_packet(
+        candidate_report, prompt_records=prompt_records
+    )
     raw_local = build_ai_review_packet(
         candidate_report,
         prompt_records=prompt_records,
@@ -224,8 +263,13 @@ def test_prepare_ai_review_packet_cli_writes_json_and_markdown(tmp_path, monkeyp
 
     prepare_ai_review_packet.main()
 
-    assert json.loads(json_output.read_text(encoding="utf-8"))["schema_version"] == "intentmux.ai_review_packet.v1"
-    assert "AI Review Packet" in md_output.read_text(encoding="utf-8")
+    assert (
+        json.loads(json_output.read_text(encoding="utf-8"))["schema_version"]
+        == "intentmux.ai_review_packet.v1"
+    )
+    markdown = md_output.read_text(encoding="utf-8")
+    assert "AI Review Packet" in markdown
+    assert "Candidate Clusters" in markdown
 
 
 def test_prepare_ai_review_packet_script_entrypoint_bootstraps_repo_imports(tmp_path):
@@ -266,5 +310,8 @@ def test_prepare_ai_review_packet_script_entrypoint_bootstraps_repo_imports(tmp_
         capture_output=True,
     )
 
-    assert json.loads(json_output.read_text(encoding="utf-8"))["schema_version"] == "intentmux.ai_review_packet.v1"
+    assert (
+        json.loads(json_output.read_text(encoding="utf-8"))["schema_version"]
+        == "intentmux.ai_review_packet.v1"
+    )
     assert "AI Review Packet" in md_output.read_text(encoding="utf-8")
