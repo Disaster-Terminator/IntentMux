@@ -15,6 +15,22 @@ if str(REPO_ROOT) not in sys.path:
 from scripts.check_cloud_runtime import CheckResult, check_cloud_runtime, resolve_route_bank_path  # noqa: E402
 
 
+SECRET_CONFIG_KEY_SUFFIXES = (
+    "_api_key",
+    "_token",
+    "_secret",
+    "_password",
+)
+SECRET_CONFIG_KEYS = {
+    "api_key",
+    "authorization",
+    "bearer_token",
+    "password",
+    "secret",
+    "token",
+}
+
+
 def build_cloud_runtime(
     source_runtime: Path,
     output_runtime: Path,
@@ -42,7 +58,7 @@ def build_cloud_runtime(
 
     prepare_output_dir(output_runtime, force=force)
 
-    output_config = dict(raw_config)
+    output_config = sanitized_cloud_config(raw_config)
     if litellm_base_url is not None:
         output_config["litellm_base_url"] = litellm_base_url
     if embedding_url is not None:
@@ -68,6 +84,19 @@ def build_cloud_runtime(
         (output_runtime / "cache").mkdir(parents=True)
         shutil.copy2(route_cache_path, output_runtime / "cache" / "route-embeddings.json")
     return check_cloud_runtime(output_runtime, require_route_cache=include_route_cache)
+
+
+def sanitized_cloud_config(raw_config: dict) -> dict:
+    return {
+        key: value
+        for key, value in raw_config.items()
+        if isinstance(key, str) and not is_secret_config_key(key)
+    }
+
+
+def is_secret_config_key(key: str) -> bool:
+    normalized = key.lower().replace("-", "_")
+    return normalized in SECRET_CONFIG_KEYS or normalized.endswith(SECRET_CONFIG_KEY_SUFFIXES)
 
 
 def prepare_output_dir(output_runtime: Path, *, force: bool) -> None:

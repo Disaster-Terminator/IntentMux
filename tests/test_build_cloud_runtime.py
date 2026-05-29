@@ -27,6 +27,10 @@ route_bank_path: ../semantic_sets/route_bank.yaml
 embedding_url: http://127.0.0.1:1234/v1/embeddings
 embedding_model: text-embedding-jina-embeddings-v5-text-small-retrieval@q8_0
 litellm_base_url: http://127.0.0.1:4000
+embedding_api_key: sk-source-runtime-secret
+litellm_api_key: litellm-source-runtime-secret
+custom_token: source-runtime-token
+admin_password: source-runtime-password
 listen_host: 127.0.0.1
 listen_port: 4001
 routes:
@@ -131,6 +135,10 @@ def test_build_cloud_runtime_copies_only_reviewed_assets_and_passes_gate(tmp_pat
     assert config["embedding_url"] == "https://embedding.internal/v1/embeddings"
     assert config["listen_host"] == "0.0.0.0"
     assert config["route_bank_path"] == "../semantic_sets/route_bank.yaml"
+    assert "embedding_api_key" not in config
+    assert "litellm_api_key" not in config
+    assert "custom_token" not in config
+    assert "admin_password" not in config
     assert config["routes"]["lite"]["target_model"] == "lite"
     assert config["routes"]["deep"]["target_model"] == "deep"
     assert not (output / "logs").exists()
