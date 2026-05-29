@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import subprocess
+
 from scripts.e2e_litellm_entry import (
     CheckResult,
     Probe,
@@ -479,6 +481,30 @@ def test_collect_logs_requires_azure_details():
             azure_resource_group="rg",
             tail=1,
         )
+
+
+def test_azure_containerapp_logs_retries_transient_failures(monkeypatch):
+    from scripts import e2e_litellm_entry as script
+
+    calls: list[int] = []
+
+    def fake_run(*args, **kwargs):
+        calls.append(1)
+        if len(calls) == 1:
+            raise subprocess.CalledProcessError(
+                1,
+                args[0],
+                output="ConnectTimeoutError: Connection to management.azure.com timed out",
+            )
+        return subprocess.CompletedProcess(args[0], 0, stdout='{"event":"route_complete"}\n')
+
+    monkeypatch.setattr(script.subprocess, "run", fake_run)
+    monkeypatch.setattr(script.time, "sleep", lambda seconds: None)
+
+    output = script.azure_containerapp_logs("imux", "rg", 10)
+
+    assert output.startswith('{"event"')
+    assert len(calls) == 2
 
 
 def test_run_e2e_uses_provider_router_request_id_for_strict_log_match(monkeypatch):

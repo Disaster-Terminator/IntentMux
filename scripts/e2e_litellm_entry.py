@@ -401,26 +401,81 @@ def docker_logs(container: str, tail: int) -> str:
     return completed.stdout
 
 
+RETRYABLE_AZURE_LOG_PATTERNS = (
+    "connecttimeouterror",
+    "connection to management.azure.com timed out",
+    "max retries exceeded",
+    "read timed out",
+    "serviceunavailable",
+    "gateway timeout",
+    "temporarily unavailable",
+    "too many requests",
+    "http 429",
+    "http 5",
+)
+NON_RETRYABLE_AZURE_LOG_PATTERNS = (
+    "authorizationfailed",
+    "forbidden",
+    "invalidauthenticationtoken",
+    "please run 'az login'",
+    "resource not found",
+    "resourcenotfound",
+)
+
+
+def azure_log_error_output(exc: BaseException) -> str:
+    if isinstance(exc, subprocess.CalledProcessError):
+        return str(exc.output or "")
+    if isinstance(exc, subprocess.TimeoutExpired):
+        output = exc.output or exc.stderr or ""
+        if isinstance(output, bytes):
+            return output.decode("utf-8", errors="replace")
+        return str(output)
+    return str(exc)
+
+
+def retryable_azure_log_error(exc: BaseException) -> bool:
+    if isinstance(exc, subprocess.TimeoutExpired):
+        return True
+    text = azure_log_error_output(exc).lower()
+    if any(pattern in text for pattern in NON_RETRYABLE_AZURE_LOG_PATTERNS):
+        return False
+    return any(pattern in text for pattern in RETRYABLE_AZURE_LOG_PATTERNS)
+
+
 def azure_containerapp_logs(name: str, resource_group: str, tail: int) -> str:
-    completed = subprocess.run(
-        [
-            "az",
-            "containerapp",
-            "logs",
-            "show",
-            "--name",
-            name,
-            "--resource-group",
-            resource_group,
-            "--tail",
-            str(tail),
-        ],
-        check=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-    )
-    return completed.stdout
+    command = [
+        "az",
+        "containerapp",
+        "logs",
+        "show",
+        "--name",
+        name,
+        "--resource-group",
+        resource_group,
+        "--tail",
+        str(tail),
+    ]
+    attempts = 3
+    last_exc: BaseException | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            completed = subprocess.run(
+                command,
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                errors="replace",
+            )
+            return completed.stdout
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+            last_exc = exc
+            if attempt >= attempts or not retryable_azure_log_error(exc):
+                break
+            time.sleep(2.0 * (2 ** (attempt - 1)))
+    assert last_exc is not None
+    raise last_exc
 
 
 def collect_logs(
