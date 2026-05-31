@@ -7,6 +7,7 @@ from pathlib import Path
 
 from scripts.router_log_summary import (
     ParseDiagnostics,
+    deduplicate_records,
     filter_records_by_window,
     format_summary,
     format_summary_json,
@@ -143,6 +144,42 @@ def test_filter_records_by_window_uses_latest_record_timestamp_as_anchor():
     filtered = filter_records_by_window(records, window_minutes=2)
 
     assert [record["request_id"] for record in filtered] == ["recent", "latest"]
+
+
+def test_deduplicate_records_by_request_id_keeps_latest_snapshot_record():
+    records = [
+        {
+            "event": "route_complete",
+            "request_id": "same",
+            "ts": "2026-05-29T10:00:00Z",
+            "duration_ms": 100,
+        },
+        {
+            "event": "route_complete",
+            "request_id": "unique",
+            "ts": "2026-05-29T10:01:00Z",
+            "duration_ms": 200,
+        },
+        {
+            "event": "route_complete",
+            "request_id": "same",
+            "ts": "2026-05-29T10:02:00Z",
+            "duration_ms": 300,
+        },
+        {
+            "event": "route_complete",
+            "duration_ms": 400,
+        },
+    ]
+
+    deduped = deduplicate_records(records, key="request_id")
+
+    assert [record.get("request_id") for record in deduped] == [
+        "unique",
+        "same",
+        None,
+    ]
+    assert [record["duration_ms"] for record in deduped] == [200, 300, 400]
 
 
 def test_summarize_records_counts_routes_errors_and_latency():
@@ -518,6 +555,34 @@ def test_main_json_output_parses_mixed_stream_and_ignores_access_logs():
         "missing_event": 0,
         "unknown_event": 1,
     }
+
+
+def test_main_can_deduplicate_snapshot_audit_files_by_request_id():
+    logs = "\n".join(
+        [
+            '{"event":"route_complete","request_id":"same","ts":"2026-05-29T10:00:00Z","duration_ms":100}',
+            '{"event":"route_complete","request_id":"same","ts":"2026-05-29T10:01:00Z","duration_ms":200}',
+        ]
+    )
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "scripts/router_log_summary.py",
+            "--output",
+            "json",
+            "--dedupe-request-id",
+        ],
+        input=logs,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+
+    payload = json.loads(completed.stdout)
+    assert payload["total"] == 1
+    assert payload["max_duration_ms"] == 200.0
+    assert payload["slow_requests"][0]["duration_ms"] == 200.0
 
 
 def test_main_short_json_flag_outputs_machine_readable_json():

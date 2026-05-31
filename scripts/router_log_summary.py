@@ -114,6 +114,56 @@ def filter_records_by_window(
     ]
 
 
+def deduplicate_records(
+    records: Iterable[dict[str, Any]],
+    *,
+    key: str,
+) -> list[dict[str, Any]]:
+    keyed: dict[str, tuple[int, datetime | None, dict[str, Any]]] = {}
+    unkeyed: list[tuple[int, datetime | None, dict[str, Any]]] = []
+    for index, record in enumerate(records):
+        timestamp = timestamp_from_record(record)
+        value = record.get(key)
+        if not isinstance(value, str) or not value:
+            unkeyed.append((index, timestamp, record))
+            continue
+        current = keyed.get(value)
+        if current is None or should_replace_duplicate(
+            current_index=current[0],
+            current_timestamp=current[1],
+            candidate_index=index,
+            candidate_timestamp=timestamp,
+        ):
+            keyed[value] = (index, timestamp, record)
+
+    rows = [*keyed.values(), *unkeyed]
+    rows.sort(key=deduped_sort_key)
+    return [record for _, _, record in rows]
+
+
+def should_replace_duplicate(
+    *,
+    current_index: int,
+    current_timestamp: datetime | None,
+    candidate_index: int,
+    candidate_timestamp: datetime | None,
+) -> bool:
+    if current_timestamp is None and candidate_timestamp is None:
+        return candidate_index > current_index
+    if current_timestamp is None:
+        return True
+    if candidate_timestamp is None:
+        return False
+    return candidate_timestamp >= current_timestamp
+
+
+def deduped_sort_key(row: tuple[int, datetime | None, dict[str, Any]]) -> tuple[int, datetime, int]:
+    index, timestamp, _ = row
+    if timestamp is None:
+        return (1, datetime.max.replace(tzinfo=UTC), index)
+    return (0, timestamp, index)
+
+
 def summarize_records(
     records: Iterable[dict[str, Any]],
     parse_diagnostics: ParseDiagnostics | None = None,
@@ -467,6 +517,15 @@ def main() -> None:
             "the selected input. Records without timestamp/ts are ignored when set."
         ),
     )
+    parser.add_argument(
+        "--dedupe-request-id",
+        action="store_true",
+        help=(
+            "Deduplicate records by request_id before summarizing. This is useful "
+            "when summarizing multiple snapshot-style audit files that may contain "
+            "the same route record."
+        ),
+    )
     args = parser.parse_args()
 
     diagnostics = ParseDiagnostics()
@@ -474,6 +533,8 @@ def main() -> None:
         parse_route_records(iter_lines(args.paths), diagnostics=diagnostics),
         window_minutes=args.window_minutes,
     )
+    if args.dedupe_request_id:
+        records = deduplicate_records(records, key="request_id")
     summary = summarize_records(
         records,
         parse_diagnostics=diagnostics,
