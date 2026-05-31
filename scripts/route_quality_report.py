@@ -103,6 +103,8 @@ def build_quality_report_from_eval_json(
     route_summary: dict[str, Any] | None,
     route_bank_path: str,
     margin: float | None = None,
+    false_lite_weight: float = 10.0,
+    false_deep_weight: float = 1.0,
 ) -> dict[str, Any]:
     cases = [case for case in eval_json.get("cases", []) if isinstance(case, dict)]
     total = len(cases)
@@ -137,6 +139,11 @@ def build_quality_report_from_eval_json(
         "reasons": dict(reasons),
         "failures": failures,
     }
+    cost = cost_metrics(
+        cases,
+        false_lite_weight=false_lite_weight,
+        false_deep_weight=false_deep_weight,
+    )
     return {
         "route_bank_path": route_bank_path,
         "eval": eval_section,
@@ -147,6 +154,7 @@ def build_quality_report_from_eval_json(
         ),
         "slice_metrics": slice_metrics(cases),
         "product_metrics": product_metrics(cases, margin=margin),
+        "cost_metrics": cost,
         "missing_decision_count": sum(1 for case in cases if not case.get("actual_route")),
     }
 
@@ -156,16 +164,23 @@ def baseline_summary_from_eval_json(
     eval_json: dict[str, Any],
     *,
     margin: float | None = None,
+    false_lite_weight: float = 10.0,
+    false_deep_weight: float = 1.0,
 ) -> dict[str, Any]:
     report = build_quality_report_from_eval_json(
         eval_json=eval_json,
         route_summary=None,
         route_bank_path="",
         margin=margin,
+        false_lite_weight=false_lite_weight,
+        false_deep_weight=false_deep_weight,
     )
     product_metrics = report.get("product_metrics", {})
-    return {
+    cost = report.get("cost_metrics", {})
+    summary = {
         "label": label,
+        "threshold": eval_json.get("threshold"),
+        "margin": eval_json.get("margin"),
         "total": report["eval"]["total"],
         "passed": report["eval"]["passed"],
         "failed": report["eval"]["failed"],
@@ -177,6 +192,16 @@ def baseline_summary_from_eval_json(
         "low_confidence_rate": product_metrics.get("low_confidence_rate", 0.0),
         "hard_rule_hit_rate": product_metrics.get("hard_rule_hit_rate", 0.0),
     }
+    summary.update(
+        {
+            "false_lite_count": cost.get("false_lite_count", 0),
+            "false_deep_count": cost.get("false_deep_count", 0),
+            "false_lite_rate": cost.get("false_lite_rate", 0.0),
+            "false_deep_rate": cost.get("false_deep_rate", 0.0),
+            "weighted_route_cost": cost.get("weighted_route_cost", 0.0),
+        }
+    )
+    return summary
 
 
 def parse_eval_json_spec(spec: str, fallback_label: str) -> tuple[str, Path]:
@@ -274,6 +299,48 @@ def product_metrics(
         "long_context_measured_count": long_context["measured"],
         "long_context_schema_reserved_count": long_context["schema_reserved"],
         "long_context_missing_metadata_count": long_context["missing_metadata"],
+    }
+
+
+def cost_metrics(
+    cases: list[dict[str, Any]],
+    *,
+    false_lite_weight: float = 10.0,
+    false_deep_weight: float = 1.0,
+) -> dict[str, float | int]:
+    total = len(cases)
+    expected_lite = [case for case in cases if case.get("expect") == "lite"]
+    expected_deep = [case for case in cases if case.get("expect") == "deep"]
+    false_lite = [
+        case
+        for case in expected_deep
+        if case.get("actual_route") == "lite"
+    ]
+    false_deep = [
+        case
+        for case in expected_lite
+        if case.get("actual_route") == "deep"
+    ]
+    weighted_total = (
+        len(false_lite) * false_lite_weight
+        + len(false_deep) * false_deep_weight
+    )
+    return {
+        "total": total,
+        "expected_lite_count": len(expected_lite),
+        "expected_deep_count": len(expected_deep),
+        "false_lite_count": len(false_lite),
+        "false_deep_count": len(false_deep),
+        "false_lite_rate": round(len(false_lite) / len(expected_deep), 6)
+        if expected_deep
+        else 0.0,
+        "false_deep_rate": round(len(false_deep) / len(expected_lite), 6)
+        if expected_lite
+        else 0.0,
+        "false_lite_weight": false_lite_weight,
+        "false_deep_weight": false_deep_weight,
+        "weighted_route_cost": round(weighted_total / total, 6) if total else 0.0,
+        "deep_call_rate": route_rate(cases, "deep"),
     }
 
 
@@ -456,6 +523,17 @@ def render_markdown(report: dict[str, Any]) -> str:
             else:
                 formatted = f"{float(value):.2%}"
             lines.append(f"- {key}: {formatted}")
+    cost = report.get("cost_metrics", {})
+    if cost:
+        lines.extend(["", "## Cost Metrics"])
+        for key, value in sorted(cost.items()):
+            if key.endswith("_count") or key == "total":
+                formatted = str(int(value))
+            elif key.endswith("_weight") or key == "weighted_route_cost":
+                formatted = f"{float(value):.3f}"
+            else:
+                formatted = f"{float(value):.2%}"
+            lines.append(f"- {key}: {formatted}")
     slice_section = report.get("slice_metrics", {})
     if slice_section:
         lines.extend(["", "## Slice Metrics"])
@@ -474,6 +552,7 @@ def render_markdown(report: dict[str, Any]) -> str:
                 "- "
                 f"{label}: pass_rate={values['pass_rate']:.2%} "
                 f"deep_call_rate={values['deep_call_rate']:.2%} "
+                f"weighted_route_cost={values.get('weighted_route_cost', 0.0):.3f} "
                 f"actual={format_counts(values.get('actual_routes', {}))}"
             )
     delta = report.get("route_distribution_delta", {})
@@ -534,6 +613,8 @@ def main() -> None:
     parser.add_argument("--route-summary-json", help="JSON output from scripts/router_log_summary.py --json")
     parser.add_argument("--route-bank", default="examples/route_bank.sample.yaml")
     parser.add_argument("--margin", type=float, default=None)
+    parser.add_argument("--false-lite-weight", type=float, default=10.0)
+    parser.add_argument("--false-deep-weight", type=float, default=1.0)
     parser.add_argument("--json-output", required=True)
     parser.add_argument("--markdown-output", required=True)
     args = parser.parse_args()
@@ -549,6 +630,8 @@ def main() -> None:
             route_summary=route_summary,
             route_bank_path=args.route_bank,
             margin=args.margin,
+            false_lite_weight=args.false_lite_weight,
+            false_deep_weight=args.false_deep_weight,
         )
         if len(labeled_eval_jsons) > 1:
             report["baselines"] = {
@@ -556,6 +639,8 @@ def main() -> None:
                     label,
                     payload,
                     margin=args.margin,
+                    false_lite_weight=args.false_lite_weight,
+                    false_deep_weight=args.false_deep_weight,
                 )
                 for label, payload in labeled_eval_jsons
             }

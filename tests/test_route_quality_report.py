@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 from scripts.route_quality_report import (
+    baseline_summary_from_eval_json,
     build_quality_report,
     build_quality_report_from_eval_json,
     parse_eval_output,
@@ -171,6 +172,64 @@ def test_quality_report_reads_eval_json_and_reports_slice_metrics():
     assert report["product_metrics"]["near_margin_measured_count"] == 1
     assert report["product_metrics"]["near_margin_total_count"] == 5
     assert report["eval"]["failures"][0]["text"] == "code1"
+
+
+def test_quality_report_exposes_cost_sensitive_route_metrics():
+    eval_json = {
+        "schema": "intentmux-route-eval-v1",
+        "cases": [
+            {"id": "lite-ok", "expect": "lite", "actual_route": "lite", "passed": True},
+            {"id": "lite-waste", "expect": "lite", "actual_route": "deep", "passed": False},
+            {"id": "deep-risk", "expect": "deep", "actual_route": "lite", "passed": False},
+            {"id": "deep-ok", "expect": "deep", "actual_route": "deep", "passed": True},
+        ],
+    }
+
+    report = build_quality_report_from_eval_json(
+        eval_json=eval_json,
+        route_summary=None,
+        route_bank_path="sample",
+        false_lite_weight=10.0,
+        false_deep_weight=1.5,
+    )
+
+    assert report["cost_metrics"] == {
+        "total": 4,
+        "expected_lite_count": 2,
+        "expected_deep_count": 2,
+        "false_lite_count": 1,
+        "false_deep_count": 1,
+        "false_lite_rate": 0.5,
+        "false_deep_rate": 0.5,
+        "false_lite_weight": 10.0,
+        "false_deep_weight": 1.5,
+        "weighted_route_cost": 2.875,
+        "deep_call_rate": 0.5,
+    }
+
+
+def test_baseline_summary_includes_cost_sensitive_metrics():
+    eval_json = {
+        "schema": "intentmux-route-eval-v1",
+        "baseline": "threshold-0.40",
+        "threshold": 0.4,
+        "cases": [
+            {"id": "lite-waste", "expect": "lite", "actual_route": "deep", "passed": False},
+            {"id": "deep-risk", "expect": "deep", "actual_route": "lite", "passed": False},
+        ],
+    }
+
+    summary = baseline_summary_from_eval_json(
+        "threshold-0.40",
+        eval_json,
+        false_lite_weight=8.0,
+        false_deep_weight=1.0,
+    )
+
+    assert summary["threshold"] == 0.4
+    assert summary["false_lite_count"] == 1
+    assert summary["false_deep_count"] == 1
+    assert summary["weighted_route_cost"] == 4.5
 
 
 def test_quality_report_counts_long_context_metadata_states():
