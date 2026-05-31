@@ -58,6 +58,7 @@ class RouteLogSummary:
     max_duration_ms: float
     duration_percentiles_ms: dict[str, float]
     slow_requests: list[SlowRequest]
+    candidate_clusters: list[dict[str, Any]]
     parse_diagnostics: ParseDiagnostics
 
 
@@ -189,6 +190,8 @@ def summarize_records(
     max_duration_ms = 0.0
     duration_samples: list[float] = []
     slow_requests: list[SlowRequest] = []
+    clusters: Counter[tuple[Any, ...]] = Counter()
+    cluster_durations: dict[tuple[Any, ...], list[float]] = {}
 
     for record in records:
         total += 1
@@ -229,6 +232,13 @@ def summarize_records(
             max_duration_ms = max(max_duration_ms, duration_ms_float)
             duration_samples.append(duration_ms_float)
             slow_requests.append(slow_request_from_record(record, duration_ms_float))
+        else:
+            duration_ms_float = None
+
+        cluster_key = route_cluster_key(record)
+        clusters[cluster_key] += 1
+        if duration_ms_float is not None:
+            cluster_durations.setdefault(cluster_key, []).append(duration_ms_float)
 
         upstream_status = record.get("upstream_status")
         if isinstance(upstream_status, int):
@@ -274,8 +284,50 @@ def summarize_records(
             key=lambda sample: sample.duration_ms,
             reverse=True,
         )[: max(0, slow_request_limit)],
+        candidate_clusters=format_route_clusters(clusters, cluster_durations),
         parse_diagnostics=parse_diagnostics or ParseDiagnostics(),
     )
+
+
+ROUTE_CLUSTER_FIELDS = (
+    "route_id",
+    "target_model",
+    "reason",
+    "outcome",
+    "error_class",
+    "top_route_id",
+    "second_route_id",
+    "match_source",
+    "match_index",
+    "match_text_sha256",
+)
+
+
+def route_cluster_key(record: dict[str, Any]) -> tuple[Any, ...]:
+    values: list[Any] = []
+    for field in ROUTE_CLUSTER_FIELDS:
+        if field == "outcome":
+            values.append(outcome_from_record(record))
+        else:
+            values.append(record.get(field))
+    return tuple(values)
+
+
+def format_route_clusters(
+    clusters: Counter[tuple[Any, ...]],
+    durations_by_key: dict[tuple[Any, ...], list[float]],
+    *,
+    limit: int = 10,
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for key, count in clusters.most_common(max(limit, 0)):
+        row = {field: value for field, value in zip(ROUTE_CLUSTER_FIELDS, key, strict=True)}
+        row["count"] = count
+        durations = durations_by_key.get(key, [])
+        if durations:
+            row["max_duration_ms"] = max(durations)
+        rows.append(row)
+    return rows
 
 
 def duration_percentiles(samples: list[float]) -> dict[str, float]:
@@ -404,6 +456,9 @@ def format_summary(summary: RouteLogSummary) -> str:
     if summary.slow_requests:
         lines.append("slow_requests:")
         lines.extend(format_slow_request(sample) for sample in summary.slow_requests)
+    if summary.candidate_clusters:
+        lines.append("candidate_clusters:")
+        lines.extend(format_route_cluster(cluster) for cluster in summary.candidate_clusters)
     diag = summary.parse_diagnostics
     if any(
         (
@@ -444,6 +499,7 @@ def format_summary_json(summary: RouteLogSummary) -> str:
         "max_duration_ms": summary.max_duration_ms,
         "duration_percentiles_ms": summary.duration_percentiles_ms,
         "slow_requests": [asdict(sample) for sample in summary.slow_requests],
+        "candidate_clusters": summary.candidate_clusters,
         "ignored_records": {
             "malformed_json": diag.malformed_json_lines,
             "missing_event": diag.missing_event_records,
@@ -487,6 +543,29 @@ def format_slow_request(sample: SlowRequest) -> str:
     return line
 
 
+def format_route_cluster(cluster: dict[str, Any]) -> str:
+    parts = [
+        f"count={cluster.get('count', 0)}",
+        f"route={cluster.get('route_id') or 'unknown'}",
+        f"target={cluster.get('target_model') or 'unknown'}",
+        f"reason={cluster.get('reason') or 'unknown'}",
+        f"outcome={cluster.get('outcome') or 'unknown'}",
+    ]
+    for key in (
+        "error_class",
+        "top_route_id",
+        "second_route_id",
+        "match_source",
+        "match_index",
+        "match_text_sha256",
+        "max_duration_ms",
+    ):
+        value = cluster.get(key)
+        if value is not None:
+            parts.append(f"{key}={value}")
+    return "- " + " ".join(parts)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Summarize IntentMux route logs.")
     parser.add_argument(
@@ -526,14 +605,36 @@ def main() -> None:
             "the same route record."
         ),
     )
+    parser.add_argument(
+        "--no-dedupe-request-id",
+        action="store_true",
+        help=(
+            "Disable automatic request_id deduplication for directory inputs. "
+            "Explicit file inputs keep the historical non-deduped behavior unless "
+            "--dedupe-request-id is set."
+        ),
+    )
+    parser.add_argument(
+        "--max-files",
+        type=int,
+        default=20,
+        help=(
+            "Maximum number of discovered JSONL files to read when a path is a "
+            "directory (default: 20). Explicit file paths are always included."
+        ),
+    )
     args = parser.parse_args()
 
     diagnostics = ParseDiagnostics()
+    paths = discover_input_paths(args.paths, max_files=args.max_files)
     records = filter_records_by_window(
-        parse_route_records(iter_lines(args.paths), diagnostics=diagnostics),
+        parse_route_records(iter_lines(paths), diagnostics=diagnostics),
         window_minutes=args.window_minutes,
     )
-    if args.dedupe_request_id:
+    dedupe_request_id = args.dedupe_request_id or (
+        has_directory_input(args.paths) and not args.no_dedupe_request_id
+    )
+    if dedupe_request_id:
         records = deduplicate_records(records, key="request_id")
     summary = summarize_records(
         records,
@@ -542,6 +643,51 @@ def main() -> None:
     )
     output_json = args.json or args.output == "json"
     print(format_summary_json(summary) if output_json else format_summary(summary))
+
+
+def discover_input_paths(paths: list[str], *, max_files: int = 20) -> list[str]:
+    if not paths:
+        return []
+    explicit_files: list[Path] = []
+    discovered_files: list[Path] = []
+    for raw_path in paths:
+        path = Path(raw_path).expanduser()
+        if path.is_dir():
+            discovered_files.extend(discover_route_jsonl_files(path))
+        else:
+            explicit_files.append(path)
+    discovered = sorted(set(discovered_files), key=path_sort_key, reverse=True)[
+        : max(max_files, 0)
+    ]
+    explicit = list(dict.fromkeys(explicit_files))
+    return [str(path) for path in [*explicit, *discovered]]
+
+
+def has_directory_input(paths: list[str]) -> bool:
+    return any(Path(path).expanduser().is_dir() for path in paths)
+
+
+def discover_route_jsonl_files(root: Path) -> list[Path]:
+    candidates: list[Path] = []
+    for pattern in (
+        "*.jsonl",
+        "routes/*.jsonl",
+        "logs/routes/*.jsonl",
+        "cloud-route-audits/*.jsonl",
+        "cloud-route-audits/*/*.jsonl",
+        "logs/cloud-route-audits/*.jsonl",
+        "logs/cloud-route-audits/*/*.jsonl",
+    ):
+        candidates.extend(root.glob(pattern))
+    return [path for path in candidates if path.is_file()]
+
+
+def path_sort_key(path: Path) -> tuple[float, str]:
+    try:
+        mtime = path.stat().st_mtime
+    except OSError:
+        mtime = 0.0
+    return (mtime, str(path))
 
 
 def iter_lines(paths: list[str]) -> Iterable[str]:

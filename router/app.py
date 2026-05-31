@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import secrets
@@ -14,6 +15,7 @@ from router.embedding import OpenAIEmbeddingClient
 from router.observability import (
     AuditLogger,
     PromptReviewLogger,
+    RouteCounters,
     configure_logging,
     log_route_complete,
     log_route_error,
@@ -81,6 +83,7 @@ def create_app(
         max_chars=settings.prompt_log_max_chars,
     )
     audit_metadata = route_audit_metadata(settings)
+    route_counters = RouteCounters()
 
     app = FastAPI(title="IntentMux")
 
@@ -117,6 +120,11 @@ def create_app(
             headers={"www-authenticate": "Bearer"},
         )
 
+    def require_diagnostic_auth(request: Request) -> JSONResponse | None:
+        if settings.cloud_mode or settings.inbound_api_keys:
+            return require_inbound_auth(request)
+        return None
+
     @app.get("/v1/models")
     async def models(request: Request) -> JSONResponse:
         auth_error = require_inbound_auth(request)
@@ -144,6 +152,20 @@ def create_app(
             report.to_dict(),
             status_code=200 if report.ready else 503,
         )
+
+    @app.get("/v1/intentmux/status")
+    async def runtime_status(request: Request) -> JSONResponse:
+        auth_error = require_diagnostic_auth(request)
+        if auth_error is not None:
+            return auth_error
+        return JSONResponse(runtime_status_payload(settings))
+
+    @app.get("/v1/intentmux/counters")
+    async def runtime_counters(request: Request) -> JSONResponse:
+        auth_error = require_diagnostic_auth(request)
+        if auth_error is not None:
+            return auth_error
+        return JSONResponse(route_counters.snapshot())
 
     @app.post("/v1/intentmux/decision")
     async def route_decision(request: Request) -> Any:
@@ -235,6 +257,7 @@ def create_app(
                     format_signals=format_signals,
                     audit_metadata=audit_metadata,
                     audit_logger=audit_logger,
+                    route_counters=route_counters,
                 )
                 return upstream_error_response(
                     request_id=request_id,
@@ -261,6 +284,7 @@ def create_app(
                     format_signals=format_signals,
                     audit_metadata=audit_metadata,
                     audit_logger=audit_logger,
+                    route_counters=route_counters,
                 )
                 await stream_context.__aexit__(None, None, None)
                 return upstream_error_response(
@@ -288,6 +312,7 @@ def create_app(
                     format_signals=format_signals,
                     audit_metadata=audit_metadata,
                     audit_logger=audit_logger,
+                    route_counters=route_counters,
                 ),
                 status_code=upstream.status_code,
                 headers=headers,
@@ -314,6 +339,7 @@ def create_app(
                 format_signals=format_signals,
                 audit_metadata=audit_metadata,
                 audit_logger=audit_logger,
+                route_counters=route_counters,
             )
             return upstream_error_response(
                 request_id=request_id,
@@ -339,6 +365,7 @@ def create_app(
                 format_signals=format_signals,
                 audit_metadata=audit_metadata,
                 audit_logger=audit_logger,
+                route_counters=route_counters,
             )
             return upstream_error_response(
                 request_id=request_id,
@@ -364,6 +391,7 @@ def create_app(
             audit_metadata=audit_metadata,
             usage=usage_from_response_content(upstream.content),
             audit_logger=audit_logger,
+            route_counters=route_counters,
         )
         return Response(
             content=upstream.content,
@@ -401,6 +429,117 @@ def route_audit_metadata(settings: RouterSettings) -> dict[str, str]:
     return metadata
 
 
+def runtime_status_payload(settings: RouterSettings) -> dict[str, Any]:
+    return {
+        "cloud_mode": settings.cloud_mode,
+        "config": runtime_config_status(settings),
+        "routing": runtime_routing_status(settings),
+        "routes": runtime_route_status(settings),
+        "hard_rules": runtime_hard_rule_status(settings),
+        "warnings": runtime_status_warnings(settings),
+    }
+
+
+def runtime_config_status(settings: RouterSettings) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "config_source": settings.config_source,
+        "config_sha256": settings.config_sha256,
+        "route_bank_sha256": settings.route_bank_sha256,
+        "runtime_config_exists": settings.runtime_config_exists,
+        "route_bank_loaded": settings.route_bank_loaded,
+        "audit_log_enabled": settings.audit_log_enabled,
+        "access_log": settings.access_log,
+        "prompt_log_mode": settings.prompt_log_mode,
+    }
+    if not settings.cloud_mode:
+        payload.update(
+            {
+                "config_path": settings.config_path,
+                "runtime_home": settings.runtime_home,
+                "audit_log_dir": settings.audit_log_dir,
+                "prompt_log_dir": settings.prompt_log_dir,
+                "route_bank_path": settings.route_bank_path,
+            }
+        )
+    return payload
+
+
+def runtime_routing_status(settings: RouterSettings) -> dict[str, Any]:
+    return {
+        "entry_model": settings.entry_model,
+        "entry_model_aliases": sorted(settings.entry_model_aliases),
+        "fallback_route_id": settings.fallback_route_id,
+        "route_id_aliases": dict(sorted(settings.route_id_aliases.items())),
+        "route_kernel": settings.route_kernel,
+        "aurelio_router": settings.aurelio_router,
+        "aurelio_hybrid_alpha": settings.aurelio_hybrid_alpha,
+        "threshold": settings.threshold,
+        "margin": settings.margin,
+        "agent_signal_enabled": settings.agent_signal_enabled,
+        "agent_signal_route_id": settings.effective_agent_signal_route_id,
+        "agent_signal_min_input_chars": settings.agent_signal_min_input_chars,
+        "agent_signal_min_message_count": settings.agent_signal_min_message_count,
+    }
+
+
+def runtime_route_status(settings: RouterSettings) -> dict[str, Any]:
+    return {
+        route_id: runtime_route_entry(route_id, route.target_model, len(route.utterances), settings)
+        for route_id, route in sorted(settings.routes.items())
+    }
+
+
+def runtime_route_entry(
+    route_id: str,
+    target_model: str | None,
+    utterance_count: int,
+    settings: RouterSettings,
+) -> dict[str, Any]:
+    entry: dict[str, Any] = {
+        "utterance_count": utterance_count,
+        "target_model_configured": bool(target_model),
+    }
+    if not settings.cloud_mode:
+        entry["target_model"] = target_model
+    else:
+        entry["target_model_sha256"] = stable_sha256(target_model)
+    return entry
+
+
+def runtime_hard_rule_status(settings: RouterSettings) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for hard_rule in settings.hard_rules:
+        row: dict[str, Any] = {
+            "route_id": hard_rule.route_id,
+            "keyword_count": len(hard_rule.keywords),
+        }
+        if settings.cloud_mode:
+            row["keyword_sha256s"] = [
+                stable_sha256(keyword) for keyword in hard_rule.keywords
+            ]
+        else:
+            row["keywords"] = list(hard_rule.keywords)
+        rows.append(row)
+    return rows
+
+
+def runtime_status_warnings(settings: RouterSettings) -> list[str]:
+    warnings: list[str] = []
+    if settings.config_source == "repo_default" and not settings.runtime_config_exists:
+        warnings.append("runtime_config_missing")
+    if settings.placeholder_target_models:
+        warnings.append("placeholder_targets")
+    if settings.cloud_mode and settings.prompt_log_mode == "off":
+        warnings.append("prompt_review_log_disabled")
+    return warnings
+
+
+def stable_sha256(value: str | None) -> str | None:
+    if not value:
+        return None
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
 def usage_from_response_content(content: bytes) -> dict[str, int] | None:
     try:
         payload = json.loads(content)
@@ -434,6 +573,7 @@ async def stream_with_context(
     format_signals: dict[str, Any] | None = None,
     audit_metadata: dict[str, Any] | None = None,
     audit_logger: AuditLogger | None = None,
+    route_counters: RouteCounters | None = None,
 ):
     if upstream_started_ms is None:
         upstream_started_ms = started_ms

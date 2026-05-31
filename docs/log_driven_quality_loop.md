@@ -1,11 +1,10 @@
 # Log-Driven Quality Loop
 
-IntentMux improves routing quality from production metadata, optional local
-prompt review logs, external AI-assisted review, and redacted review samples.
-Route audit logs identify routing drift, low-confidence decisions, failures,
-and latency regressions; prompt review logs provide local-only semantic evidence
-when explicitly enabled. Only reviewed, redacted samples are promoted into eval
-cases or route banks.
+IntentMux uses production metadata to explain routing drift, low-confidence
+decisions, failures, and latency regressions. Prompt review logs are optional
+local-only evidence when explicitly enabled. Production logs, prompt review, and
+AI-assisted review are operational triage inputs, not routing-quality ground
+truth, and are not a standing pipeline for expanding eval cases or route banks.
 
 `examples/eval_bank.sample.yaml` is the tracked public example for regression
 and baseline comparison. Generated `data/semantic_sets/eval_bank.yaml` is a
@@ -69,13 +68,9 @@ audit logs
   -> daily health / route summary / route-error budget
   -> review candidate selection
   -> optional local prompt review lookup by request_id
-  -> AI review packet for an external reviewer
-  -> human audit for escalations, uncertainty, and policy changes
-  -> redacted production_review JSONL
-  -> eval bank import
-  -> route bank / threshold / margin change
-  -> route quality report
-  -> production rollout gate
+  -> optional local AI review packet for operational triage
+  -> public dataset regression report for any routing-policy change
+  -> production rollout gate for bug fixes or explicitly justified changes
   -> observe new logs
 ```
 
@@ -91,8 +86,23 @@ uv run python scripts/router_log_summary.py /data/logs/routes/*.jsonl \
   --json
 ```
 
-Use `scripts/select_review_candidates.py` to select metadata-only records that
-deserve AI review and possible human audit:
+Directory inputs are auto-discovered for common runtime layouts such as
+`logs/routes/*.jsonl` and dated `cloud-route-audits/*/*.jsonl`; discovery is
+bounded with `--max-files` so cloud snapshots do not accidentally expand into
+unbounded full-history scans. JSON output includes low-risk `candidate_clusters`
+derived from route metadata only.
+
+For a live process without log shipping, `/v1/intentmux/status` exposes safe
+runtime config shape and `/v1/intentmux/counters` exposes low-cardinality
+in-process counters. These endpoints are diagnostic surfaces only; they do not
+replace external monitoring, persistent route audit logs, or daily quality
+reports. In cloud mode they require IntentMux inbound auth and omit local paths,
+raw target model names, raw hard-rule keywords, prompts, responses, and keys.
+Outside cloud mode these diagnostic endpoints also require inbound auth whenever
+`ROUTER_INBOUND_API_KEY` or rotation keys are configured.
+
+Use `scripts/select_review_candidates.py` to select metadata-only records for
+bounded operational triage:
 
 ```bash
 uv run python scripts/select_review_candidates.py /data/logs/routes/*.jsonl \
@@ -184,6 +194,10 @@ cluster around `low_confidence`, high latency, or unexpected `deep` call-rate
 changes, but do not promote request structure alone into a `deep` route.
 
 ## AI Review Packet
+
+AI review packets are local-only operational triage artifacts. They can help an
+operator summarize repeated failure clusters, but they are not labels and do
+not by themselves justify route-bank, threshold, margin, or hard-rule changes.
 
 Generate a local-only packet for an external AI reviewer:
 
@@ -285,7 +299,8 @@ Any route bank, threshold, margin, or hard-rule change should include:
   in production or `examples/eval_bank.sample.yaml` in a clean clone;
 - route log summary from current-day or post-migration production traffic;
 - `scripts/route_quality_report.py` JSON/Markdown output;
-- candidate review evidence when the change is production-log driven;
+- public/reproducible dataset evidence for the behavior being changed;
+- candidate review evidence only as operational context, not ground truth;
 - rollback plan limited to IntentMux config, assets, or image.
 
 Do not change LiteLLM config unless the failure is proven to be in the LiteLLM
@@ -298,8 +313,9 @@ IntentMux is ready to call itself log-driven when:
 - daily health and strict E2E run reliably against production;
 - review candidates are generated from mounted audit logs;
 - AI review packets and summaries are generated from mounted audit logs;
-- at least one accepted, redacted production review batch has entered eval;
-- route bank changes require a quality report;
+- private production review is clearly marked operational-only;
+- route bank changes require public/reproducible eval evidence and a quality
+  report;
 - production rollout uses the documented gate and observes fresh logs after
   deployment.
 

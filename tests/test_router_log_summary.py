@@ -426,6 +426,8 @@ def test_format_summary_is_stable_for_runbooks():
             "duration_percentiles_ms: p50=1400.00, p90=1400.00, p95=1400.00, p99=1400.00",
             "slow_requests:",
             "- duration_ms=1400.00 timestamp=unknown request_id=unknown route=deep target=deep-upstream reason=embedding_error upstream_status=503",
+            "candidate_clusters:",
+            "- count=1 route=deep target=deep-upstream reason=embedding_error outcome=upstream_non_200 max_duration_ms=1400.0",
         ]
     )
 
@@ -516,6 +518,35 @@ def test_format_summary_json_is_deterministic_and_includes_diagnostics():
                 "upstream_status": 503,
             }
         ],
+        "candidate_clusters": [
+            {
+                "count": 1,
+                "error_class": None,
+                "match_index": None,
+                "match_source": None,
+                "match_text_sha256": None,
+                "outcome": "success",
+                "reason": "embedding",
+                "route_id": None,
+                "second_route_id": None,
+                "target_model": "lite-upstream",
+                "top_route_id": None,
+            },
+            {
+                "count": 1,
+                "error_class": None,
+                "match_index": None,
+                "match_source": None,
+                "match_text_sha256": None,
+                "max_duration_ms": 42.0,
+                "outcome": "upstream_non_200",
+                "reason": "hard_rule",
+                "route_id": None,
+                "second_route_id": None,
+                "target_model": "deep-upstream",
+                "top_route_id": None,
+            },
+        ],
     }
 
 
@@ -550,6 +581,34 @@ def test_main_json_output_parses_mixed_stream_and_ignores_access_logs():
     assert payload["upstream_non_200"] == {
         "status=503 target=deep-upstream reason=hard_rule stream=true": 1
     }
+    assert payload["candidate_clusters"] == [
+        {
+            "count": 1,
+            "error_class": None,
+            "match_index": None,
+            "match_source": None,
+            "match_text_sha256": None,
+            "outcome": "success",
+            "reason": "embedding",
+            "route_id": None,
+            "second_route_id": None,
+            "target_model": "lite-upstream",
+            "top_route_id": None,
+        },
+        {
+            "count": 1,
+            "error_class": None,
+            "match_index": None,
+            "match_source": None,
+            "match_text_sha256": None,
+            "outcome": "upstream_non_200",
+            "reason": "hard_rule",
+            "route_id": None,
+            "second_route_id": None,
+            "target_model": "deep-upstream",
+            "top_route_id": None,
+        },
+    ]
     assert payload["ignored_records"] == {
         "malformed_json": 1,
         "missing_event": 0,
@@ -664,6 +723,36 @@ INFO:     127.0.0.1:53000 - \"POST /v1/chat/completions HTTP/1.1\" 200 OK
                 "upstream_status": 200,
             },
         ],
+        "candidate_clusters": [
+            {
+                "count": 1,
+                "error_class": None,
+                "match_index": None,
+                "match_source": None,
+                "match_text_sha256": None,
+                "max_duration_ms": 12.5,
+                "outcome": "success",
+                "reason": "hard_rule",
+                "route_id": None,
+                "second_route_id": None,
+                "target_model": "safe-model",
+                "top_route_id": None,
+            },
+            {
+                "count": 1,
+                "error_class": None,
+                "match_index": None,
+                "match_source": None,
+                "match_text_sha256": None,
+                "max_duration_ms": 40.0,
+                "outcome": "upstream_non_200",
+                "reason": "embedding_error",
+                "route_id": None,
+                "second_route_id": None,
+                "target_model": "fallback-model",
+                "top_route_id": None,
+            },
+        ],
     }
 
 
@@ -744,6 +833,70 @@ def test_main_window_minutes_filters_to_recent_records(tmp_path: Path):
     payload = json.loads(completed.stdout)
     assert payload["total"] == 1
     assert payload["routes"] == {"deep": 1}
+
+
+def test_main_discovers_recent_dated_cloud_route_audits(tmp_path: Path):
+    old_dir = tmp_path / "cloud-route-audits" / "2026-05-29"
+    new_dir = tmp_path / "cloud-route-audits" / "2026-05-30"
+    old_dir.mkdir(parents=True)
+    new_dir.mkdir(parents=True)
+    old_log = old_dir / "routes.jsonl"
+    new_log = new_dir / "routes.jsonl"
+    old_log.write_text(
+        '{"event":"route_complete","request_id":"old","route_id":"lite"}\n',
+        encoding="utf-8",
+    )
+    new_log.write_text(
+        '{"event":"route_error","request_id":"new","route_id":"deep","error_class":"upstream_timeout"}\n',
+        encoding="utf-8",
+    )
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "scripts/router_log_summary.py",
+            str(tmp_path),
+            "--json",
+            "--max-files",
+            "1",
+        ],
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+
+    payload = json.loads(completed.stdout)
+    assert payload["total"] == 1
+    assert payload["routes"] == {"deep": 1}
+    assert payload["error_types"] == {}
+    assert payload["candidate_clusters"][0]["error_class"] == "upstream_timeout"
+
+
+def test_directory_discovery_deduplicates_snapshot_records_by_default(tmp_path: Path):
+    audit_dir = tmp_path / "cloud-route-audits" / "2026-05-30"
+    audit_dir.mkdir(parents=True)
+    first = audit_dir / "snapshot-a.jsonl"
+    second = audit_dir / "snapshot-b.jsonl"
+    first.write_text(
+        '{"event":"route_complete","request_id":"same","route_id":"lite","ts":"2026-05-30T10:00:00Z","duration_ms":100}\n',
+        encoding="utf-8",
+    )
+    second.write_text(
+        '{"event":"route_complete","request_id":"same","route_id":"deep","ts":"2026-05-30T10:01:00Z","duration_ms":200}\n',
+        encoding="utf-8",
+    )
+
+    completed = subprocess.run(
+        [sys.executable, "scripts/router_log_summary.py", str(tmp_path), "--json"],
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+
+    payload = json.loads(completed.stdout)
+    assert payload["total"] == 1
+    assert payload["routes"] == {"deep": 1}
+    assert payload["max_duration_ms"] == 200.0
 
 
 def test_contract_fixture_has_no_sensitive_payload_fields():

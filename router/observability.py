@@ -5,6 +5,7 @@ import logging
 import re
 import time
 import uuid
+from collections import Counter
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -45,6 +46,76 @@ class AuditLogger:
         with path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(record, ensure_ascii=False, sort_keys=True))
             handle.write("\n")
+
+
+class RouteCounters:
+    """Low-cardinality runtime counters derived from route audit records."""
+
+    DURATION_BUCKETS = (
+        (100.0, "le_100ms"),
+        (1_000.0, "le_1s"),
+        (10_000.0, "le_10s"),
+        (60_000.0, "le_60s"),
+    )
+    UNKNOWN = "unknown"
+
+    def __init__(self) -> None:
+        self.total = 0
+        self.by_event: Counter[str] = Counter()
+        self.by_route_id: Counter[str] = Counter()
+        self.by_policy_id: Counter[str] = Counter()
+        self.by_outcome: Counter[str] = Counter()
+        self.by_error_class: Counter[str] = Counter()
+        self.by_route_vector_source: Counter[str] = Counter()
+        self.by_duration_bucket: Counter[str] = Counter()
+
+    def record(self, record: dict[str, Any]) -> None:
+        self.total += 1
+        self.by_event[self._string_value(record.get("event"))] += 1
+        self.by_route_id[self._string_value(record.get("route_id"))] += 1
+        self.by_policy_id[self._string_value(record.get("policy_id"))] += 1
+        self.by_outcome[self._string_value(record.get("outcome"))] += 1
+        self.by_route_vector_source[
+            self._string_value(record.get("route_vector_source"))
+        ] += 1
+        error_class = record.get("error_class")
+        if isinstance(error_class, str) and error_class:
+            self.by_error_class[error_class] += 1
+        self.by_duration_bucket[
+            duration_bucket(number_or_none(record.get("duration_ms")))
+        ] += 1
+
+    def snapshot(self) -> dict[str, Any]:
+        return {
+            "total": self.total,
+            "by_event": sorted_counter(self.by_event),
+            "by_route_id": sorted_counter(self.by_route_id),
+            "by_policy_id": sorted_counter(self.by_policy_id),
+            "by_outcome": sorted_counter(self.by_outcome),
+            "by_error_class": sorted_counter(self.by_error_class),
+            "by_route_vector_source": sorted_counter(self.by_route_vector_source),
+            "by_duration_bucket": sorted_counter(self.by_duration_bucket),
+        }
+
+    def _string_value(self, value: Any) -> str:
+        return value if isinstance(value, str) and value else self.UNKNOWN
+
+
+def sorted_counter(counter: Counter[str]) -> dict[str, int]:
+    return dict(sorted(counter.items()))
+
+
+def duration_bucket(duration_ms: float | None) -> str:
+    if duration_ms is None:
+        return "unknown"
+    for upper_bound, label in RouteCounters.DURATION_BUCKETS:
+        if duration_ms <= upper_bound:
+            return label
+    return "gt_60s"
+
+
+def number_or_none(value: Any) -> float | None:
+    return float(value) if isinstance(value, int | float) else None
 
 
 class PromptReviewLogger:
@@ -316,6 +387,7 @@ def log_route_complete(
     audit_metadata: dict[str, Any] | None = None,
     usage: dict[str, Any] | None = None,
     audit_logger: AuditLogger | None = None,
+    route_counters: RouteCounters | None = None,
 ) -> None:
     ok = 200 <= upstream_status <= 299
     record = route_record(
@@ -334,6 +406,8 @@ def log_route_complete(
         usage=usage,
     )
     emit_route_record(logger, record, audit_logger)
+    if route_counters is not None:
+        route_counters.record(record)
 
 
 def log_route_error(
@@ -350,6 +424,7 @@ def log_route_error(
     format_signals: dict[str, Any] | None = None,
     audit_metadata: dict[str, Any] | None = None,
     audit_logger: AuditLogger | None = None,
+    route_counters: RouteCounters | None = None,
 ) -> None:
     record = route_record(
         event="route_error",
@@ -376,6 +451,8 @@ def log_route_error(
         }
     )
     emit_route_record(logger, record, audit_logger)
+    if route_counters is not None:
+        route_counters.record(record)
 
 
 def error_class_for(error: BaseException, upstream_status: int | None) -> str:

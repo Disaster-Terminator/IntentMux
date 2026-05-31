@@ -869,6 +869,226 @@ def test_cloud_ready_requires_inbound_api_key():
     )
 
 
+def test_cloud_runtime_status_requires_auth_and_redacts_private_fields():
+    app = create_app(
+        settings=RouterSettings(
+            route_model="intentmux",
+            entry_model_aliases=["sonnet"],
+            route_id_aliases={"cheap": "lite"},
+            fallback_route_id="cheap",
+            threshold=0.42,
+            margin=0.07,
+            cloud_mode=True,
+            inbound_api_key="sk-intentmux",
+            config_path="/data/config/routes.yaml",
+            config_source="ROUTER_CONFIG",
+            config_sha256="a" * 64,
+            route_bank_sha256="b" * 64,
+            runtime_home="/data",
+            runtime_config_exists=True,
+            route_bank_loaded=True,
+            routes={
+                "lite": RouteSpec(
+                    target_model="private-lite-target",
+                    description="lite",
+                    utterances=["hi", "summarize"],
+                ),
+                "deep": RouteSpec(
+                    target_model="private-deep-target",
+                    description="deep",
+                    utterances=["debug"],
+                ),
+            },
+            hard_rules=[{"route_id": "deep", "keywords": ["secret-keyword"]}],
+        ),
+        router=FakeRouter(
+            RoutingDecision("private-lite-target", "test", rewrite=True, route_id="lite")
+        ),
+        proxy=FakeProxy(),
+    )
+    client = TestClient(app)
+
+    assert client.get("/v1/intentmux/status").status_code == 401
+
+    response = client.get(
+        "/v1/intentmux/status",
+        headers={"Authorization": "Bearer sk-intentmux"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    serialized = json.dumps(payload)
+    assert payload["config"]["config_source"] == "ROUTER_CONFIG"
+    assert payload["config"]["config_sha256"] == "a" * 64
+    assert payload["routing"]["fallback_route_id"] == "lite"
+    assert payload["routing"]["entry_model_aliases"] == ["sonnet"]
+    assert payload["routing"]["route_id_aliases"] == {"cheap": "lite"}
+    assert payload["routes"]["lite"]["utterance_count"] == 2
+    assert payload["routes"]["lite"]["target_model_configured"] is True
+    assert "target_model" not in payload["routes"]["lite"]
+    assert "target_model_sha256" in payload["routes"]["lite"]
+    assert payload["hard_rules"][0]["keyword_count"] == 1
+    assert "keywords" not in payload["hard_rules"][0]
+    assert "keyword_sha256s" in payload["hard_rules"][0]
+    assert "/data" not in serialized
+    assert "private-lite-target" not in serialized
+    assert "secret-keyword" not in serialized
+
+
+def test_local_runtime_status_includes_paths_and_targets_for_debugging():
+    app = create_app(
+        settings=RouterSettings(
+            route_model="intentmux",
+            fallback_route_id="lite",
+            config_path="config/routes.yaml",
+            runtime_home=".intentmux-home",
+            routes={
+                "lite": RouteSpec(
+                    target_model="local-lite-target",
+                    description="lite",
+                    utterances=["hi"],
+                )
+            },
+            hard_rules=[{"route_id": "lite", "keywords": ["local"]}],
+        ),
+        router=FakeRouter(
+            RoutingDecision("local-lite-target", "test", rewrite=True, route_id="lite")
+        ),
+        proxy=FakeProxy(),
+    )
+
+    payload = TestClient(app).get("/v1/intentmux/status").json()
+
+    assert payload["config"]["config_path"] == "config/routes.yaml"
+    assert payload["config"]["runtime_home"] == ".intentmux-home"
+    assert payload["routes"]["lite"]["target_model"] == "local-lite-target"
+    assert payload["hard_rules"][0]["keywords"] == ["local"]
+
+
+def test_local_diagnostic_endpoints_require_auth_when_inbound_key_configured():
+    app = create_app(
+        settings=RouterSettings(
+            route_model="intentmux",
+            fallback_route_id="lite",
+            inbound_api_key="sk-intentmux",
+            routes={
+                "lite": RouteSpec(
+                    target_model="lite-upstream",
+                    description="lite",
+                    utterances=["hi"],
+                )
+            },
+        ),
+        router=FakeRouter(
+            RoutingDecision("lite-upstream", "test", rewrite=True, route_id="lite")
+        ),
+        proxy=FakeProxy(),
+    )
+    client = TestClient(app)
+
+    assert client.get("/v1/intentmux/status").status_code == 401
+    assert client.get("/v1/intentmux/counters").status_code == 401
+    assert (
+        client.get(
+            "/v1/intentmux/status",
+            headers={"Authorization": "Bearer sk-intentmux"},
+        ).status_code
+        == 200
+    )
+    assert (
+        client.get(
+            "/v1/intentmux/counters",
+            headers={"Authorization": "Bearer sk-intentmux"},
+        ).status_code
+        == 200
+    )
+
+
+def test_route_counters_record_success_and_error_without_request_ids():
+    client = TestClient(
+        create_app(
+            settings=RouterSettings(
+                route_model="intentmux",
+                fallback_route_id="lite",
+                routes={
+                    "lite": RouteSpec(
+                        target_model="lite-upstream",
+                        description="lite",
+                        utterances=["hi"],
+                    )
+                },
+            ),
+            router=FakeRouter(
+                RoutingDecision(
+                    "lite-upstream",
+                    "test",
+                    rewrite=True,
+                    route_id="lite",
+                    policy_id="accepted",
+                    route_vector_source="cache",
+                )
+            ),
+            proxy=FakeProxy(),
+        )
+    )
+
+    response = client.post(
+        "/v1/chat/completions",
+        headers={"x-request-id": "req-success"},
+        json={"model": "intentmux", "messages": [{"role": "user", "content": "hi"}]},
+    )
+
+    assert response.status_code == 200
+    counters = client.get("/v1/intentmux/counters").json()
+    assert counters["total"] == 1
+    assert counters["by_event"] == {"route_complete": 1}
+    assert counters["by_route_id"] == {"lite": 1}
+    assert counters["by_policy_id"] == {"accepted": 1}
+    assert counters["by_outcome"] == {"success": 1}
+    assert counters["by_route_vector_source"] == {"cache": 1}
+    assert "req-success" not in json.dumps(counters)
+
+
+def test_route_counters_record_error_class():
+    client = TestClient(
+        create_app(
+            settings=RouterSettings(
+                route_model="intentmux",
+                fallback_route_id="lite",
+                routes={
+                    "lite": RouteSpec(
+                        target_model="lite-upstream",
+                        description="lite",
+                        utterances=["hi"],
+                    )
+                },
+            ),
+            router=FakeRouter(
+                RoutingDecision(
+                    "lite-upstream",
+                    "test",
+                    rewrite=True,
+                    route_id="lite",
+                    policy_id="accepted",
+                )
+            ),
+            proxy=UpstreamStatusProxy(),
+        )
+    )
+
+    response = client.post(
+        "/v1/chat/completions",
+        json={"model": "intentmux", "messages": [{"role": "user", "content": "hi"}]},
+    )
+
+    assert response.status_code == 502
+    counters = client.get("/v1/intentmux/counters").json()
+    assert counters["total"] == 1
+    assert counters["by_event"] == {"route_error": 1}
+    assert counters["by_outcome"] == {"upstream_non_200": 1}
+    assert counters["by_error_class"] == {"upstream_server_error": 1}
+
+
 def test_decision_endpoint_low_confidence_uses_fallback_route_id():
     proxy = NoUpstreamProxy()
     vectors = {
