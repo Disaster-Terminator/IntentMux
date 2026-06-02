@@ -1019,7 +1019,7 @@ async def test_legacy_functions_do_not_override_cost_first_routing():
 
 
 @pytest.mark.asyncio
-async def test_long_multiturn_context_does_not_override_cost_first_routing():
+async def test_long_multiturn_agent_signal_routes_to_deep_before_embedding():
     router = Router(settings(), FakeEmbeddingClient({}, fail=True))
 
     decision = await router.decide(
@@ -1032,6 +1032,29 @@ async def test_long_multiturn_context_does_not_override_cost_first_routing():
             "tool_history": False,
             "approx_input_chars": 20_000,
             "message_count": 6,
+        },
+    )
+
+    assert decision.route_id == "deep"
+    assert decision.target_model == "deep-upstream"
+    assert decision.policy_id == "agent_signal"
+    assert decision.reason == "agent_signal"
+
+
+@pytest.mark.asyncio
+async def test_long_context_without_message_count_signal_does_not_route_to_deep():
+    router = Router(settings(), FakeEmbeddingClient({}, fail=True))
+
+    decision = await router.decide(
+        {
+            "model": "intentmux",
+            "messages": [{"role": "user", "content": "总结目前状态"}],
+        },
+        format_signals={
+            "tools_present": False,
+            "tool_history": False,
+            "approx_input_chars": 20_000,
+            "message_count": 1,
         },
     )
 

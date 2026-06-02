@@ -124,6 +124,17 @@ class Router:
                 rewrite=True,
             )
 
+        agent_signal_route_id = self._agent_signal_route_id(text, format_signals)
+        if agent_signal_route_id is not None:
+            return RoutingDecision(
+                route_id=agent_signal_route_id,
+                target_model=self._target_model_for_route(agent_signal_route_id),
+                source_model=source_model,
+                reason="agent_signal",
+                policy_id="agent_signal",
+                rewrite=True,
+            )
+
         try:
             route_vector_source, route_vector_load_ms = await self._ensure_route_vectors()
             query_embedding_started = perf_counter()
@@ -255,6 +266,31 @@ class Router:
             or metadata.get("target_route")
         )
         return self._canonical_route_id(route)
+
+    def _agent_signal_route_id(
+        self, text: str, format_signals: dict[str, Any] | None
+    ) -> str | None:
+        route_id = self.settings.effective_agent_signal_route_id
+        if route_id is None or format_signals is None:
+            return None
+        if looks_like_agent_instruction_boilerplate(text):
+            return None
+        input_chars = int(format_signals.get("approx_input_chars") or 0)
+        message_count = int(format_signals.get("message_count") or 0)
+        if (
+            input_chars >= self.settings.agent_signal_min_input_chars
+            and message_count >= self.settings.agent_signal_min_message_count
+        ):
+            return route_id
+        if (
+            input_chars >= self.settings.agent_signal_min_input_chars
+            and (
+                format_signals.get("tool_history")
+                or int(format_signals.get("tool_call_count") or 0) > 0
+            )
+        ):
+            return route_id
+        return None
 
     def _matching_hard_rule(self, text: str) -> tuple[str, str] | None:
         lowered = text.lower()

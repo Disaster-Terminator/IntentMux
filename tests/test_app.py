@@ -1119,6 +1119,54 @@ def test_decision_endpoint_low_confidence_uses_fallback_route_id():
     assert proxy.stream_called is False
 
 
+def test_decision_endpoint_agent_tool_signal_routes_deep_before_low_confidence():
+    proxy = NoUpstreamProxy()
+    app = create_app(
+        router=Router(decision_router_settings(), FakeDecisionEmbeddingClient({})),
+        proxy=proxy,
+    )
+    messages = [{"role": "user", "content": "x" * 13000}]
+    messages.extend({"role": "assistant", "content": "ok"} for _ in range(5))
+
+    response = TestClient(app).post(
+        "/v1/intentmux/decision",
+        json={
+            "model": "intentmux",
+            "messages": messages,
+            "tools": [{"type": "function", "function": {"name": "read_file"}}],
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["route_id"] == "deep"
+    assert response.json()["target_model"] == "deep-upstream"
+    assert response.json()["policy_id"] == "agent_signal"
+    assert proxy.forward_called is False
+    assert proxy.stream_called is False
+
+
+def test_decision_endpoint_agent_long_context_signal_routes_deep():
+    proxy = NoUpstreamProxy()
+    app = create_app(
+        router=Router(decision_router_settings(), FakeDecisionEmbeddingClient({})),
+        proxy=proxy,
+    )
+    messages = [{"role": "user", "content": "x" * 13000}]
+    messages.extend({"role": "assistant", "content": "ok"} for _ in range(5))
+
+    response = TestClient(app).post(
+        "/v1/intentmux/decision",
+        json={"model": "intentmux", "messages": messages},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["route_id"] == "deep"
+    assert response.json()["target_model"] == "deep-upstream"
+    assert response.json()["policy_id"] == "agent_signal"
+    assert proxy.forward_called is False
+    assert proxy.stream_called is False
+
+
 def test_decision_endpoint_embedding_error_uses_fallback_route_id_and_policy():
     proxy = NoUpstreamProxy()
     app = create_app(
