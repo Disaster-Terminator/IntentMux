@@ -74,7 +74,7 @@ explicit route
   -> high-precision hard escalation
   -> embedded route-bank similarity
   -> threshold and margin
-  -> fallback to lite when confidence is low
+  -> configured fallback when confidence is low
 ```
 
 Quality changes must be judged by both routing quality and `deep` call rate.

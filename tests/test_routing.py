@@ -748,7 +748,7 @@ async def test_high_precision_hard_rule_routes_to_deep_without_embedding():
 
 
 @pytest.mark.asyncio
-async def test_default_security_reviewer_role_text_does_not_force_deep_route():
+async def test_default_security_reviewer_role_text_uses_configured_embedding_error_fallback():
     route_settings = load_settings("config/routes.yaml")
     router = Router(route_settings, FakeEmbeddingClient({}, fail=True))
 
@@ -769,8 +769,8 @@ async def test_default_security_reviewer_role_text_does_not_force_deep_route():
         }
     )
 
-    assert decision.route_id == "lite"
-    assert decision.target_model == route_settings.routes["lite"].target_model
+    assert decision.route_id == route_settings.fallback_route_id
+    assert decision.target_model == route_settings.routes[route_settings.fallback_route_id].target_model
     assert decision.policy_id == "embedding_error"
 
 

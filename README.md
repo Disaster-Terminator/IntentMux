@@ -67,13 +67,13 @@ budget 和模型池。IntentMux 只做意图路由。
 默认决策顺序：
 
 ```text
-explicit route -> hard escalation -> semantic score + threshold -> fallback lite
+explicit route -> hard escalation -> semantic score + threshold -> configured fallback
 ```
 
 - `model=lite` / `model=deep` 或 `metadata.route_id` 是显式路由。
 - hard rules 只用于安全、凭据泄露、生产事故、数据损坏等高风险强制升级。
 - 普通工程词、工具调用结构、长上下文和 agent 形态只进入审计信号，不直接升级。
-- embedding 不可用时按 `fallback_route_id` fail open，默认是 `lite`。
+- embedding 不可用时按 `fallback_route_id` fail open，仓库默认配置为 `deep`。
 - upstream 连接错误或 5xx 返回脱敏 `502`；upstream 4xx 按代理语义透传，同时记入审计日志。
 
 默认在线路由内核是 [Aurelio Semantic Router](https://docs.aurelio.ai/semantic-router/get-started/introduction)。
@@ -123,7 +123,7 @@ docker compose -f examples/docker-compose.yml up -d --build
 
 ```yaml
 route_model: intentmux
-fallback_route_id: lite
+fallback_route_id: deep
 
 routes:
   lite:

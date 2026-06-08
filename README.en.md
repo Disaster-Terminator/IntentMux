@@ -70,7 +70,7 @@ routing.
 Default decision order:
 
 ```text
-explicit route -> hard escalation -> semantic score + threshold -> fallback lite
+explicit route -> hard escalation -> semantic score + threshold -> configured fallback
 ```
 
 - `model=lite` / `model=deep` or `metadata.route_id` is an explicit route.
@@ -78,7 +78,7 @@ explicit route -> hard escalation -> semantic score + threshold -> fallback lite
   leakage, production incidents, or data corruption.
 - Generic engineering terms, tool-call structure, long context, and agent shape
   are audit signals, not direct deep-routing triggers.
-- Embedding failures fail open to `fallback_route_id`, normally `lite`.
+- Embedding failures fail open to `fallback_route_id`; the repository default is `deep`.
 - Upstream connection failures or 5xx return redacted `502`; upstream 4xx are
   passed through and recorded as `upstream_non_200`.
 
@@ -130,7 +130,7 @@ Core `routes.yaml` shape:
 
 ```yaml
 route_model: intentmux
-fallback_route_id: lite
+fallback_route_id: deep
 
 routes:
   lite:

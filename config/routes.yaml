@@ -2,7 +2,7 @@
 # ROUTER_CONFIG to a runtime-owned routes.yaml, normally copied from
 # examples/intentmux-home/config/routes.yaml and edited outside the repo.
 route_model: intentmux
-fallback_route_id: lite
+fallback_route_id: deep
 agent_signal_enabled: true
 agent_signal_route_id: deep
 agent_signal_min_input_chars: 12000

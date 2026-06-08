@@ -13,7 +13,7 @@ def test_cli_emits_stable_config_section(capsys):
     assert exit_code == 0
     assert "[router_config]" in output
     assert "entry_model: intentmux" in output
-    assert "fallback_route_id: lite" in output
+    assert "fallback_route_id: deep" in output
     assert "route_targets:" in output
     assert "  lite: your-lite-model" in output
     assert "  deep: your-deep-model" in output
